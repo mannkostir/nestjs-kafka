@@ -1,0 +1,29 @@
+{
+  "name": "nestjs-kafka-connector",
+  "version": "0.1.0",
+  "description": "NestJS Kafka Connector",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepublishOnly": "npm run build"
+  },
+  "peerDependencies": {
+    "reflect-metadata": "^0.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.5.0"
+  },
+  "dependencies": {
+    "@golevelup/nestjs-discovery": "^5.0.0",
+    "@kafkajs/confluent-schema-registry": "^3.9.0",
+    "@nestjs/common": "^11.1.6",
+    "@nestjs/core": "^11.1.6",
+    "kafkajs": "^2.2.4"
+  }
+}
