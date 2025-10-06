@@ -7,6 +7,7 @@ import { KafkaConsumer } from './implementations/kafka/kafka-consumer';
 import { KafkaProducer } from './implementations/kafka/kafka-producer';
 import { ProducerProxy } from './base/producer-proxy';
 import { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
+import { MessageHandlersDiscoveryService } from './services/message-handlers.discovery-service';
 
 const kafkaProvider: Provider<Kafka> = {
   provide: Kafka,
@@ -62,6 +63,7 @@ export class TransportConnectorModule {
         Logger,
         consumerProxyProvider,
         messageProducerProvider,
+        MessageHandlersDiscoveryService,
         {
           provide: 'TRANSPORT_CONFIG',
           useValue: options.clientOptions,
