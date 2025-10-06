@@ -76,6 +76,10 @@ export class TransportConnectorModule {
           provide: 'SCHEMA_REGISTRY_OPTIONS',
           useValue: options.schemaRegistry,
         },
+        {
+          provide: 'module_name',
+          useValue: options.moduleName,
+        },
         kafkaProvider,
       ],
       exports: [ConsumerProxy, ProducerProxy]

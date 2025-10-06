@@ -7,6 +7,7 @@ export type SchemaRegistryOptions = {
 export type TransportConnectorModuleOptions = {
   clientOptions: KafkaConfig;
   namespace?: string;
+  moduleName: string;
   schemaRegistry?: {
     url: string;
   };
