@@ -35,7 +35,7 @@ const consumerProxyProvider: Provider<ConsumerProxy> = {
   inject: [Kafka, 'SCHEMA_REGISTRY_OPTIONS', 'TRANSPORT_NAMESPACE'],
 };
 
-const messageProducerProvider: Provider<ProducerProxy> = {
+const producerProxyProvider: Provider<ProducerProxy> = {
   provide: ProducerProxy,
   useFactory: async (kafka: Kafka, namespace?: string) => {
     const producer = new KafkaProducer(kafka, namespace);
@@ -62,7 +62,7 @@ export class TransportConnectorModule {
       providers: [
         Logger,
         consumerProxyProvider,
-        messageProducerProvider,
+        producerProxyProvider,
         MessageHandlersDiscoveryService,
         {
           provide: 'TRANSPORT_CONFIG',
@@ -77,7 +77,8 @@ export class TransportConnectorModule {
           useValue: options.schemaRegistry,
         },
         kafkaProvider,
-      ]
+      ],
+      exports: [ConsumerProxy, ProducerProxy]
     };
   }
 }
