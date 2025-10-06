@@ -1,11 +1,12 @@
 import { DiscoveryModule } from '@golevelup/nestjs-discovery';
 import { DynamicModule, Logger, Module, Provider } from '@nestjs/common';
 import { Kafka, KafkaConfig } from 'kafkajs';
-import { TransportConnectorModuleOptions } from './types/transport-connector-module-options.type';
+import { SchemaRegistryOptions, TransportConnectorModuleOptions } from './types/transport-connector-module-options.type';
 import { ConsumerProxy } from './base/consumer-proxy';
 import { KafkaConsumer } from './implementations/kafka/kafka-consumer';
 import { KafkaProducer } from './implementations/kafka/kafka-producer';
 import { ProducerProxy } from './base/producer-proxy';
+import { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
 
 const kafkaProvider: Provider<Kafka> = {
   provide: Kafka,
@@ -19,10 +20,14 @@ const consumerProxyProvider: Provider<ConsumerProxy> = {
   provide: ConsumerProxy,
   useFactory: (
     kafka: Kafka,
+    schemaRegistryOptions: SchemaRegistryOptions,
     namespace?: string,
   ) => {
     return new KafkaConsumer(
       kafka,
+      new SchemaRegistry({
+        host: schemaRegistryOptions.url,
+      }),
       namespace,
     );
   },

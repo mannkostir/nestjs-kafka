@@ -8,6 +8,11 @@ import { ConsumerProxy } from '../../base/consumer-proxy';
 import { ConsumerSubscriptionParameters } from '../../types/consumer-subscription-parameters.type';
 import { MessageHandlerCallback } from '../../types/message-handler-callback.type';
 import { KafkaMessage } from './kafka-message';
+import { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
+import { MessageFormat } from '../../types/message-format.type';
+import { KafkaMessageParseStrategy } from './parse-strategies/kafka-message-parse.strategy';
+import { KafkaMessageJsonStrategy } from './parse-strategies/kafka-message-json.strategy';
+import { KafkaMessageAvroStrategy } from './parse-strategies/kafka-message-avro.strategy';
 
 export class KafkaConsumer<
   TMessage extends MessageType,
@@ -15,9 +20,19 @@ export class KafkaConsumer<
 
   constructor(
     private readonly kafka: Kafka,
+    private readonly schemaRegistry: SchemaRegistry,
     private readonly namespace?: string,
   ) {
     super();
+  }
+
+  private getParseStrategy<Payload extends Record<string, any>>(type: MessageFormat): KafkaMessageParseStrategy<Payload> {
+    switch (type) {
+      case MessageFormat.JSON:
+        return new KafkaMessageJsonStrategy<Payload>();
+      case MessageFormat.AVRO:
+        return new KafkaMessageAvroStrategy<Payload>(this.schemaRegistry);
+    }
   }
 
   public async subscribe(
@@ -48,11 +63,12 @@ export class KafkaConsumer<
       ),
     });
 
-    await this.run(consumer, cb);
+    await this.run(consumer, cb, subscription.messageFormat);
   }
 
   private handleBatchByMessage(
-    cb: MessageHandlerCallback<TMessage>
+    cb: MessageHandlerCallback<TMessage>,
+    messageFormat: MessageFormat
   ) {
     return async (payload: EachBatchPayload) => {
       for (const message of payload.batch.messages) {
@@ -62,7 +78,7 @@ export class KafkaConsumer<
 
         try {
           await cb(
-            (await KafkaMessage.fromJson(message)) as TMessage,
+            (await KafkaMessage.from(this.getParseStrategy<TMessage>(messageFormat), message)) as TMessage,
             payload.batch.topic,
           );
 
@@ -79,11 +95,13 @@ export class KafkaConsumer<
   private async run(
     consumer: Consumer,
     cb: MessageHandlerCallback<TMessage>,
+    messageFormat: MessageFormat
   ): Promise<void> {
     await consumer.run({
       eachBatchAutoResolve: false,
       eachBatch: this.handleBatchByMessage(
-        cb as MessageHandlerCallback<TMessage>
+        cb as MessageHandlerCallback<TMessage>,
+        messageFormat
       ),
     });
   }
