@@ -43,7 +43,8 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
       await this.consumerProxy.subscribe(
         {
           topicPatterns,
-          messageFormat: options.messageFormat
+          messageFormat: options.messageFormat,
+          messageErrorHandling: options.messageErrorHandling
         },
         method.bind(methodContext),
         options.groupId,

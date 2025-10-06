@@ -2,6 +2,7 @@ import {
   Consumer,
   EachBatchPayload,
   Kafka,
+  KafkaJSError,
 } from 'kafkajs';
 import { MessageType } from '../../types/message.type';
 import { ConsumerProxy } from '../../base/consumer-proxy';
@@ -13,6 +14,11 @@ import { MessageFormat } from '../../types/message-format.type';
 import { KafkaMessageParseStrategy } from './parse-strategies/kafka-message-parse.strategy';
 import { KafkaMessageJsonStrategy } from './parse-strategies/kafka-message-json.strategy';
 import { KafkaMessageAvroStrategy } from './parse-strategies/kafka-message-avro.strategy';
+import { MessageErrorHandling } from '../../types/message-error-handling.type';
+import { KafkaErrorHandleStrategy } from './error-handle-strategies/kafka-error-handle.strategy';
+import { KafkaErrorHandleDlqStrategy } from './error-handle-strategies/kafka-error-handle-dlq.strategy';
+import { KafkaErrorHandleIgnoreStrategy } from './error-handle-strategies/kafka-error-handle-ignore.strategy';
+import { KafkaErrorHandleFailStrategy } from './error-handle-strategies/kafka-error-handle-fail.strategy';
 
 export class KafkaConsumer<
   TMessage extends MessageType,
@@ -32,6 +38,22 @@ export class KafkaConsumer<
         return new KafkaMessageJsonStrategy<Payload>();
       case MessageFormat.AVRO:
         return new KafkaMessageAvroStrategy<Payload>(this.schemaRegistry);
+      default:
+        throw new Error(`Message parse strategy not found for type: ${type}`);
+    }
+  }
+
+  private getMessageErrorHandlingStrategy(type: MessageErrorHandling): KafkaErrorHandleStrategy {
+
+    switch (type) {
+      case MessageErrorHandling.FAIL:
+        return new KafkaErrorHandleFailStrategy();
+      case MessageErrorHandling.IGNORE:
+        return new KafkaErrorHandleIgnoreStrategy();
+      case MessageErrorHandling.DLQ:
+        return new KafkaErrorHandleDlqStrategy(this.kafka);
+      default:
+        throw new Error(`Message error handle strategy not found for type: ${type}`);
     }
   }
 
@@ -63,12 +85,13 @@ export class KafkaConsumer<
       ),
     });
 
-    await this.run(consumer, cb, subscription.messageFormat);
+    await this.run(consumer, cb, subscription.messageFormat, subscription.messageErrorHandling);
   }
 
   private handleBatchByMessage(
     cb: MessageHandlerCallback<TMessage>,
-    messageFormat: MessageFormat
+    messageFormat: MessageFormat,
+    messageErrorHandling: MessageErrorHandling
   ) {
     return async (payload: EachBatchPayload) => {
       for (const message of payload.batch.messages) {
@@ -86,7 +109,7 @@ export class KafkaConsumer<
 
           await payload.heartbeat();
         } catch (err) {
-          throw err;
+          await this.getMessageErrorHandlingStrategy(messageErrorHandling).handle(err as KafkaJSError, payload, message);
         }
       }
     };
@@ -95,13 +118,15 @@ export class KafkaConsumer<
   private async run(
     consumer: Consumer,
     cb: MessageHandlerCallback<TMessage>,
-    messageFormat: MessageFormat
+    messageFormat: MessageFormat,
+    messageErrorHandling: MessageErrorHandling
   ): Promise<void> {
     await consumer.run({
       eachBatchAutoResolve: false,
       eachBatch: this.handleBatchByMessage(
         cb as MessageHandlerCallback<TMessage>,
-        messageFormat
+        messageFormat,
+        messageErrorHandling
       ),
     });
   }
