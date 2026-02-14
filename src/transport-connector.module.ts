@@ -11,7 +11,7 @@ import { ConsumerProxy } from './base/consumer-proxy';
 import { KafkaConsumer } from './implementations/kafka/kafka-consumer';
 import { KafkaProducer } from './implementations/kafka/kafka-producer';
 import { ProducerProxy } from './base/producer-proxy';
-import { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
+import type { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
 import { MessageHandlersDiscoveryService } from './services/message-handlers.discovery-service';
 
 export const TRANSPORT_CONNECTOR_OPTIONS = 'TRANSPORT_CONNECTOR_OPTIONS';
@@ -28,16 +28,20 @@ const consumerProxyProvider: Provider<ConsumerProxy> = {
   provide: ConsumerProxy,
   useFactory: (
     kafka: Kafka,
-    schemaRegistryOptions: SchemaRegistryOptions,
+    schemaRegistryOptions: SchemaRegistryOptions | undefined,
     namespace?: string,
   ) => {
-    return new KafkaConsumer(
-      kafka,
-      new SchemaRegistry({
+    let schemaRegistry: SchemaRegistry | undefined;
+
+    if (schemaRegistryOptions) {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { SchemaRegistry } = require('@kafkajs/confluent-schema-registry');
+      schemaRegistry = new SchemaRegistry({
         host: schemaRegistryOptions.url,
-      }),
-      namespace,
-    );
+      });
+    }
+
+    return new KafkaConsumer(kafka, { schemaRegistry, namespace });
   },
   inject: [Kafka, 'SCHEMA_REGISTRY_OPTIONS', 'TRANSPORT_NAMESPACE'],
 };

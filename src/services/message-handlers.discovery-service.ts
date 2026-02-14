@@ -7,6 +7,7 @@ import {
   Message,
   MessageHandlerKey,
 } from '../decorators/message-handler.decorator';
+import { MessageFormat } from '../types/message-format.type';
 
 
 @Injectable()
@@ -43,7 +44,7 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
       await this.consumerProxy.subscribe(
         {
           topicPatterns,
-          messageFormat: options.messageFormat,
+          messageFormat: options.messageFormat ?? MessageFormat.JSON,
           errorHandling: options.errorHandling,
         },
         method.bind(methodContext),

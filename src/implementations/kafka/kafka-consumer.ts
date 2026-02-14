@@ -9,7 +9,7 @@ import { ConsumerProxy } from '../../base/consumer-proxy';
 import { ConsumerSubscriptionParameters } from '../../types/consumer-subscription-parameters.type';
 import { MessageHandlerCallback } from '../../types/message-handler-callback.type';
 import { KafkaMessage } from './kafka-message';
-import { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
+import type { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
 import { MessageFormat } from '../../types/message-format.type';
 import { MessageErrorHandlingConfig } from '../../types/message-error-handling.type';
 import { KafkaMessageParseStrategy } from './parse-strategies/kafka-message-parse.strategy';
@@ -20,16 +20,25 @@ import { KafkaErrorHandleDlqStrategy } from './error-handle-strategies/kafka-err
 import { KafkaErrorHandleIgnoreStrategy } from './error-handle-strategies/kafka-error-handle-ignore.strategy';
 import { KafkaErrorHandleFailStrategy } from './error-handle-strategies/kafka-error-handle-fail.strategy';
 
+export interface KafkaConsumerOptions {
+  namespace?: string;
+  schemaRegistry?: SchemaRegistry;
+}
+
 export class KafkaConsumer<
   TMessage extends MessageType,
 > extends ConsumerProxy<TMessage> {
 
+  private readonly schemaRegistry?: SchemaRegistry;
+  private readonly namespace?: string;
+
   constructor(
     private readonly kafka: Kafka,
-    private readonly schemaRegistry: SchemaRegistry,
-    private readonly namespace?: string,
+    options?: KafkaConsumerOptions,
   ) {
     super();
+    this.schemaRegistry = options?.schemaRegistry;
+    this.namespace = options?.namespace;
   }
 
   private getParseStrategy<Payload extends Record<string, any>>(type: MessageFormat): KafkaMessageParseStrategy<Payload> {
@@ -37,6 +46,13 @@ export class KafkaConsumer<
       case MessageFormat.JSON:
         return new KafkaMessageJsonStrategy<Payload>();
       case MessageFormat.AVRO:
+        if (!this.schemaRegistry) {
+          throw new Error(
+            'Avro message format requires a Schema Registry. ' +
+            'Provide "schemaRegistry" options in TransportConnectorModule configuration ' +
+            'and install @kafkajs/confluent-schema-registry.',
+          );
+        }
         return new KafkaMessageAvroStrategy<Payload>(this.schemaRegistry);
       default:
         throw new Error(`Message parse strategy not found for type: ${type}`);
