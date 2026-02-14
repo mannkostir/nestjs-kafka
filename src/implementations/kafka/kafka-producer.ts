@@ -1,4 +1,4 @@
-import { Kafka, Producer } from 'kafkajs';
+import { Kafka, Producer, RecordMetadata } from 'kafkajs';
 import { ProducerProxy } from '../../base/producer-proxy';
 import { MessageType } from '../../types/message.type';
 
@@ -24,18 +24,16 @@ export class KafkaProducer<
     topic: string,
     message: MessageType<TPayload>,
     key?: string,
-  ): Promise<void> {
-    this.producer
-      .send({
-        topic: this.namespace ? `${this.namespace}.${topic}` : topic,
-        messages: [
-          {
-            value: JSON.stringify(message.value),
-            headers: message.headers,
-            key: key,
-          },
-        ],
-      })
-      .catch(console.error);
+  ): Promise<RecordMetadata[]> {
+    return this.producer.send({
+      topic: this.namespace ? `${this.namespace}.${topic}` : topic,
+      messages: [
+        {
+          value: JSON.stringify(message.value),
+          headers: message.headers,
+          key: key,
+        },
+      ],
+    });
   }
 }

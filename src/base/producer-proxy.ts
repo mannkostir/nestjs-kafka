@@ -9,5 +9,5 @@ export abstract class ProducerProxy<
   public abstract send(
     messagePattern: string,
     message: MessageType<TPayload>,
-  ): Promise<void>;
+  ): Promise<unknown>;
 }
