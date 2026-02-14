@@ -3,6 +3,7 @@ import {
   EachBatchPayload,
   Kafka,
   KafkaJSError,
+  Producer,
 } from 'kafkajs';
 import { MessageType } from '../../types/message.type';
 import { ConsumerProxy } from '../../base/consumer-proxy';
@@ -23,6 +24,7 @@ import { KafkaErrorHandleFailStrategy } from './error-handle-strategies/kafka-er
 export interface KafkaConsumerOptions {
   namespace?: string;
   schemaRegistry?: SchemaRegistry;
+  producer?: Producer;
 }
 
 export class KafkaConsumer<
@@ -31,6 +33,8 @@ export class KafkaConsumer<
 
   private readonly schemaRegistry?: SchemaRegistry;
   private readonly namespace?: string;
+  private readonly producer?: Producer;
+  private readonly strategyCache = new Map<string, KafkaErrorHandleStrategy>();
 
   constructor(
     private readonly kafka: Kafka,
@@ -39,6 +43,7 @@ export class KafkaConsumer<
     super();
     this.schemaRegistry = options?.schemaRegistry;
     this.namespace = options?.namespace;
+    this.producer = options?.producer;
   }
 
   private getParseStrategy<Payload extends Record<string, any>>(type: MessageFormat): KafkaMessageParseStrategy<Payload> {
@@ -60,16 +65,37 @@ export class KafkaConsumer<
   }
 
   private buildErrorHandlingStrategy(config: MessageErrorHandlingConfig): KafkaErrorHandleStrategy {
+    const cacheKey = config.type === 'dlq' ? `dlq:${config.topic ?? ''}` : config.type;
+
+    const cached = this.strategyCache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    let strategy: KafkaErrorHandleStrategy;
+
     switch (config.type) {
       case 'fail':
-        return new KafkaErrorHandleFailStrategy();
+        strategy = new KafkaErrorHandleFailStrategy();
+        break;
       case 'ignore':
-        return new KafkaErrorHandleIgnoreStrategy();
+        strategy = new KafkaErrorHandleIgnoreStrategy();
+        break;
       case 'dlq':
-        return new KafkaErrorHandleDlqStrategy(this.kafka, config.topic);
+        if (!this.producer) {
+          throw new Error(
+            'DLQ error handling requires a producer. ' +
+            'Provide "producer" in KafkaConsumer options.',
+          );
+        }
+        strategy = new KafkaErrorHandleDlqStrategy(this.producer, config.topic);
+        break;
       default:
         throw new Error(`Message error handle strategy not found for type: ${(config as any).type}`);
     }
+
+    this.strategyCache.set(cacheKey, strategy);
+    return strategy;
   }
 
   public async subscribe(

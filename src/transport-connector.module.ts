@@ -28,6 +28,7 @@ const consumerProxyProvider: Provider<ConsumerProxy> = {
   provide: ConsumerProxy,
   useFactory: (
     kafka: Kafka,
+    producerProxy: KafkaProducer<any>,
     schemaRegistryOptions: SchemaRegistryOptions | undefined,
     namespace?: string,
   ) => {
@@ -41,9 +42,13 @@ const consumerProxyProvider: Provider<ConsumerProxy> = {
       });
     }
 
-    return new KafkaConsumer(kafka, { schemaRegistry, namespace });
+    return new KafkaConsumer(kafka, {
+      schemaRegistry,
+      namespace,
+      producer: producerProxy.producer,
+    });
   },
-  inject: [Kafka, 'SCHEMA_REGISTRY_OPTIONS', 'TRANSPORT_NAMESPACE'],
+  inject: [Kafka, ProducerProxy, 'SCHEMA_REGISTRY_OPTIONS', 'TRANSPORT_NAMESPACE'],
 };
 
 const producerProxyProvider: Provider<ProducerProxy> = {
