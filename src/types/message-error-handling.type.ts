@@ -1,5 +1,4 @@
-export enum MessageErrorHandling {
-    FAIL = 'fail',
-    IGNORE = 'ignore',
-    DLQ = 'dlq',
-}
+export type MessageErrorHandlingConfig =
+    | { type: 'fail' }
+    | { type: 'ignore' }
+    | { type: 'dlq'; topic?: string };

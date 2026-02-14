@@ -44,7 +44,7 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
         {
           topicPatterns,
           messageFormat: options.messageFormat,
-          messageErrorHandling: options.messageErrorHandling
+          errorHandling: options.errorHandling,
         },
         method.bind(methodContext),
         options.groupId,
