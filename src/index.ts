@@ -15,5 +15,7 @@ export { MessageErrorHandlingConfig } from "./types/message-error-handling.type"
 export { ConsumerSubscriptionParameters } from "./types/consumer-subscription-parameters.type";
 export {
   TransportConnectorModuleOptions,
+  TransportConnectorModuleAsyncOptions,
+  TransportConnectorModuleOptionsFactory,
   SchemaRegistryOptions,
 } from "./types/transport-connector-module-options.type";
