@@ -12,6 +12,7 @@ export { MessageType, MessageKey, MessageValue } from "./types/message.type";
 export { MessageOptions } from "./types/message-options.type";
 export { MessageFormat } from "./types/message-format.type";
 export { MessageErrorHandlingConfig } from "./types/message-error-handling.type";
+export { ConsumerConfig } from "./types/consumer-config.type";
 export { ConsumerSubscriptionParameters } from "./types/consumer-subscription-parameters.type";
 export {
   TransportConnectorModuleOptions,

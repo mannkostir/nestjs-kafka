@@ -7,6 +7,7 @@ import {
   TransportConnectorModuleAsyncOptions,
   TransportConnectorModuleOptionsFactory,
 } from './types/transport-connector-module-options.type';
+import { ConsumerConfig } from './types/consumer-config.type';
 import { ConsumerProxy } from './base/consumer-proxy';
 import { KafkaConsumer } from './implementations/kafka/kafka-consumer';
 import { KafkaProducer } from './implementations/kafka/kafka-producer';
@@ -31,6 +32,7 @@ const consumerProxyProvider: Provider<ConsumerProxy> = {
     producerProxy: KafkaProducer<any>,
     schemaRegistryOptions: SchemaRegistryOptions | undefined,
     namespace?: string,
+    consumerDefaults?: ConsumerConfig,
   ) => {
     let schemaRegistry: SchemaRegistry | undefined;
 
@@ -46,9 +48,10 @@ const consumerProxyProvider: Provider<ConsumerProxy> = {
       schemaRegistry,
       namespace,
       producer: producerProxy.producer,
+      consumerDefaults,
     });
   },
-  inject: [Kafka, ProducerProxy, 'SCHEMA_REGISTRY_OPTIONS', 'TRANSPORT_NAMESPACE'],
+  inject: [Kafka, ProducerProxy, 'SCHEMA_REGISTRY_OPTIONS', 'TRANSPORT_NAMESPACE', 'CONSUMER_DEFAULTS'],
 };
 
 const producerProxyProvider: Provider<ProducerProxy> = {
@@ -87,6 +90,11 @@ function createDerivedProviders(): Provider[] {
     {
       provide: 'module_name',
       useFactory: (opts: TransportConnectorModuleOptions) => opts.moduleName,
+      inject: [TRANSPORT_CONNECTOR_OPTIONS],
+    },
+    {
+      provide: 'CONSUMER_DEFAULTS',
+      useFactory: (opts: TransportConnectorModuleOptions) => opts.consumerDefaults,
       inject: [TRANSPORT_CONNECTOR_OPTIONS],
     },
   ];

@@ -21,11 +21,13 @@ import { KafkaErrorHandleStrategy } from './error-handle-strategies/kafka-error-
 import { KafkaErrorHandleDlqStrategy } from './error-handle-strategies/kafka-error-handle-dlq.strategy';
 import { KafkaErrorHandleIgnoreStrategy } from './error-handle-strategies/kafka-error-handle-ignore.strategy';
 import { KafkaErrorHandleFailStrategy } from './error-handle-strategies/kafka-error-handle-fail.strategy';
+import { ConsumerConfig } from '../../types/consumer-config.type';
 
 export interface KafkaConsumerOptions {
   namespace?: string;
   schemaRegistry?: SchemaRegistry;
   producer?: Producer;
+  consumerDefaults?: ConsumerConfig;
 }
 
 export class KafkaConsumer<
@@ -36,6 +38,7 @@ export class KafkaConsumer<
   private readonly schemaRegistry?: SchemaRegistry;
   private readonly namespace?: string;
   private readonly producer?: Producer;
+  private readonly consumerDefaults?: ConsumerConfig;
   private readonly strategyCache = new Map<string, KafkaErrorHandleStrategy>();
   private readonly consumers: Consumer[] = [];
 
@@ -47,6 +50,7 @@ export class KafkaConsumer<
     this.schemaRegistry = options?.schemaRegistry;
     this.namespace = options?.namespace;
     this.producer = options?.producer;
+    this.consumerDefaults = options?.consumerDefaults;
   }
 
   private getParseStrategy<Payload extends Record<string, any>>(type: MessageFormat): KafkaMessageParseStrategy<Payload> {
@@ -106,18 +110,27 @@ export class KafkaConsumer<
     cb: MessageHandlerCallback<TMessage>,
     consumerGroupId: string
   ): Promise<void> {
+    const defaults = this.consumerDefaults ?? {};
+    const overrides = subscription.consumer ?? {};
+
+    const effectiveRetry = {
+      maxRetryTime: 30000,
+      initialRetryTime: 300,
+      factor: 0.2,
+      multiplier: 2,
+      retries: 15,
+      restartOnFailure: async () => true,
+      ...defaults.retry,
+      ...overrides.retry,
+    };
+
     const consumer = this.kafka.consumer({
       groupId: [this.namespace, consumerGroupId].join('-'),
-      allowAutoTopicCreation: true,
-      heartbeatInterval: 30000,
-      retry: {
-        maxRetryTime: 30000,
-        initialRetryTime: 300,
-        factor: 0.2,
-        multiplier: 2,
-        retries: 15,
-        restartOnFailure: async () => true,
-      },
+      allowAutoTopicCreation: overrides.allowAutoTopicCreation ?? defaults.allowAutoTopicCreation ?? true,
+      heartbeatInterval: overrides.heartbeatInterval ?? defaults.heartbeatInterval ?? 30000,
+      sessionTimeout: overrides.sessionTimeout ?? defaults.sessionTimeout,
+      rebalanceTimeout: overrides.rebalanceTimeout ?? defaults.rebalanceTimeout,
+      retry: effectiveRetry,
     });
 
     this.consumers.push(consumer);
@@ -125,7 +138,7 @@ export class KafkaConsumer<
     await consumer.connect();
 
     await consumer.subscribe({
-      fromBeginning: false,
+      fromBeginning: overrides.fromBeginning ?? defaults.fromBeginning ?? false,
       topics: subscription.topicPatterns.filter(
         Boolean,
       ),

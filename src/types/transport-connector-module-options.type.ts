@@ -1,5 +1,6 @@
 import { ModuleMetadata, Type } from '@nestjs/common';
 import { KafkaConfig } from 'kafkajs';
+import { ConsumerConfig } from './consumer-config.type';
 
 export type SchemaRegistryOptions = {
   url: string;
@@ -12,6 +13,8 @@ export type TransportConnectorModuleOptions = {
   schemaRegistry?: {
     url: string;
   };
+  /** Default consumer config applied to all handlers unless overridden per-handler. */
+  consumerDefaults?: ConsumerConfig;
 };
 
 export interface TransportConnectorModuleOptionsFactory {
