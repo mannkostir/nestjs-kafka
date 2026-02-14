@@ -1,11 +1,15 @@
 import { Kafka, Producer, RecordMetadata } from 'kafkajs';
+import { Logger, OnModuleDestroy } from '@nestjs/common';
 import { ProducerProxy } from '../../base/producer-proxy';
 import { MessageType } from '../../types/message.type';
 
 export class KafkaProducer<
   TPayload extends Record<string, any>,
-> extends ProducerProxy<TPayload> {
+> extends ProducerProxy<TPayload> implements OnModuleDestroy {
+
+  private readonly logger = new Logger(KafkaProducer.name);
   producer: Producer;
+
   constructor(
     kafka: Kafka,
     private readonly namespace?: string,
@@ -35,5 +39,17 @@ export class KafkaProducer<
         },
       ],
     });
+  }
+
+  async onModuleDestroy(): Promise<void> {
+    this.logger.log('Disconnecting producer...');
+
+    try {
+      await this.producer.disconnect();
+    } catch (err) {
+      this.logger.error('Error disconnecting producer', err);
+    }
+
+    this.logger.log('Producer disconnected');
   }
 }

@@ -5,6 +5,7 @@ import {
   KafkaJSError,
   Producer,
 } from 'kafkajs';
+import { BeforeApplicationShutdown, Logger } from '@nestjs/common';
 import { MessageType } from '../../types/message.type';
 import { ConsumerProxy } from '../../base/consumer-proxy';
 import { ConsumerSubscriptionParameters } from '../../types/consumer-subscription-parameters.type';
@@ -29,12 +30,14 @@ export interface KafkaConsumerOptions {
 
 export class KafkaConsumer<
   TMessage extends MessageType,
-> extends ConsumerProxy<TMessage> {
+> extends ConsumerProxy<TMessage> implements BeforeApplicationShutdown {
 
+  private readonly logger = new Logger(KafkaConsumer.name);
   private readonly schemaRegistry?: SchemaRegistry;
   private readonly namespace?: string;
   private readonly producer?: Producer;
   private readonly strategyCache = new Map<string, KafkaErrorHandleStrategy>();
+  private readonly consumers: Consumer[] = [];
 
   constructor(
     private readonly kafka: Kafka,
@@ -117,6 +120,8 @@ export class KafkaConsumer<
       },
     });
 
+    this.consumers.push(consumer);
+
     await consumer.connect();
 
     await consumer.subscribe({
@@ -172,5 +177,21 @@ export class KafkaConsumer<
         errorStrategy,
       ),
     });
+  }
+
+  async beforeApplicationShutdown(): Promise<void> {
+    this.logger.log(`Disconnecting ${this.consumers.length} consumer(s)...`);
+
+    const results = await Promise.allSettled(
+      this.consumers.map((consumer) => consumer.disconnect()),
+    );
+
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        this.logger.error('Error disconnecting consumer', result.reason);
+      }
+    }
+
+    this.logger.log('All consumers disconnected');
   }
 }
