@@ -1,4 +1,4 @@
-export * from "./transport-connector.module";
+export { KafkaModule } from "./kafka.module";
 
 export {
   Message,
@@ -15,9 +15,9 @@ export { MessageErrorHandlingConfig } from "./types/message-error-handling.type"
 export { ConsumerConfig } from "./types/consumer-config.type";
 export { ConsumerSubscriptionParameters } from "./types/consumer-subscription-parameters.type";
 export {
-  TransportConnectorModuleOptions,
-  TransportConnectorModuleAsyncOptions,
-  TransportConnectorModuleOptionsFactory,
+  KafkaModuleOptions,
+  KafkaModuleAsyncOptions,
+  KafkaModuleOptionsFactory,
   SchemaRegistryOptions,
-} from "./types/transport-connector-module-options.type";
+} from "./types/kafka-module-options.type";
 export { ProducerSendOptions } from "./types/producer-send-options.type";

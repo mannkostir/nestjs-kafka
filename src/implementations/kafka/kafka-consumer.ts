@@ -65,7 +65,7 @@ export class KafkaConsumer<
         if (!this.schemaRegistry) {
           throw new Error(
             'Avro message format requires a Schema Registry. ' +
-            'Provide "schemaRegistry" options in TransportConnectorModule configuration ' +
+            'Provide "schemaRegistry" options in KafkaModule configuration ' +
             'and install @kafkajs/confluent-schema-registry.',
           );
         }

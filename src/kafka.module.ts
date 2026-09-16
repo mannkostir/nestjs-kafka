@@ -3,10 +3,10 @@ import { DynamicModule, Logger, Module, Provider } from '@nestjs/common';
 import { Kafka, KafkaConfig, Producer } from 'kafkajs';
 import {
   SchemaRegistryOptions,
-  TransportConnectorModuleOptions,
-  TransportConnectorModuleAsyncOptions,
-  TransportConnectorModuleOptionsFactory,
-} from './types/transport-connector-module-options.type';
+  KafkaModuleOptions,
+  KafkaModuleAsyncOptions,
+  KafkaModuleOptionsFactory,
+} from './types/kafka-module-options.type';
 import { ConsumerConfig } from './types/consumer-config.type';
 import { ConsumerProxy } from './base/consumer-proxy';
 import { KafkaConsumer } from './implementations/kafka/kafka-consumer';
@@ -16,7 +16,7 @@ import { TopicNamespacer } from './implementations/kafka/topic-namespacer';
 import type { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
 import { MessageHandlersDiscoveryService } from './services/message-handlers.discovery-service';
 import {
-  TRANSPORT_CONNECTOR_OPTIONS,
+  KAFKA_MODULE_OPTIONS,
   TRANSPORT_CONFIG,
   TRANSPORT_NAMESPACE,
   SCHEMA_REGISTRY_OPTIONS,
@@ -95,44 +95,44 @@ function createDerivedProviders(): Provider[] {
   return [
     {
       provide: TRANSPORT_CONFIG,
-      useFactory: (opts: TransportConnectorModuleOptions) => opts.clientOptions,
-      inject: [TRANSPORT_CONNECTOR_OPTIONS],
+      useFactory: (opts: KafkaModuleOptions) => opts.clientOptions,
+      inject: [KAFKA_MODULE_OPTIONS],
     },
     {
       provide: TRANSPORT_NAMESPACE,
-      useFactory: (opts: TransportConnectorModuleOptions) => opts.namespace,
-      inject: [TRANSPORT_CONNECTOR_OPTIONS],
+      useFactory: (opts: KafkaModuleOptions) => opts.namespace,
+      inject: [KAFKA_MODULE_OPTIONS],
     },
     {
       provide: SCHEMA_REGISTRY_OPTIONS,
-      useFactory: (opts: TransportConnectorModuleOptions) => opts.schemaRegistry,
-      inject: [TRANSPORT_CONNECTOR_OPTIONS],
+      useFactory: (opts: KafkaModuleOptions) => opts.schemaRegistry,
+      inject: [KAFKA_MODULE_OPTIONS],
     },
     {
       provide: CONNECTOR_NAME,
-      useFactory: (opts: TransportConnectorModuleOptions) => opts.connectorName,
-      inject: [TRANSPORT_CONNECTOR_OPTIONS],
+      useFactory: (opts: KafkaModuleOptions) => opts.connectorName,
+      inject: [KAFKA_MODULE_OPTIONS],
     },
     {
       provide: CONSUMER_DEFAULTS,
-      useFactory: (opts: TransportConnectorModuleOptions) => opts.consumerDefaults,
-      inject: [TRANSPORT_CONNECTOR_OPTIONS],
+      useFactory: (opts: KafkaModuleOptions) => opts.consumerDefaults,
+      inject: [KAFKA_MODULE_OPTIONS],
     },
   ];
 }
 
 @Module({})
-export class TransportConnectorModule {
+export class KafkaModule {
   public static register(
-    options: TransportConnectorModuleOptions,
+    options: KafkaModuleOptions,
   ): DynamicModule {
     return {
-      module: TransportConnectorModule,
+      module: KafkaModule,
       imports: [DiscoveryModule],
       providers: [
         Logger,
         {
-          provide: TRANSPORT_CONNECTOR_OPTIONS,
+          provide: KAFKA_MODULE_OPTIONS,
           useValue: options,
         },
         ...createDerivedProviders(),
@@ -148,10 +148,10 @@ export class TransportConnectorModule {
   }
 
   public static registerAsync(
-    asyncOptions: TransportConnectorModuleAsyncOptions,
+    asyncOptions: KafkaModuleAsyncOptions,
   ): DynamicModule {
     return {
-      module: TransportConnectorModule,
+      module: KafkaModule,
       imports: [...(asyncOptions.imports || []), DiscoveryModule],
       providers: [
         Logger,
@@ -169,12 +169,12 @@ export class TransportConnectorModule {
   }
 
   private static createAsyncOptionsProviders(
-    asyncOptions: TransportConnectorModuleAsyncOptions,
+    asyncOptions: KafkaModuleAsyncOptions,
   ): Provider[] {
     if (asyncOptions.useFactory) {
       return [
         {
-          provide: TRANSPORT_CONNECTOR_OPTIONS,
+          provide: KAFKA_MODULE_OPTIONS,
           useFactory: asyncOptions.useFactory,
           inject: asyncOptions.inject || [],
         },
@@ -188,9 +188,9 @@ export class TransportConnectorModule {
           useClass: asyncOptions.useClass,
         },
         {
-          provide: TRANSPORT_CONNECTOR_OPTIONS,
-          useFactory: (factory: TransportConnectorModuleOptionsFactory) =>
-            factory.createTransportConnectorOptions(),
+          provide: KAFKA_MODULE_OPTIONS,
+          useFactory: (factory: KafkaModuleOptionsFactory) =>
+            factory.createKafkaOptions(),
           inject: [asyncOptions.useClass],
         },
       ];
@@ -199,16 +199,16 @@ export class TransportConnectorModule {
     if (asyncOptions.useExisting) {
       return [
         {
-          provide: TRANSPORT_CONNECTOR_OPTIONS,
-          useFactory: (factory: TransportConnectorModuleOptionsFactory) =>
-            factory.createTransportConnectorOptions(),
+          provide: KAFKA_MODULE_OPTIONS,
+          useFactory: (factory: KafkaModuleOptionsFactory) =>
+            factory.createKafkaOptions(),
           inject: [asyncOptions.useExisting],
         },
       ];
     }
 
     throw new Error(
-      'One of useFactory, useClass, or useExisting must be provided in TransportConnectorModuleAsyncOptions',
+      'One of useFactory, useClass, or useExisting must be provided in KafkaModuleAsyncOptions',
     );
   }
 }
