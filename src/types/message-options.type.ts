@@ -8,4 +8,5 @@ export type MessageOptions = {
     errorHandling: MessageErrorHandlingConfig;
     consumer?: ConsumerConfig;
     namespaced?: boolean;
+    connectorName?: string;
   };

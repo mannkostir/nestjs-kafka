@@ -21,7 +21,7 @@ import {
   TRANSPORT_NAMESPACE,
   SCHEMA_REGISTRY_OPTIONS,
   CONSUMER_DEFAULTS,
-  MODULE_NAME,
+  CONNECTOR_NAME,
   KAFKA_PRODUCER,
 } from './tokens';
 
@@ -109,8 +109,8 @@ function createDerivedProviders(): Provider[] {
       inject: [TRANSPORT_CONNECTOR_OPTIONS],
     },
     {
-      provide: MODULE_NAME,
-      useFactory: (opts: TransportConnectorModuleOptions) => opts.moduleName,
+      provide: CONNECTOR_NAME,
+      useFactory: (opts: TransportConnectorModuleOptions) => opts.connectorName,
       inject: [TRANSPORT_CONNECTOR_OPTIONS],
     },
     {

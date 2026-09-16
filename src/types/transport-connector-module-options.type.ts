@@ -9,11 +9,10 @@ export type SchemaRegistryOptions = {
 export type TransportConnectorModuleOptions = {
   clientOptions: KafkaConfig;
   namespace?: string;
-  moduleName: string;
+  connectorName?: string;
   schemaRegistry?: {
     url: string;
   };
-  /** Default consumer config applied to all handlers unless overridden per-handler. */
   consumerDefaults?: ConsumerConfig;
 };
 
