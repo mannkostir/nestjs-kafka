@@ -48,6 +48,7 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
           messageFormat: options.messageFormat ?? MessageFormat.JSON,
           errorHandling: options.errorHandling,
           consumer: options.consumer,
+          namespaced: options.namespaced,
         },
         method.bind(methodContext),
         options.groupId,

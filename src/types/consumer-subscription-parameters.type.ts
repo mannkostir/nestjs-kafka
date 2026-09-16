@@ -7,4 +7,5 @@ export type ConsumerSubscriptionParameters = {
     messageFormat: MessageFormat;
     errorHandling: MessageErrorHandlingConfig;
     consumer?: ConsumerConfig;
+    namespaced?: boolean;
   };

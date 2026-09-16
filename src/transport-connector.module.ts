@@ -48,8 +48,9 @@ const consumerProxyProvider: Provider<ConsumerProxy> = {
     kafka: Kafka,
     producer: Producer,
     schemaRegistryOptions: SchemaRegistryOptions | undefined,
-    namespace?: string,
-    consumerDefaults?: ConsumerConfig,
+    namespace: string | undefined,
+    consumerDefaults: ConsumerConfig | undefined,
+    namespacer: TopicNamespacer,
   ) => {
     let schemaRegistry: SchemaRegistry | undefined;
 
@@ -66,9 +67,10 @@ const consumerProxyProvider: Provider<ConsumerProxy> = {
       namespace,
       producer,
       consumerDefaults,
+      namespacer,
     });
   },
-  inject: [Kafka, KAFKA_PRODUCER, SCHEMA_REGISTRY_OPTIONS, TRANSPORT_NAMESPACE, CONSUMER_DEFAULTS],
+  inject: [Kafka, KAFKA_PRODUCER, SCHEMA_REGISTRY_OPTIONS, TRANSPORT_NAMESPACE, CONSUMER_DEFAULTS, TopicNamespacer],
 };
 
 const topicNamespacerProvider: Provider<TopicNamespacer> = {

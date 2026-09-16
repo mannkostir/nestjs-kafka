@@ -22,12 +22,14 @@ import { KafkaErrorHandleDlqStrategy } from './error-handle-strategies/kafka-err
 import { KafkaErrorHandleIgnoreStrategy } from './error-handle-strategies/kafka-error-handle-ignore.strategy';
 import { KafkaErrorHandleFailStrategy } from './error-handle-strategies/kafka-error-handle-fail.strategy';
 import { ConsumerConfig } from '../../types/consumer-config.type';
+import { TopicNamespacer } from './topic-namespacer';
 
 export interface KafkaConsumerOptions {
   namespace?: string;
   schemaRegistry?: SchemaRegistry;
   producer?: Producer;
   consumerDefaults?: ConsumerConfig;
+  namespacer?: TopicNamespacer;
 }
 
 export class KafkaConsumer<
@@ -39,6 +41,7 @@ export class KafkaConsumer<
   private readonly namespace?: string;
   private readonly producer?: Producer;
   private readonly consumerDefaults?: ConsumerConfig;
+  private readonly namespacer: TopicNamespacer;
   private readonly strategyCache = new Map<string, KafkaErrorHandleStrategy>();
   private readonly consumers: Consumer[] = [];
 
@@ -51,6 +54,7 @@ export class KafkaConsumer<
     this.namespace = options?.namespace;
     this.producer = options?.producer;
     this.consumerDefaults = options?.consumerDefaults;
+    this.namespacer = options?.namespacer ?? new TopicNamespacer();
   }
 
   private getParseStrategy<Payload extends Record<string, any>>(type: MessageFormat): KafkaMessageParseStrategy<Payload> {
@@ -71,8 +75,18 @@ export class KafkaConsumer<
     }
   }
 
-  private buildErrorHandlingStrategy(config: MessageErrorHandlingConfig): KafkaErrorHandleStrategy {
-    const cacheKey = config.type === 'dlq' ? `dlq:${config.topic ?? ''}` : config.type;
+  private buildErrorHandlingStrategy(
+    config: MessageErrorHandlingConfig,
+    namespaced: boolean,
+  ): KafkaErrorHandleStrategy {
+    const dlqTopic =
+      config.type === 'dlq' && config.topic && namespaced
+        ? this.namespacer.apply(config.topic)
+        : config.type === 'dlq'
+          ? config.topic
+          : undefined;
+
+    const cacheKey = config.type === 'dlq' ? `dlq:${dlqTopic ?? ''}` : config.type;
 
     const cached = this.strategyCache.get(cacheKey);
     if (cached) {
@@ -95,7 +109,7 @@ export class KafkaConsumer<
             'Provide "producer" in KafkaConsumer options.',
           );
         }
-        strategy = new KafkaErrorHandleDlqStrategy(this.producer, config.topic);
+        strategy = new KafkaErrorHandleDlqStrategy(this.producer, dlqTopic);
         break;
       default:
         throw new Error(`Message error handle strategy not found for type: ${(config as any).type}`);
@@ -137,14 +151,21 @@ export class KafkaConsumer<
 
     await consumer.connect();
 
+    const namespaced = subscription.namespaced ?? true;
+
     await consumer.subscribe({
       fromBeginning: overrides.fromBeginning ?? defaults.fromBeginning ?? false,
-      topics: subscription.topicPatterns.filter(
-        Boolean,
-      ),
+      topics: subscription.topicPatterns
+        .filter(Boolean)
+        .map((pattern) =>
+          namespaced ? this.namespacer.applyPattern(pattern) : pattern,
+        ),
     });
 
-    const errorStrategy = this.buildErrorHandlingStrategy(subscription.errorHandling);
+    const errorStrategy = this.buildErrorHandlingStrategy(
+      subscription.errorHandling,
+      namespaced,
+    );
 
     await this.run(consumer, cb, subscription.messageFormat, errorStrategy);
   }

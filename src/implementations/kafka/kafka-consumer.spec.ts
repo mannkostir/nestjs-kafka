@@ -1,5 +1,6 @@
-import { Kafka } from 'kafkajs';
+import { Kafka, Producer } from 'kafkajs';
 import { KafkaConsumer } from './kafka-consumer';
+import { TopicNamespacer } from './topic-namespacer';
 import { MessageFormat } from '../../types/message-format.type';
 
 const consumerStub = () => ({
@@ -125,5 +126,86 @@ describe('KafkaConsumer configuration precedence', () => {
     expect(config.retry.retries).toBe(2);
     expect(config.retry.initialRetryTime).toBe(100);
     expect(config.retry.maxRetryTime).toBe(30000);
+  });
+});
+
+describe('KafkaConsumer topic namespacing', () => {
+  it('subscribes to the namespaced topic', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+
+    await new KafkaConsumer(kafka, {
+      namespace: 'dev',
+      namespacer: new TopicNamespacer('dev'),
+    }).subscribe(subscription(), jest.fn(), 'orders-service');
+
+    expect(consumer.subscribe).toHaveBeenCalledWith(
+      expect.objectContaining({ topics: ['dev.orders.created'] }),
+    );
+  });
+
+  it('subscribes to the raw topic when the handler opts out', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+
+    await new KafkaConsumer(kafka, {
+      namespace: 'dev',
+      namespacer: new TopicNamespacer('dev'),
+    }).subscribe(
+      { ...subscription(), namespaced: false },
+      jest.fn(),
+      'orders-service',
+    );
+
+    expect(consumer.subscribe).toHaveBeenCalledWith(
+      expect.objectContaining({ topics: ['orders.created'] }),
+    );
+  });
+
+  it('namespaces a pattern subscription', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+
+    await new KafkaConsumer(kafka, {
+      namespace: 'dev',
+      namespacer: new TopicNamespacer('dev'),
+    }).subscribe(
+      { ...subscription(), topicPatterns: [/^orders\..*/] },
+      jest.fn(),
+      'orders-service',
+    );
+
+    const topics = (consumer.subscribe as jest.Mock).mock.calls[0][0].topics;
+
+    expect((topics[0] as RegExp).source).toBe('^dev\\.(?:orders\\..*)');
+  });
+
+  it('namespaces an explicitly configured dead letter topic', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+    const producer = {
+      send: jest.fn().mockResolvedValue([]),
+    } as unknown as Producer;
+
+    const subject = new KafkaConsumer(kafka, {
+      namespace: 'dev',
+      namespacer: new TopicNamespacer('dev'),
+      producer,
+    });
+
+    await subject.subscribe(
+      {
+        ...subscription(),
+        errorHandling: { type: 'dlq', topic: 'parking.lot' },
+      },
+      jest.fn(),
+      'orders-service',
+    );
+
+    const strategy = (subject as unknown as {
+      strategyCache: Map<string, { handle: Function }>;
+    }).strategyCache.get('dlq:dev.parking.lot');
+
+    expect(strategy).toBeDefined();
   });
 });
