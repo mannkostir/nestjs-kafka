@@ -153,4 +153,22 @@ describe('MessageHandlersDiscoveryService', () => {
       'HANDLE_MESSAGE',
     );
   });
+
+  it('does not subscribe an unnamed handler when a connector name is configured', async () => {
+    const consumer = consumerStub();
+    const discovery = discoveryStub([
+      handler([
+        ['orders.created'],
+        { groupId: 'orders-service', errorHandling: { type: 'fail' } },
+      ]),
+    ]);
+
+    await new MessageHandlersDiscoveryService(
+      consumer,
+      discovery,
+      'primary',
+    ).onApplicationBootstrap();
+
+    expect(consumer.subscribe).not.toHaveBeenCalled();
+  });
 });
