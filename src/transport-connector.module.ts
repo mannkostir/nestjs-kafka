@@ -12,6 +12,7 @@ import { ConsumerProxy } from './base/consumer-proxy';
 import { KafkaConsumer } from './implementations/kafka/kafka-consumer';
 import { KafkaProducer } from './implementations/kafka/kafka-producer';
 import { ProducerProxy } from './base/producer-proxy';
+import { TopicNamespacer } from './implementations/kafka/topic-namespacer';
 import type { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
 import { MessageHandlersDiscoveryService } from './services/message-handlers.discovery-service';
 import {
@@ -70,16 +71,22 @@ const consumerProxyProvider: Provider<ConsumerProxy> = {
   inject: [Kafka, KAFKA_PRODUCER, SCHEMA_REGISTRY_OPTIONS, TRANSPORT_NAMESPACE, CONSUMER_DEFAULTS],
 };
 
+const topicNamespacerProvider: Provider<TopicNamespacer> = {
+  provide: TopicNamespacer,
+  useFactory: (namespace?: string) => new TopicNamespacer(namespace),
+  inject: [TRANSPORT_NAMESPACE],
+};
+
 const producerProxyProvider: Provider<ProducerProxy> = {
   provide: ProducerProxy,
-  useFactory: async (producer: Producer, namespace?: string) => {
-    const proxy = new KafkaProducer(producer, namespace);
+  useFactory: async (producer: Producer, namespacer: TopicNamespacer) => {
+    const proxy = new KafkaProducer(producer, namespacer);
 
     await proxy.connect();
 
     return proxy;
   },
-  inject: [KAFKA_PRODUCER, TRANSPORT_NAMESPACE],
+  inject: [KAFKA_PRODUCER, TopicNamespacer],
 };
 
 function createDerivedProviders(): Provider[] {
@@ -130,6 +137,7 @@ export class TransportConnectorModule {
         kafkaProvider,
         kafkaProducerProvider,
         consumerProxyProvider,
+        topicNamespacerProvider,
         producerProxyProvider,
         MessageHandlersDiscoveryService,
       ],
@@ -150,6 +158,7 @@ export class TransportConnectorModule {
         kafkaProvider,
         kafkaProducerProvider,
         consumerProxyProvider,
+        topicNamespacerProvider,
         producerProxyProvider,
         MessageHandlersDiscoveryService,
       ],

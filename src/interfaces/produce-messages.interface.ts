@@ -1,5 +1,10 @@
 import { MessageType } from '../types/message.type';
+import { ProducerSendOptions } from '../types/producer-send-options.type';
 
 export interface IProduceMessages<TMessage extends MessageType = MessageType> {
-  send(messagePattern: string, message: TMessage): Promise<unknown>;
+  send(
+    topic: string,
+    message: TMessage,
+    options?: ProducerSendOptions,
+  ): Promise<unknown>;
 }

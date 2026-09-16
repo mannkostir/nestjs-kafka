@@ -2,6 +2,8 @@ import { Producer, RecordMetadata } from 'kafkajs';
 import { Logger, OnModuleDestroy } from '@nestjs/common';
 import { ProducerProxy } from '../../base/producer-proxy';
 import { MessageType } from '../../types/message.type';
+import { ProducerSendOptions } from '../../types/producer-send-options.type';
+import { TopicNamespacer } from './topic-namespacer';
 
 export class KafkaProducer<
   TPayload extends Record<string, any>,
@@ -11,7 +13,7 @@ export class KafkaProducer<
 
   constructor(
     private readonly producer: Producer,
-    private readonly namespace?: string,
+    private readonly namespacer: TopicNamespacer,
   ) {
     super();
   }
@@ -23,15 +25,17 @@ export class KafkaProducer<
   public async send(
     topic: string,
     message: MessageType<TPayload>,
-    key?: string,
+    options?: ProducerSendOptions,
   ): Promise<RecordMetadata[]> {
+    const namespaced = options?.namespaced ?? true;
+
     return this.producer.send({
-      topic: this.namespace ? `${this.namespace}.${topic}` : topic,
+      topic: namespaced ? this.namespacer.apply(topic) : topic,
       messages: [
         {
           value: JSON.stringify(message.value),
           headers: message.headers,
-          key: key,
+          key: options?.key,
         },
       ],
     });

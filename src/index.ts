@@ -20,3 +20,4 @@ export {
   TransportConnectorModuleOptionsFactory,
   SchemaRegistryOptions,
 } from "./types/transport-connector-module-options.type";
+export { ProducerSendOptions } from "./types/producer-send-options.type";

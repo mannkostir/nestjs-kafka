@@ -1,5 +1,6 @@
 import { IProduceMessages } from "../interfaces/produce-messages.interface";
 import { MessageType } from "../types/message.type";
+import { ProducerSendOptions } from "../types/producer-send-options.type";
 
 
 export abstract class ProducerProxy<
@@ -7,7 +8,8 @@ export abstract class ProducerProxy<
 > implements IProduceMessages<MessageType<TPayload>>
 {
   public abstract send(
-    messagePattern: string,
+    topic: string,
     message: MessageType<TPayload>,
+    options?: ProducerSendOptions,
   ): Promise<unknown>;
 }
