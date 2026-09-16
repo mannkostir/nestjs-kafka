@@ -1,6 +1,6 @@
 import { DiscoveryModule } from '@golevelup/nestjs-discovery';
 import { DynamicModule, Logger, Module, Provider } from '@nestjs/common';
-import { Kafka, KafkaConfig } from 'kafkajs';
+import { Kafka, KafkaConfig, Producer } from 'kafkajs';
 import {
   SchemaRegistryOptions,
   TransportConnectorModuleOptions,
@@ -21,6 +21,7 @@ import {
   SCHEMA_REGISTRY_OPTIONS,
   CONSUMER_DEFAULTS,
   MODULE_NAME,
+  KAFKA_PRODUCER,
 } from './tokens';
 
 const kafkaProvider: Provider<Kafka> = {
@@ -31,11 +32,20 @@ const kafkaProvider: Provider<Kafka> = {
   inject: [TRANSPORT_CONFIG],
 };
 
+const kafkaProducerProvider: Provider<Producer> = {
+  provide: KAFKA_PRODUCER,
+  useFactory: (kafka: Kafka) =>
+    kafka.producer({
+      allowAutoTopicCreation: true,
+    }),
+  inject: [Kafka],
+};
+
 const consumerProxyProvider: Provider<ConsumerProxy> = {
   provide: ConsumerProxy,
   useFactory: (
     kafka: Kafka,
-    producerProxy: KafkaProducer<any>,
+    producer: Producer,
     schemaRegistryOptions: SchemaRegistryOptions | undefined,
     namespace?: string,
     consumerDefaults?: ConsumerConfig,
@@ -53,27 +63,23 @@ const consumerProxyProvider: Provider<ConsumerProxy> = {
     return new KafkaConsumer(kafka, {
       schemaRegistry,
       namespace,
-      producer: producerProxy.producer,
+      producer,
       consumerDefaults,
     });
   },
-  inject: [Kafka, ProducerProxy, SCHEMA_REGISTRY_OPTIONS, TRANSPORT_NAMESPACE, CONSUMER_DEFAULTS],
+  inject: [Kafka, KAFKA_PRODUCER, SCHEMA_REGISTRY_OPTIONS, TRANSPORT_NAMESPACE, CONSUMER_DEFAULTS],
 };
 
 const producerProxyProvider: Provider<ProducerProxy> = {
   provide: ProducerProxy,
-  useFactory: async (kafka: Kafka, namespace?: string) => {
-    const producer = new KafkaProducer(kafka, namespace);
+  useFactory: async (producer: Producer, namespace?: string) => {
+    const proxy = new KafkaProducer(producer, namespace);
 
-    try {
-      await producer.connect();
-    } catch (err) {
-      throw err;
-    }
+    await proxy.connect();
 
-    return producer;
+    return proxy;
   },
-  inject: [Kafka, TRANSPORT_NAMESPACE],
+  inject: [KAFKA_PRODUCER, TRANSPORT_NAMESPACE],
 };
 
 function createDerivedProviders(): Provider[] {
@@ -122,6 +128,7 @@ export class TransportConnectorModule {
         },
         ...createDerivedProviders(),
         kafkaProvider,
+        kafkaProducerProvider,
         consumerProxyProvider,
         producerProxyProvider,
         MessageHandlersDiscoveryService,
@@ -141,6 +148,7 @@ export class TransportConnectorModule {
         ...this.createAsyncOptionsProviders(asyncOptions),
         ...createDerivedProviders(),
         kafkaProvider,
+        kafkaProducerProvider,
         consumerProxyProvider,
         producerProxyProvider,
         MessageHandlersDiscoveryService,

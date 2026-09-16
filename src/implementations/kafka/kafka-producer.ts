@@ -1,4 +1,4 @@
-import { Kafka, Producer, RecordMetadata } from 'kafkajs';
+import { Producer, RecordMetadata } from 'kafkajs';
 import { Logger, OnModuleDestroy } from '@nestjs/common';
 import { ProducerProxy } from '../../base/producer-proxy';
 import { MessageType } from '../../types/message.type';
@@ -8,16 +8,12 @@ export class KafkaProducer<
 > extends ProducerProxy<TPayload> implements OnModuleDestroy {
 
   private readonly logger = new Logger(KafkaProducer.name);
-  producer: Producer;
 
   constructor(
-    kafka: Kafka,
+    private readonly producer: Producer,
     private readonly namespace?: string,
   ) {
     super();
-    this.producer = kafka.producer({
-      allowAutoTopicCreation: true,
-    });
   }
 
   public async connect(): Promise<void> {
