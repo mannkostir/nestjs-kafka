@@ -160,6 +160,29 @@ While `'module_name'` is being removed, the remaining bare string tokens are rep
 `SCHEMA_REGISTRY_OPTIONS`, `CONSUMER_DEFAULTS`, `KAFKA_PRODUCER`. They are internal to the package
 and are not added to `index.ts`.
 
+### D8 — Malformed JSON raises instead of silently parsing to null
+
+`KafkaMessageJsonStrategy.parse` catches a `JSON.parse` failure and assigns `null`, so a poison
+record reaches the handler as `value: null` and the configured error policy never sees it. In a
+package whose headline feature is per-handler failure routing, that is the one path that must not
+swallow. The strategy throws a descriptive error naming the topic-level symptom, which puts poison
+records on the DLQ where a `dlq` policy is configured.
+
+This is behavioural and belongs to 0.1.0 rather than after it, because adopters would otherwise build
+handlers around a `null` value they can no longer receive.
+
+### D9 — Message keys decode leniently
+
+Both parse strategies run `JSON.parse` over the raw key bytes, while the producer writes
+`options.key` through as a plain string. Producing with `key: 'order-1'` and consuming it therefore
+raises `SyntaxError: Unexpected token o`, which under a `dlq` policy sends every keyed message to the
+dead-letter topic. The produce-and-consume round trip is broken for any key that is not itself valid
+JSON.
+
+Keys decode leniently: the raw bytes are read as UTF-8, parsed as JSON when that succeeds, and
+otherwise exposed as the string. Kafka keys are untyped bytes, so both branches yield a usable key
+and no data is lost. Value parsing keeps failing loudly (D8); the leniency is confined to keys.
+
 ### D7 — Incidental corrections in files already being edited
 
 - `MessageHandlersDiscoveryService` uses `console.error`; it switches to the injected Nest `Logger`.
@@ -183,6 +206,9 @@ ever installed the package. None may be deferred past 0.1.0.
 - Consumer group ids lose their leading separator for applications without a namespace (D1).
 - Namespaced applications begin consuming namespaced topics (D2), which is the correction of a
   defect but changes which topics an existing configuration subscribes to.
+- A malformed JSON record raises and is routed to the error policy instead of reaching the handler
+  as `value: null` (D8).
+- A non-JSON message key decodes to a string instead of raising (D9).
 
 ## Testing strategy
 
@@ -197,8 +223,9 @@ Unit coverage, written test-first per task:
   pattern, unanchored pattern, top-level alternation, regex-special characters in the namespace,
   flag preservation, capture-group numbering preserved.
 - Group id composition with and without a namespace.
-- Parse strategies: JSON success, JSON malformed input raising a descriptive error, Avro without a
-  configured registry raising the configuration error.
+- Parse strategies: JSON success, JSON malformed input raising a descriptive error, a JSON-encoded
+  key, a plain-string key, an absent key, and Avro without a configured registry raising the
+  configuration error.
 - Error strategies: `fail` propagating, `ignore` resolving the offset, `dlq` publishing to the
   derived topic with each documented header present.
 - `subscribe()` configuration precedence: per-handler over module defaults over built-in default,
