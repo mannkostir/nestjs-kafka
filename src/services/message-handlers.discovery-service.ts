@@ -8,6 +8,7 @@ import {
   MessageHandlerKey,
 } from '../decorators/message-handler.decorator';
 import { MessageFormat } from '../types/message-format.type';
+import { MODULE_NAME } from '../tokens';
 
 
 @Injectable()
@@ -15,7 +16,7 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
   constructor(
     private readonly consumerProxy: ConsumerProxy,
     private readonly discoveryService: DiscoveryService,
-    @Inject('module_name') private readonly moduleName: string,
+    @Inject(MODULE_NAME) private readonly moduleName: string,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {

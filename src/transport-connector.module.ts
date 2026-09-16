@@ -14,15 +14,21 @@ import { KafkaProducer } from './implementations/kafka/kafka-producer';
 import { ProducerProxy } from './base/producer-proxy';
 import type { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
 import { MessageHandlersDiscoveryService } from './services/message-handlers.discovery-service';
-
-export const TRANSPORT_CONNECTOR_OPTIONS = 'TRANSPORT_CONNECTOR_OPTIONS';
+import {
+  TRANSPORT_CONNECTOR_OPTIONS,
+  TRANSPORT_CONFIG,
+  TRANSPORT_NAMESPACE,
+  SCHEMA_REGISTRY_OPTIONS,
+  CONSUMER_DEFAULTS,
+  MODULE_NAME,
+} from './tokens';
 
 const kafkaProvider: Provider<Kafka> = {
   provide: Kafka,
   useFactory: (options: KafkaConfig) => {
     return new Kafka(options);
   },
-  inject: ['TRANSPORT_CONFIG'],
+  inject: [TRANSPORT_CONFIG],
 };
 
 const consumerProxyProvider: Provider<ConsumerProxy> = {
@@ -51,7 +57,7 @@ const consumerProxyProvider: Provider<ConsumerProxy> = {
       consumerDefaults,
     });
   },
-  inject: [Kafka, ProducerProxy, 'SCHEMA_REGISTRY_OPTIONS', 'TRANSPORT_NAMESPACE', 'CONSUMER_DEFAULTS'],
+  inject: [Kafka, ProducerProxy, SCHEMA_REGISTRY_OPTIONS, TRANSPORT_NAMESPACE, CONSUMER_DEFAULTS],
 };
 
 const producerProxyProvider: Provider<ProducerProxy> = {
@@ -67,33 +73,33 @@ const producerProxyProvider: Provider<ProducerProxy> = {
 
     return producer;
   },
-  inject: [Kafka, 'TRANSPORT_NAMESPACE'],
+  inject: [Kafka, TRANSPORT_NAMESPACE],
 };
 
 function createDerivedProviders(): Provider[] {
   return [
     {
-      provide: 'TRANSPORT_CONFIG',
+      provide: TRANSPORT_CONFIG,
       useFactory: (opts: TransportConnectorModuleOptions) => opts.clientOptions,
       inject: [TRANSPORT_CONNECTOR_OPTIONS],
     },
     {
-      provide: 'TRANSPORT_NAMESPACE',
+      provide: TRANSPORT_NAMESPACE,
       useFactory: (opts: TransportConnectorModuleOptions) => opts.namespace,
       inject: [TRANSPORT_CONNECTOR_OPTIONS],
     },
     {
-      provide: 'SCHEMA_REGISTRY_OPTIONS',
+      provide: SCHEMA_REGISTRY_OPTIONS,
       useFactory: (opts: TransportConnectorModuleOptions) => opts.schemaRegistry,
       inject: [TRANSPORT_CONNECTOR_OPTIONS],
     },
     {
-      provide: 'module_name',
+      provide: MODULE_NAME,
       useFactory: (opts: TransportConnectorModuleOptions) => opts.moduleName,
       inject: [TRANSPORT_CONNECTOR_OPTIONS],
     },
     {
-      provide: 'CONSUMER_DEFAULTS',
+      provide: CONSUMER_DEFAULTS,
       useFactory: (opts: TransportConnectorModuleOptions) => opts.consumerDefaults,
       inject: [TRANSPORT_CONNECTOR_OPTIONS],
     },
