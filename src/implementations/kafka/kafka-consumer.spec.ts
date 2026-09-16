@@ -209,3 +209,78 @@ describe('KafkaConsumer topic namespacing', () => {
     expect(strategy).toBeDefined();
   });
 });
+
+describe('KafkaConsumer parse strategy resolution', () => {
+  it('resolves the parse strategy once per subscription rather than per message', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+
+    const subject = new KafkaConsumer(kafka);
+    const resolve = jest.spyOn(
+      subject as unknown as { getParseStrategy: (...args: unknown[]) => unknown },
+      'getParseStrategy',
+    );
+
+    await subject.subscribe(subscription(), jest.fn(), 'orders-service');
+
+    const eachBatch = (consumer.run as jest.Mock).mock.calls[0][0].eachBatch;
+
+    await eachBatch({
+      batch: {
+        topic: 'orders.created',
+        messages: [
+          {
+            key: null,
+            value: Buffer.from(JSON.stringify({ payload: {} })),
+            timestamp: '0',
+            size: 0,
+            attributes: 0,
+            offset: '0',
+          },
+          {
+            key: null,
+            value: Buffer.from(JSON.stringify({ payload: {} })),
+            timestamp: '0',
+            size: 0,
+            attributes: 0,
+            offset: '1',
+          },
+        ],
+      },
+      isRunning: () => true,
+      isStale: () => false,
+      resolveOffset: jest.fn(),
+      heartbeat: jest.fn().mockResolvedValue(undefined),
+    });
+
+    expect(resolve).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('KafkaConsumer configuration errors', () => {
+  it('rejects an avro subscription when no schema registry is configured', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+
+    await expect(
+      new KafkaConsumer(kafka).subscribe(
+        { ...subscription(), messageFormat: MessageFormat.AVRO },
+        jest.fn(),
+        'orders-service',
+      ),
+    ).rejects.toThrow(/Avro message format requires a Schema Registry/);
+  });
+
+  it('rejects a dlq subscription when no producer is available', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+
+    await expect(
+      new KafkaConsumer(kafka).subscribe(
+        { ...subscription(), errorHandling: { type: 'dlq' } },
+        jest.fn(),
+        'orders-service',
+      ),
+    ).rejects.toThrow(/DLQ error handling requires a producer/);
+  });
+});

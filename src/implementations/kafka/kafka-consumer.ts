@@ -124,6 +124,14 @@ export class KafkaConsumer<
     cb: MessageHandlerCallback<TMessage>,
     consumerGroupId: string
   ): Promise<void> {
+    const namespaced = subscription.namespaced ?? true;
+
+    const parseStrategy = this.getParseStrategy<TMessage>(subscription.messageFormat);
+    const errorStrategy = this.buildErrorHandlingStrategy(
+      subscription.errorHandling,
+      namespaced,
+    );
+
     const defaults = this.consumerDefaults ?? {};
     const overrides = subscription.consumer ?? {};
 
@@ -151,8 +159,6 @@ export class KafkaConsumer<
 
     await consumer.connect();
 
-    const namespaced = subscription.namespaced ?? true;
-
     await consumer.subscribe({
       fromBeginning: overrides.fromBeginning ?? defaults.fromBeginning ?? false,
       topics: subscription.topicPatterns
@@ -162,17 +168,12 @@ export class KafkaConsumer<
         ),
     });
 
-    const errorStrategy = this.buildErrorHandlingStrategy(
-      subscription.errorHandling,
-      namespaced,
-    );
-
-    await this.run(consumer, cb, subscription.messageFormat, errorStrategy);
+    await this.run(consumer, cb, parseStrategy, errorStrategy);
   }
 
   private handleBatchByMessage(
     cb: MessageHandlerCallback<TMessage>,
-    messageFormat: MessageFormat,
+    parseStrategy: KafkaMessageParseStrategy<TMessage>,
     errorStrategy: KafkaErrorHandleStrategy,
   ) {
     return async (payload: EachBatchPayload) => {
@@ -183,7 +184,7 @@ export class KafkaConsumer<
 
         try {
           await cb(
-            (await KafkaMessage.from(this.getParseStrategy<TMessage>(messageFormat), message)) as TMessage,
+            (await KafkaMessage.from(parseStrategy, message)) as TMessage,
             payload.batch.topic,
           );
 
@@ -200,14 +201,14 @@ export class KafkaConsumer<
   private async run(
     consumer: Consumer,
     cb: MessageHandlerCallback<TMessage>,
-    messageFormat: MessageFormat,
+    parseStrategy: KafkaMessageParseStrategy<TMessage>,
     errorStrategy: KafkaErrorHandleStrategy,
   ): Promise<void> {
     await consumer.run({
       eachBatchAutoResolve: false,
       eachBatch: this.handleBatchByMessage(
         cb as MessageHandlerCallback<TMessage>,
-        messageFormat,
+        parseStrategy,
         errorStrategy,
       ),
     });
