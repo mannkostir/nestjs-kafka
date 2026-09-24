@@ -362,3 +362,24 @@ describe('KafkaConsumer topic creation at subscribe', () => {
     expect(consumer.subscribe).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('KafkaConsumer cleanup on failed subscribe', () => {
+  it('disconnects the consumer and rethrows the original error', async () => {
+    const consumer = consumerStub();
+    const originalError = Object.assign(new Error('not authorized'), {
+      type: 'TOPIC_AUTHORIZATION_FAILED',
+    });
+    consumer.subscribe.mockRejectedValue(originalError);
+    const kafka = kafkaStub(consumer);
+
+    await expect(
+      new KafkaConsumer(kafka).subscribe(
+        subscription(),
+        jest.fn(),
+        'orders-service',
+      ),
+    ).rejects.toBe(originalError);
+
+    expect(consumer.disconnect).toHaveBeenCalledTimes(1);
+  });
+});

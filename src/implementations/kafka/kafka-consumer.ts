@@ -161,24 +161,42 @@ export class KafkaConsumer<
 
     this.consumers.push(consumer);
 
-    await consumer.connect();
+    try {
+      await consumer.connect();
 
-    const topics: ConsumerSubscribeTopics = {
-      fromBeginning: overrides.fromBeginning ?? defaults.fromBeginning ?? false,
-      topics: subscription.topicPatterns
-        .filter(Boolean)
-        .map((pattern) =>
-          namespaced ? this.namespacer.applyPattern(pattern) : pattern,
-        ),
-    };
+      const topics: ConsumerSubscribeTopics = {
+        fromBeginning: overrides.fromBeginning ?? defaults.fromBeginning ?? false,
+        topics: subscription.topicPatterns
+          .filter(Boolean)
+          .map((pattern) =>
+            namespaced ? this.namespacer.applyPattern(pattern) : pattern,
+          ),
+      };
 
-    if (allowAutoTopicCreation) {
-      await this.subscribeAwaitingTopicCreation(consumer, topics, effectiveRetry);
-    } else {
-      await consumer.subscribe(topics);
+      if (allowAutoTopicCreation) {
+        await this.subscribeAwaitingTopicCreation(consumer, topics, effectiveRetry);
+      } else {
+        await consumer.subscribe(topics);
+      }
+
+      await this.run(consumer, cb, parseStrategy, errorStrategy);
+    } catch (error) {
+      await this.closeFailedConsumer(consumer);
+      throw error;
+    }
+  }
+
+  private async closeFailedConsumer(consumer: Consumer): Promise<void> {
+    const index = this.consumers.indexOf(consumer);
+    if (index !== -1) {
+      this.consumers.splice(index, 1);
     }
 
-    await this.run(consumer, cb, parseStrategy, errorStrategy);
+    try {
+      await consumer.disconnect();
+    } catch (disconnectError) {
+      this.logger.error('Error disconnecting consumer after failed subscribe', disconnectError);
+    }
   }
 
   private async subscribeAwaitingTopicCreation(
