@@ -12,7 +12,7 @@
     "build": "tsc -p tsconfig.build.json",
     "prepublishOnly": "npm run build",
     "test": "jest --selectProjects unit --passWithNoTests",
-    "test:integration": "jest --selectProjects integration --runInBand"
+    "test:integration": "jest --selectProjects integration --runInBand --testTimeout=180000"
   },
   "peerDependencies": {
     "@kafkajs/confluent-schema-registry": ">=3.0.0",
@@ -30,6 +30,8 @@
     "@kafkajs/confluent-schema-registry": "^3.9.0",
     "@nestjs/common": "^11.1.6",
     "@nestjs/core": "^11.1.6",
+    "@nestjs/testing": "^11.2.6",
+    "@testcontainers/kafka": "^12.1.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^20.0.0",
     "jest": "^30.5.1",
