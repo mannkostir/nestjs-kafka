@@ -1,5 +1,5 @@
-import { DiscoveryModule } from '@golevelup/nestjs-discovery';
 import { DynamicModule, Logger, Module, Provider } from '@nestjs/common';
+import { DiscoveryModule } from '@nestjs/core';
 import { Kafka, KafkaConfig, Producer } from 'kafkajs';
 import {
   SchemaRegistryOptions,

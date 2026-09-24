@@ -1,4 +1,3 @@
-import { DiscoveryService } from '@golevelup/nestjs-discovery';
 import {
   Inject,
   Injectable,
@@ -6,6 +5,7 @@ import {
   OnApplicationBootstrap,
   Optional,
 } from '@nestjs/common';
+import { DiscoveryService, MetadataScanner } from '@nestjs/core';
 
 import { ConsumerProxy } from '../base/consumer-proxy';
 import {
@@ -13,7 +13,21 @@ import {
   MessageHandlerKey,
 } from '../decorators/message-handler.decorator';
 import { MessageFormat } from '../types/message-format.type';
+import { MessageHandlerCallback } from '../types/message-handler-callback.type';
+import { MessageType } from '../types/message.type';
 import { CONNECTOR_NAME } from '../tokens';
+
+type HandlerMetadata = Parameters<typeof Message>;
+
+type HandlerMethod = MessageHandlerCallback<MessageType>;
+
+type DiscoveredHandler = {
+  metadata: HandlerMetadata;
+  handle: HandlerMethod;
+};
+
+const isObject = (value: unknown): value is object =>
+  typeof value === 'object' && value !== null;
 
 @Injectable()
 export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
@@ -22,6 +36,7 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
   constructor(
     private readonly consumerProxy: ConsumerProxy,
     private readonly discoveryService: DiscoveryService,
+    private readonly metadataScanner: MetadataScanner,
     @Optional()
     @Inject(CONNECTOR_NAME)
     private readonly connectorName?: string,
@@ -32,30 +47,9 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
   }
 
   private async mapEventsToHandlers(): Promise<void> {
-    const discoveredHandlers =
-      await this.discoveryService.providerMethodsWithMetaAtKey<
-        Parameters<typeof Message>
-      >(MessageHandlerKey);
-
-    const promises = discoveredHandlers
-      .filter((handler) => this.belongsToThisConnector(handler.meta))
-      .map(async (handler) => {
-        const [topicPatterns, options] = handler.meta;
-        const method = handler.discoveredMethod.handler;
-        const methodContext = handler.discoveredMethod.parentClass.instance;
-
-        await this.consumerProxy.subscribe(
-          {
-            topicPatterns,
-            messageFormat: options.messageFormat ?? MessageFormat.JSON,
-            errorHandling: options.errorHandling,
-            consumer: options.consumer,
-            namespaced: options.namespaced,
-          },
-          method.bind(methodContext),
-          options.groupId,
-        );
-      });
+    const promises = this.discoverHandlers()
+      .filter((handler) => this.belongsToThisConnector(handler.metadata))
+      .map((handler) => this.subscribe(handler));
 
     try {
       await Promise.all(promises);
@@ -65,9 +59,53 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
     }
   }
 
-  private belongsToThisConnector(
-    meta: Parameters<typeof Message>,
-  ): boolean {
-    return (meta[1]?.connectorName ?? undefined) === this.connectorName;
+  private discoverHandlers(): DiscoveredHandler[] {
+    return this.discoveryService
+      .getProviders()
+      .filter((wrapper) => wrapper.isDependencyTreeStatic())
+      .map((wrapper): unknown => wrapper.instance)
+      .filter(isObject)
+      .flatMap((instance) => this.handlersOf(instance));
+  }
+
+  private handlersOf(instance: object): DiscoveredHandler[] {
+    const prototype: Record<string, HandlerMethod> | null =
+      Object.getPrototypeOf(instance);
+
+    if (!prototype) {
+      return [];
+    }
+
+    return this.metadataScanner
+      .getAllMethodNames(prototype)
+      .flatMap((methodName) => {
+        const method = prototype[methodName];
+        const metadata: HandlerMetadata | undefined = Reflect.getMetadata(
+          MessageHandlerKey,
+          method,
+        );
+
+        return metadata ? [{ metadata, handle: method.bind(instance) }] : [];
+      });
+  }
+
+  private async subscribe(handler: DiscoveredHandler): Promise<void> {
+    const [topicPatterns, options] = handler.metadata;
+
+    await this.consumerProxy.subscribe(
+      {
+        topicPatterns,
+        messageFormat: options.messageFormat ?? MessageFormat.JSON,
+        errorHandling: options.errorHandling,
+        consumer: options.consumer,
+        namespaced: options.namespaced,
+      },
+      handler.handle,
+      options.groupId,
+    );
+  }
+
+  private belongsToThisConnector(metadata: HandlerMetadata): boolean {
+    return (metadata[1]?.connectorName ?? undefined) === this.connectorName;
   }
 }
