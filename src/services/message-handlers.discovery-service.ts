@@ -22,6 +22,7 @@ type HandlerMetadata = Parameters<typeof Message>;
 type HandlerMethod = MessageHandlerCallback<MessageType>;
 
 type DiscoveredHandler = {
+  name: string;
   metadata: HandlerMetadata;
   handle: HandlerMethod;
 };
@@ -47,9 +48,13 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
   }
 
   private async mapEventsToHandlers(): Promise<void> {
-    const promises = this.discoverHandlers()
-      .filter((handler) => this.belongsToThisConnector(handler.metadata))
-      .map((handler) => this.subscribe(handler));
+    const handlers = this.discoverHandlers().filter((handler) =>
+      this.belongsToThisConnector(handler.metadata),
+    );
+
+    this.assertUniqueGroupIds(handlers);
+
+    const promises = handlers.map((handler) => this.subscribe(handler));
 
     try {
       await Promise.all(promises);
@@ -85,8 +90,34 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
           method,
         );
 
-        return metadata ? [{ metadata, handle: method.bind(instance) }] : [];
+        return metadata
+          ? [
+              {
+                name: `${instance.constructor.name}.${methodName}`,
+                metadata,
+                handle: method.bind(instance),
+              },
+            ]
+          : [];
       });
+  }
+
+  private assertUniqueGroupIds(handlers: DiscoveredHandler[]): void {
+    const ownerByGroupId = new Map<string, string>();
+
+    for (const handler of handlers) {
+      const groupId = handler.metadata[1].groupId;
+      const owner = ownerByGroupId.get(groupId);
+
+      if (owner) {
+        throw new Error(
+          `Message handlers ${owner} and ${handler.name} share groupId "${groupId}". ` +
+            'Give each @Message handler its own groupId.',
+        );
+      }
+
+      ownerByGroupId.set(groupId, handler.name);
+    }
   }
 
   private async subscribe(handler: DiscoveredHandler): Promise<void> {

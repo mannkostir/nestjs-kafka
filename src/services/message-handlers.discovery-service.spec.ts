@@ -57,6 +57,44 @@ class UnannotatedService {
   async doWork(): Promise<void> {}
 }
 
+@Injectable()
+class InvoicesHandler {
+  @Message(['invoices.issued'], {
+    groupId: 'shared-group',
+    errorHandling: { type: 'fail' },
+  })
+  async onInvoiceIssued(): Promise<void> {}
+}
+
+@Injectable()
+class RefundsHandler {
+  @Message(['refunds.issued'], {
+    groupId: 'shared-group',
+    errorHandling: { type: 'fail' },
+  })
+  async onRefundIssued(): Promise<void> {}
+}
+
+@Injectable()
+class PrimarySharedGroupHandler {
+  @Message(['primary.shared'], {
+    groupId: 'shared-group',
+    errorHandling: { type: 'fail' },
+    connectorName: 'primary',
+  })
+  async onPrimaryShared(): Promise<void> {}
+}
+
+@Injectable()
+class SecondarySharedGroupHandler {
+  @Message(['secondary.shared'], {
+    groupId: 'shared-group',
+    errorHandling: { type: 'fail' },
+    connectorName: 'secondary',
+  })
+  async onSecondaryShared(): Promise<void> {}
+}
+
 @Module({ providers: [OrdersHandler] })
 class OrdersFeatureModule {}
 
@@ -220,5 +258,43 @@ describe('MessageHandlersDiscoveryService', () => {
       failure,
     );
     logError.mockRestore();
+  });
+
+  it('rejects bootstrap naming the group id and both handlers when two handlers share a group id', async () => {
+    const { bootstrap } = harness([InvoicesHandler, RefundsHandler]);
+
+    await expect(bootstrap()).rejects.toThrow(
+      'Message handlers InvoicesHandler.onInvoiceIssued and RefundsHandler.onRefundIssued share groupId "shared-group". Give each @Message handler its own groupId.',
+    );
+  });
+
+  it('subscribes nothing when two handlers share a group id', async () => {
+    const { subscribe, bootstrap } = harness([InvoicesHandler, RefundsHandler]);
+
+    await bootstrap().catch(() => undefined);
+
+    expect(subscribe).not.toHaveBeenCalled();
+  });
+
+  it('subscribes every handler when their group ids are distinct', async () => {
+    const { subscribe, bootstrap } = harness([
+      OrdersHandler,
+      AvroNonNamespacedHandler,
+    ]);
+
+    await bootstrap();
+
+    expect(subscribe).toHaveBeenCalledTimes(2);
+  });
+
+  it('allows handlers on different connectors to share a group id', async () => {
+    const { subscribe, bootstrap } = harness(
+      [PrimarySharedGroupHandler, SecondarySharedGroupHandler],
+      { connectorName: 'primary' },
+    );
+
+    await bootstrap();
+
+    expect(subscribedTopics(subscribe)).toEqual([['primary.shared']]);
   });
 });
