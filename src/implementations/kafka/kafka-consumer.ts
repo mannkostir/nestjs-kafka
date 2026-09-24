@@ -37,6 +37,11 @@ export class KafkaConsumer<
   TMessage extends MessageType,
 > extends ConsumerProxy<TMessage> implements OnModuleDestroy {
 
+  private static readonly TOPIC_CREATION_MAX_RETRIES = 5;
+  private static readonly TOPIC_CREATION_INITIAL_DELAY_MS = 100;
+  private static readonly TOPIC_CREATION_BACKOFF_MULTIPLIER = 2;
+  private static readonly TOPIC_CREATION_MAX_DELAY_MS = 1000;
+
   private readonly logger = new Logger(KafkaConsumer.name);
   private readonly schemaRegistry?: SchemaRegistry;
   private readonly namespace?: string;
@@ -80,12 +85,7 @@ export class KafkaConsumer<
     config: MessageErrorHandlingConfig,
     namespaced: boolean,
   ): KafkaErrorHandleStrategy {
-    const dlqTopic =
-      config.type === 'dlq' && config.topic && namespaced
-        ? this.namespacer.apply(config.topic)
-        : config.type === 'dlq'
-          ? config.topic
-          : undefined;
+    const dlqTopic = this.resolveDlqTopic(config, namespaced);
 
     const cacheKey = config.type === 'dlq' ? `dlq:${dlqTopic ?? ''}` : config.type;
 
@@ -118,6 +118,21 @@ export class KafkaConsumer<
 
     this.strategyCache.set(cacheKey, strategy);
     return strategy;
+  }
+
+  private resolveDlqTopic(
+    config: MessageErrorHandlingConfig,
+    namespaced: boolean,
+  ): string | undefined {
+    if (config.type !== 'dlq') {
+      return undefined;
+    }
+
+    if (config.topic && namespaced) {
+      return this.namespacer.apply(config.topic);
+    }
+
+    return config.topic;
   }
 
   public async subscribe(
@@ -198,11 +213,6 @@ export class KafkaConsumer<
       this.logger.error('Error disconnecting consumer after failed subscribe', disconnectError);
     }
   }
-
-  private static readonly TOPIC_CREATION_MAX_RETRIES = 5;
-  private static readonly TOPIC_CREATION_INITIAL_DELAY_MS = 100;
-  private static readonly TOPIC_CREATION_BACKOFF_MULTIPLIER = 2;
-  private static readonly TOPIC_CREATION_MAX_DELAY_MS = 1000;
 
   private async subscribeAwaitingTopicCreation(
     consumer: Consumer,

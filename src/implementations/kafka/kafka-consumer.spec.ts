@@ -270,6 +270,7 @@ describe('KafkaConsumer configuration errors', () => {
         'orders-service',
       ),
     ).rejects.toThrow(/Avro message format requires a Schema Registry/);
+    expect(kafka.consumer).not.toHaveBeenCalled();
   });
 
   it('rejects a dlq subscription when no producer is available', async () => {
@@ -283,6 +284,7 @@ describe('KafkaConsumer configuration errors', () => {
         'orders-service',
       ),
     ).rejects.toThrow(/DLQ error handling requires a producer/);
+    expect(kafka.consumer).not.toHaveBeenCalled();
   });
 });
 
