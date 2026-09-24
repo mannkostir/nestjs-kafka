@@ -1,4 +1,5 @@
 import { Kafka, Producer } from 'kafkajs';
+import { Logger } from '@nestjs/common';
 import { KafkaConsumer } from './kafka-consumer';
 import { TopicNamespacer } from './topic-namespacer';
 import { MessageFormat } from '../../types/message-format.type';
@@ -291,6 +292,14 @@ describe('KafkaConsumer topic creation at subscribe', () => {
       type: 'UNKNOWN_TOPIC_OR_PARTITION',
     });
 
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   it('retries once and succeeds', async () => {
     const consumer = consumerStub();
     consumer.subscribe
@@ -298,14 +307,15 @@ describe('KafkaConsumer topic creation at subscribe', () => {
       .mockResolvedValueOnce(undefined);
     const kafka = kafkaStub(consumer);
 
-    await expect(
-      new KafkaConsumer(kafka).subscribe(
-        { ...subscription(), consumer: { retry: { initialRetryTime: 1 } } },
-        jest.fn(),
-        'orders-service',
-      ),
-    ).resolves.toBeUndefined();
+    const result = new KafkaConsumer(kafka).subscribe(
+      subscription(),
+      jest.fn(),
+      'orders-service',
+    );
 
+    await jest.advanceTimersByTimeAsync(1000);
+
+    await expect(result).resolves.toBeUndefined();
     expect(consumer.subscribe).toHaveBeenCalledTimes(2);
   });
 
@@ -314,34 +324,33 @@ describe('KafkaConsumer topic creation at subscribe', () => {
     consumer.subscribe.mockRejectedValue(topicAwaitingCreationError());
     const kafka = kafkaStub(consumer);
 
-    await expect(
-      new KafkaConsumer(kafka).subscribe(
-        {
-          ...subscription(),
-          consumer: { allowAutoTopicCreation: false, retry: { initialRetryTime: 1 } },
-        },
-        jest.fn(),
-        'orders-service',
-      ),
-    ).rejects.toThrow();
+    const result = new KafkaConsumer(kafka).subscribe(
+      { ...subscription(), consumer: { allowAutoTopicCreation: false } },
+      jest.fn(),
+      'orders-service',
+    );
+
+    await expect(result).rejects.toThrow();
 
     expect(consumer.subscribe).toHaveBeenCalledTimes(1);
   });
 
-  it('gives up after the configured retries', async () => {
+  it('gives up after five retries', async () => {
     const consumer = consumerStub();
     consumer.subscribe.mockRejectedValue(topicAwaitingCreationError());
     const kafka = kafkaStub(consumer);
 
-    await expect(
-      new KafkaConsumer(kafka).subscribe(
-        { ...subscription(), consumer: { retry: { retries: 2, initialRetryTime: 1 } } },
-        jest.fn(),
-        'orders-service',
-      ),
-    ).rejects.toThrow();
+    const result = new KafkaConsumer(kafka).subscribe(
+      subscription(),
+      jest.fn(),
+      'orders-service',
+    );
+    const assertion = expect(result).rejects.toThrow();
 
-    expect(consumer.subscribe).toHaveBeenCalledTimes(3);
+    await jest.advanceTimersByTimeAsync(3000);
+    await assertion;
+
+    expect(consumer.subscribe).toHaveBeenCalledTimes(6);
   });
 
   it('does not retry for other errors', async () => {
@@ -351,15 +360,39 @@ describe('KafkaConsumer topic creation at subscribe', () => {
     );
     const kafka = kafkaStub(consumer);
 
-    await expect(
-      new KafkaConsumer(kafka).subscribe(
-        { ...subscription(), consumer: { retry: { initialRetryTime: 1 } } },
-        jest.fn(),
-        'orders-service',
-      ),
-    ).rejects.toThrow();
+    const result = new KafkaConsumer(kafka).subscribe(
+      subscription(),
+      jest.fn(),
+      'orders-service',
+    );
+
+    await expect(result).rejects.toThrow();
 
     expect(consumer.subscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('logs a warning on each retry', async () => {
+    const consumer = consumerStub();
+    consumer.subscribe
+      .mockRejectedValueOnce(topicAwaitingCreationError())
+      .mockRejectedValueOnce(topicAwaitingCreationError())
+      .mockResolvedValueOnce(undefined);
+    const kafka = kafkaStub(consumer);
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+
+    const result = new KafkaConsumer(kafka).subscribe(
+      subscription(),
+      jest.fn(),
+      'orders-service',
+    );
+
+    await jest.advanceTimersByTimeAsync(1000);
+    await result;
+
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(warn.mock.calls[0][0]).toContain('orders.created');
+
+    warn.mockRestore();
   });
 });
 

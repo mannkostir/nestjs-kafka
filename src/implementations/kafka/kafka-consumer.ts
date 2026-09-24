@@ -174,7 +174,7 @@ export class KafkaConsumer<
       };
 
       if (allowAutoTopicCreation) {
-        await this.subscribeAwaitingTopicCreation(consumer, topics, effectiveRetry);
+        await this.subscribeAwaitingTopicCreation(consumer, topics);
       } else {
         await consumer.subscribe(topics);
       }
@@ -199,21 +199,35 @@ export class KafkaConsumer<
     }
   }
 
+  private static readonly TOPIC_CREATION_MAX_RETRIES = 5;
+  private static readonly TOPIC_CREATION_INITIAL_DELAY_MS = 100;
+  private static readonly TOPIC_CREATION_BACKOFF_MULTIPLIER = 2;
+  private static readonly TOPIC_CREATION_MAX_DELAY_MS = 1000;
+
   private async subscribeAwaitingTopicCreation(
     consumer: Consumer,
     topics: ConsumerSubscribeTopics,
-    retry: { retries: number; initialRetryTime: number; multiplier: number; maxRetryTime: number },
   ): Promise<void> {
     for (let attempt = 0; ; attempt++) {
       try {
         await consumer.subscribe(topics);
         return;
       } catch (error) {
-        if (!KafkaConsumer.isTopicAwaitingCreation(error) || attempt >= retry.retries) {
+        if (
+          !KafkaConsumer.isTopicAwaitingCreation(error) ||
+          attempt >= KafkaConsumer.TOPIC_CREATION_MAX_RETRIES
+        ) {
           throw error;
         }
+        this.logger.warn(
+          `Topic(s) ${topics.topics.join(', ')} not found yet, awaiting auto-creation (attempt ${attempt + 1}/${KafkaConsumer.TOPIC_CREATION_MAX_RETRIES})`,
+        );
         await KafkaConsumer.delay(
-          Math.min(retry.initialRetryTime * retry.multiplier ** attempt, retry.maxRetryTime),
+          Math.min(
+            KafkaConsumer.TOPIC_CREATION_INITIAL_DELAY_MS *
+              KafkaConsumer.TOPIC_CREATION_BACKOFF_MULTIPLIER ** attempt,
+            KafkaConsumer.TOPIC_CREATION_MAX_DELAY_MS,
+          ),
         );
       }
     }
