@@ -91,6 +91,20 @@ const producerProxyProvider: Provider<ProducerProxy> = {
   inject: [KAFKA_PRODUCER, TopicNamespacer],
 };
 
+function rejectEmptyString(
+  option: keyof KafkaModuleOptions,
+  value: string | undefined,
+  fix: string,
+): string | undefined {
+  if (value === '') {
+    throw new Error(
+      `KafkaModule "${option}" must not be an empty string. ${fix}`,
+    );
+  }
+
+  return value;
+}
+
 function createDerivedProviders(): Provider[] {
   return [
     {
@@ -100,7 +114,12 @@ function createDerivedProviders(): Provider[] {
     },
     {
       provide: TRANSPORT_NAMESPACE,
-      useFactory: (opts: KafkaModuleOptions) => opts.namespace,
+      useFactory: (opts: KafkaModuleOptions) =>
+        rejectEmptyString(
+          'namespace',
+          opts.namespace,
+          'Set a non-empty namespace, or leave it undefined to disable namespacing.',
+        ),
       inject: [KAFKA_MODULE_OPTIONS],
     },
     {
@@ -110,7 +129,12 @@ function createDerivedProviders(): Provider[] {
     },
     {
       provide: CONNECTOR_NAME,
-      useFactory: (opts: KafkaModuleOptions) => opts.connectorName,
+      useFactory: (opts: KafkaModuleOptions) =>
+        rejectEmptyString(
+          'connectorName',
+          opts.connectorName,
+          'Set a non-empty connectorName matching @Message({ connectorName }), or leave it undefined for the unnamed connector.',
+        ),
       inject: [KAFKA_MODULE_OPTIONS],
     },
     {
