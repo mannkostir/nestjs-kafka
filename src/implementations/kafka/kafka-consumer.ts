@@ -6,7 +6,7 @@ import {
   KafkaJSError,
   Producer,
 } from 'kafkajs';
-import { BeforeApplicationShutdown, Logger } from '@nestjs/common';
+import { Logger, OnModuleDestroy } from '@nestjs/common';
 import { MessageType } from '../../types/message.type';
 import { ConsumerProxy } from '../../base/consumer-proxy';
 import { ConsumerSubscriptionParameters } from '../../types/consumer-subscription-parameters.type';
@@ -35,7 +35,7 @@ export interface KafkaConsumerOptions {
 
 export class KafkaConsumer<
   TMessage extends MessageType,
-> extends ConsumerProxy<TMessage> implements BeforeApplicationShutdown {
+> extends ConsumerProxy<TMessage> implements OnModuleDestroy {
 
   private readonly logger = new Logger(KafkaConsumer.name);
   private readonly schemaRegistry?: SchemaRegistry;
@@ -284,7 +284,7 @@ export class KafkaConsumer<
     });
   }
 
-  async beforeApplicationShutdown(): Promise<void> {
+  async onModuleDestroy(): Promise<void> {
     this.logger.log(`Disconnecting ${this.consumers.length} consumer(s)...`);
 
     const results = await Promise.allSettled(

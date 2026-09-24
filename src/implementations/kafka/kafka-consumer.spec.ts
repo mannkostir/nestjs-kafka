@@ -416,3 +416,16 @@ describe('KafkaConsumer cleanup on failed subscribe', () => {
     expect(consumer.disconnect).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('KafkaConsumer shutdown', () => {
+  it('disconnects every subscribed consumer when the module is destroyed', async () => {
+    const consumer = consumerStub();
+    const kafkaConsumer = new KafkaConsumer(kafkaStub(consumer));
+    await kafkaConsumer.subscribe(subscription(), jest.fn(), 'orders-service');
+    await kafkaConsumer.subscribe(subscription(), jest.fn(), 'audit-service');
+
+    await kafkaConsumer.onModuleDestroy();
+
+    expect(consumer.disconnect).toHaveBeenCalledTimes(2);
+  });
+});

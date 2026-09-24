@@ -69,10 +69,13 @@ describe('KafkaProducer', () => {
     expect(sent.messages[0].key).toBe('order-1');
   });
 
-  it('disconnects the injected producer on module destroy', async () => {
+  it('disconnects the injected producer before application shutdown', async () => {
     const producer = producerStub();
 
-    await new KafkaProducer(producer, new TopicNamespacer()).onModuleDestroy();
+    await new KafkaProducer(
+      producer,
+      new TopicNamespacer(),
+    ).beforeApplicationShutdown();
 
     expect(producer.disconnect).toHaveBeenCalledTimes(1);
   });
