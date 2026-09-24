@@ -11,8 +11,25 @@ own Kafka consumer.
 Messages are parsed by a pluggable strategy (JSON or Avro via Confluent Schema Registry), and
 per-handler failures are routed through a pluggable error policy (`fail`, `ignore`, or `dlq`).
 
-**Status: pre-1.0 (`0.1.0`). Not yet published to npm.** The public API may still change between
-versions. Integration-tested against `confluentinc/cp-kafka:7.6.1` in KRaft mode.
+**Status: pre-1.0 (`0.1.0`).** The public API may still change between versions.
+Integration-tested against `confluentinc/cp-kafka:7.6.1` in KRaft mode.
+
+## Installation
+
+```sh
+npm install nestjs-kafka-connector kafkajs
+```
+
+The library has no runtime dependencies of its own. Everything it needs is a peer dependency that
+the host application provides: `@nestjs/common`, `@nestjs/core`, `kafkajs`, and
+`reflect-metadata`. The supported ranges are the `peerDependencies` in `package.json`; CI tests
+against NestJS 11.
+
+Avro support additionally needs the optional peer `@kafkajs/confluent-schema-registry`:
+
+```sh
+npm install @kafkajs/confluent-schema-registry
+```
 
 ## Quickstart
 
@@ -41,13 +58,15 @@ Handlers are discovered application-wide, not scoped to the module that declares
 handler as a method on any provider anywhere in the app:
 
 ```ts
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Message, MessageType } from 'nestjs-kafka-connector';
 
 type OrderCreated = { orderId: string; total: number };
 
 @Injectable()
 export class OrderEventsHandler {
+  private readonly logger = new Logger(OrderEventsHandler.name);
+
   @Message(['orders.created'], {
     groupId: 'orders-service',
     errorHandling: { type: 'dlq' },
@@ -62,7 +81,7 @@ export class OrderEventsHandler {
       return;
     }
 
-    await this.fulfil(order.orderId);
+    this.logger.log(`Order ${order.orderId} received from ${String(topic)}`);
   }
 }
 ```
@@ -102,6 +121,10 @@ export class OrderPublisher {
 | `clientOptions` | `KafkaConfig` (kafkajs) | yes | Passed straight to `new Kafka(...)`: `brokers`, `clientId`, `ssl`, `sasl`, and the rest. |
 | `namespace` | `string` | no | Prefixes produced and consumed topics and consumer group ids. See [Topics, namespace, and group ids](#topics-namespace-and-group-ids). |
 | `connectorName` | `string` | no | Scopes handler discovery when `KafkaModule` is registered more than once in the same app. See [Registering more than once](#registering-more-than-once). |
+
+`namespace` and `connectorName` must not be empty strings: `''` fails module construction with an
+error saying so. Leave either option `undefined` to opt out of it; this matters most when the value
+comes from an environment variable that may be set but empty.
 | `schemaRegistry` | `{ url: string }` | no | Enables Avro. Constructs a `SchemaRegistry` against `url`. |
 | `consumerDefaults` | `ConsumerConfig` | no | Consumer settings applied to every handler unless overridden per handler. |
 
@@ -189,6 +212,11 @@ Passing none of the three throws at module construction.
 | `namespaced` | `boolean` | no | `true` |
 | `connectorName` | `string` | no | `undefined` — matches an unnamed module registration |
 
+**Each handler needs its own `groupId`.** Within one connector, two `@Message` handlers that
+declare the same `groupId` fail application bootstrap before any consumer connects, with an error
+naming the group id and both handlers as `ClassName.methodName`. Handlers registered on different
+connectors (different `connectorName`s) are checked separately.
+
 ### `ConsumerConfig`
 
 The same shape is used for module-wide `consumerDefaults` and per-handler `consumer` overrides.
@@ -202,14 +230,10 @@ The same shape is used for module-wide `consumerDefaults` and per-handler `consu
 | `rebalanceTimeout` | `number` (ms) | unset — kafkajs applies its own (currently `60000`) |
 | `retry` | `Partial<RetryOptions>` (kafkajs) | see below |
 
-`heartbeatInterval`, `sessionTimeout`, and `rebalanceTimeout` are not given a value by this library
-unless you set one; when omitted, the field is left `undefined` on the kafkajs consumer config and
-kafkajs's own default takes over. An earlier version of this library defaulted
-`heartbeatInterval` to `30000`, which collides with kafkajs's own `sessionTimeout` default of
-`30000` — kafkajs rejects a heartbeat interval that is not strictly less than the session timeout,
-so every default-configuration consumer failed to subscribe. That default has been removed; do not
-reintroduce a `heartbeatInterval` default without also moving `sessionTimeout` out of collision
-range.
+`heartbeatInterval`, `sessionTimeout`, and `rebalanceTimeout` are left unset unless you set them,
+so kafkajs's own defaults apply — for `heartbeatInterval` that is `3000`. If you set
+`heartbeatInterval`, keep it below the effective `sessionTimeout`: kafkajs rejects a heartbeat
+interval that is not strictly less than the session timeout.
 
 `retry` defaults are `maxRetryTime: 30000`, `initialRetryTime: 300`, `factor: 0.2`, `multiplier: 2`,
 `retries: 15`, `restartOnFailure: async () => true`.
@@ -370,7 +394,10 @@ also when parsing the record throws.
 ### `{ type: 'fail' }`
 
 Rethrows. The offset is not resolved, so the batch is retried according to the consumer's `retry`
-configuration and the message is redelivered.
+configuration and the message is redelivered. Once those retries are exhausted, the default
+`restartOnFailure: async () => true` restarts the consumer, which reads the same message again. A
+message that always fails — a poison message — therefore blocks its partition until the handler or
+the message is fixed. Use `dlq` or `ignore` when one bad message must not stall its partition.
 
 ```ts
 errorHandling: { type: 'fail' }
@@ -451,9 +478,12 @@ await this.producer.send(
 **Delivery is at-least-once. Handlers must be idempotent.** A handler can succeed and the process
 can die before its offset is committed, in which case the message is delivered again on restart.
 
-- **One kafkajs consumer per handler.** Each `@Message` method gets its own consumer, created,
-  connected, and run at application bootstrap. Two handlers sharing a `groupId` still join as two
-  members of that group.
+- **One kafkajs consumer per handler, in its own consumer group.** Each `@Message` method gets its
+  own consumer, created, connected, and run at application bootstrap. Handlers of one connector
+  cannot share a `groupId`: kafkajs assigns a group's partitions only for the topics its leader
+  subscribed to, so a shared group across different topics silently starves one handler, and on the
+  same topics it splits the messages between two different methods. Bootstrap fails instead; see
+  [`@Message` options](#message-options).
 - **Offsets are resolved manually.** Consumers run with `eachBatchAutoResolve: false`. Within a
   batch, each message is parsed, passed to the handler, and only then is its offset resolved,
   followed by a heartbeat. A failing message never has its offset resolved by the framework — that
@@ -470,8 +500,12 @@ can die before its offset is committed, in which case the message is delivered a
 - **A failed subscription fails application bootstrap.** If any handler's `subscribe()` call
   ultimately throws — including a topic that never gets created — the consumer that was being
   opened is disconnected and the error propagates out of `onApplicationBootstrap`, which fails Nest
-  application bootstrap. No consumer connection is left open for a handler that failed to
-  subscribe.
-- **Shutdown closes connections.** `beforeApplicationShutdown` disconnects every consumer and logs
-  any that fail; `onModuleDestroy` disconnects the producer. Call `app.enableShutdownHooks()` in the
+  application bootstrap. No consumer connection is left open for the handler that failed to
+  subscribe, but consumers of other handlers that had already connected, and the producer, stay
+  open until `app.close()` is called. A host that catches the bootstrap error and keeps running
+  must close the application itself.
+- **Shutdown closes consumers before the producer.** `onModuleDestroy` disconnects every consumer
+  and logs any that fail; `beforeApplicationShutdown`, which Nest runs after every destroy hook,
+  then disconnects the producer. DLQ publishes and producer calls made from handlers therefore
+  still have a connected producer while the consumers stop. Call `app.enableShutdownHooks()` in the
   host application so these run on `SIGTERM` and `SIGINT`.
