@@ -149,7 +149,7 @@ export class KafkaConsumer<
     const consumer = this.kafka.consumer({
       groupId: [this.namespace, consumerGroupId].filter(Boolean).join('-'),
       allowAutoTopicCreation: overrides.allowAutoTopicCreation ?? defaults.allowAutoTopicCreation ?? true,
-      heartbeatInterval: overrides.heartbeatInterval ?? defaults.heartbeatInterval ?? 30000,
+      heartbeatInterval: overrides.heartbeatInterval ?? defaults.heartbeatInterval,
       sessionTimeout: overrides.sessionTimeout ?? defaults.sessionTimeout,
       rebalanceTimeout: overrides.rebalanceTimeout ?? defaults.rebalanceTimeout,
       retry: effectiveRetry,

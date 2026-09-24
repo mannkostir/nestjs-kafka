@@ -64,7 +64,7 @@ describe('KafkaConsumer configuration precedence', () => {
 
     expect(kafka.consumer).toHaveBeenCalledWith(
       expect.objectContaining({
-        heartbeatInterval: 30000,
+        heartbeatInterval: undefined,
         allowAutoTopicCreation: true,
       }),
     );
