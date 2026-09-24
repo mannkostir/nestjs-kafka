@@ -1,9 +1,6 @@
 export { KafkaModule } from "./kafka.module";
 
-export {
-  Message,
-  MessageHandlerKey,
-} from "./decorators/message-handler.decorator";
+export { Message } from "./decorators/message-handler.decorator";
 
 export { ConsumerProxy } from "./base/consumer-proxy";
 export { ProducerProxy } from "./base/producer-proxy";
@@ -14,6 +11,7 @@ export { MessageFormat } from "./types/message-format.type";
 export { MessageErrorHandlingConfig } from "./types/message-error-handling.type";
 export { ConsumerConfig } from "./types/consumer-config.type";
 export { ConsumerSubscriptionParameters } from "./types/consumer-subscription-parameters.type";
+export { MessageHandlerCallback } from "./types/message-handler-callback.type";
 export {
   KafkaModuleOptions,
   KafkaModuleAsyncOptions,

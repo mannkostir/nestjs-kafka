@@ -1,4 +1,4 @@
-import { DynamicModule, Logger, Module, Provider } from '@nestjs/common';
+import { DynamicModule, Module, Provider } from '@nestjs/common';
 import { DiscoveryModule } from '@nestjs/core';
 import { Kafka, KafkaConfig, Producer } from 'kafkajs';
 import {
@@ -154,7 +154,6 @@ export class KafkaModule {
       module: KafkaModule,
       imports: [DiscoveryModule],
       providers: [
-        Logger,
         {
           provide: KAFKA_MODULE_OPTIONS,
           useValue: options,
@@ -178,7 +177,6 @@ export class KafkaModule {
       module: KafkaModule,
       imports: [...(asyncOptions.imports || []), DiscoveryModule],
       providers: [
-        Logger,
         ...this.createAsyncOptionsProviders(asyncOptions),
         ...createDerivedProviders(),
         kafkaProvider,

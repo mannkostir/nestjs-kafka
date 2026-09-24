@@ -1,4 +1,9 @@
-import { ModuleMetadata, Type } from '@nestjs/common';
+import type {
+  InjectionToken,
+  ModuleMetadata,
+  OptionalFactoryDependency,
+  Type,
+} from '@nestjs/common';
 import { KafkaConfig } from 'kafkajs';
 import { ConsumerConfig } from './consumer-config.type';
 
@@ -24,7 +29,7 @@ export interface KafkaModuleOptionsFactory {
 
 export interface KafkaModuleAsyncOptions
   extends Pick<ModuleMetadata, 'imports'> {
-  inject?: any[];
+  inject?: Array<InjectionToken | OptionalFactoryDependency>;
   useFactory?: (
     ...args: any[]
   ) =>
