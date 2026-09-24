@@ -42,6 +42,26 @@ describe('KafkaMessageJsonStrategy', () => {
     );
   });
 
+  it('decodes a payload that is itself a JSON-encoded string', async () => {
+    const message = record(
+      Buffer.from(JSON.stringify({ payload: JSON.stringify({ orderId: 'o-1' }) })),
+    );
+
+    const parsed = await strategy.parse(message);
+
+    expect(parsed.value?.payload).toEqual({ orderId: 'o-1' });
+  });
+
+  it('throws a descriptive error when a string payload is not valid JSON', async () => {
+    const message = record(
+      Buffer.from(JSON.stringify({ payload: 'not-json' })),
+    );
+
+    await expect(strategy.parse(message)).rejects.toThrow(
+      /Failed to parse message payload as JSON/,
+    );
+  });
+
   it('decodes a JSON-encoded key', async () => {
     const message = record(
       Buffer.from(JSON.stringify({ payload: { orderId: 'o-1' } })),

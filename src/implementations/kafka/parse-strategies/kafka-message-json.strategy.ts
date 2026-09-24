@@ -16,22 +16,25 @@ export class KafkaMessageJsonStrategy<Payload extends Record<string, any>> exten
             return null;
         }
 
-        const text = raw.toString('utf8');
-
-        let value: MessageValue<Payload>;
-
-        try {
-            value = JSON.parse(text);
-        } catch (error) {
-            throw new Error(
-                `Failed to parse message value as JSON: ${(error as Error).message}`,
-            );
-        }
+        const value: MessageValue<Payload> = this.parseJson(
+            raw.toString('utf8'),
+            'value',
+        );
 
         if (value && typeof value.payload === 'string') {
-            value.payload = JSON.parse(value.payload);
+            value.payload = this.parseJson(value.payload, 'payload');
         }
 
         return value;
+    }
+
+    private parseJson<T>(text: string, part: 'value' | 'payload'): T {
+        try {
+            return JSON.parse(text);
+        } catch (error) {
+            throw new Error(
+                `Failed to parse message ${part} as JSON: ${(error as Error).message}`,
+            );
+        }
     }
 }
