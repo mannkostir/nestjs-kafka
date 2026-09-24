@@ -11,7 +11,6 @@ module.exports = {
       preset: 'ts-jest',
       testEnvironment: 'node',
       testMatch: ['<rootDir>/test/integration/**/*.int-spec.ts'],
-      testTimeout: 180000,
     },
   ],
 };
