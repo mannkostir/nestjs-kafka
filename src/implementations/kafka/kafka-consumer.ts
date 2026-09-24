@@ -1,5 +1,6 @@
 import {
   Consumer,
+  ConsumerSubscribeTopics,
   EachBatchPayload,
   Kafka,
   KafkaJSError,
@@ -146,9 +147,12 @@ export class KafkaConsumer<
       ...overrides.retry,
     };
 
+    const allowAutoTopicCreation =
+      overrides.allowAutoTopicCreation ?? defaults.allowAutoTopicCreation ?? true;
+
     const consumer = this.kafka.consumer({
       groupId: [this.namespace, consumerGroupId].filter(Boolean).join('-'),
-      allowAutoTopicCreation: overrides.allowAutoTopicCreation ?? defaults.allowAutoTopicCreation ?? true,
+      allowAutoTopicCreation,
       heartbeatInterval: overrides.heartbeatInterval ?? defaults.heartbeatInterval,
       sessionTimeout: overrides.sessionTimeout ?? defaults.sessionTimeout,
       rebalanceTimeout: overrides.rebalanceTimeout ?? defaults.rebalanceTimeout,
@@ -159,16 +163,50 @@ export class KafkaConsumer<
 
     await consumer.connect();
 
-    await consumer.subscribe({
+    const topics: ConsumerSubscribeTopics = {
       fromBeginning: overrides.fromBeginning ?? defaults.fromBeginning ?? false,
       topics: subscription.topicPatterns
         .filter(Boolean)
         .map((pattern) =>
           namespaced ? this.namespacer.applyPattern(pattern) : pattern,
         ),
-    });
+    };
+
+    if (allowAutoTopicCreation) {
+      await this.subscribeAwaitingTopicCreation(consumer, topics, effectiveRetry);
+    } else {
+      await consumer.subscribe(topics);
+    }
 
     await this.run(consumer, cb, parseStrategy, errorStrategy);
+  }
+
+  private async subscribeAwaitingTopicCreation(
+    consumer: Consumer,
+    topics: ConsumerSubscribeTopics,
+    retry: { retries: number; initialRetryTime: number; multiplier: number; maxRetryTime: number },
+  ): Promise<void> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await consumer.subscribe(topics);
+        return;
+      } catch (error) {
+        if (!KafkaConsumer.isTopicAwaitingCreation(error) || attempt >= retry.retries) {
+          throw error;
+        }
+        await KafkaConsumer.delay(
+          Math.min(retry.initialRetryTime * retry.multiplier ** attempt, retry.maxRetryTime),
+        );
+      }
+    }
+  }
+
+  private static isTopicAwaitingCreation(error: unknown): boolean {
+    return (error as { type?: unknown }).type === 'UNKNOWN_TOPIC_OR_PARTITION';
+  }
+
+  private static delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   private handleBatchByMessage(

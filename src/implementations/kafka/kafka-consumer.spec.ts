@@ -284,3 +284,81 @@ describe('KafkaConsumer configuration errors', () => {
     ).rejects.toThrow(/DLQ error handling requires a producer/);
   });
 });
+
+describe('KafkaConsumer topic creation at subscribe', () => {
+  const topicAwaitingCreationError = () =>
+    Object.assign(new Error('This server does not host this topic-partition'), {
+      type: 'UNKNOWN_TOPIC_OR_PARTITION',
+    });
+
+  it('retries once and succeeds', async () => {
+    const consumer = consumerStub();
+    consumer.subscribe
+      .mockRejectedValueOnce(topicAwaitingCreationError())
+      .mockResolvedValueOnce(undefined);
+    const kafka = kafkaStub(consumer);
+
+    await expect(
+      new KafkaConsumer(kafka).subscribe(
+        { ...subscription(), consumer: { retry: { initialRetryTime: 1 } } },
+        jest.fn(),
+        'orders-service',
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(consumer.subscribe).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry when auto topic creation is disabled', async () => {
+    const consumer = consumerStub();
+    consumer.subscribe.mockRejectedValue(topicAwaitingCreationError());
+    const kafka = kafkaStub(consumer);
+
+    await expect(
+      new KafkaConsumer(kafka).subscribe(
+        {
+          ...subscription(),
+          consumer: { allowAutoTopicCreation: false, retry: { initialRetryTime: 1 } },
+        },
+        jest.fn(),
+        'orders-service',
+      ),
+    ).rejects.toThrow();
+
+    expect(consumer.subscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('gives up after the configured retries', async () => {
+    const consumer = consumerStub();
+    consumer.subscribe.mockRejectedValue(topicAwaitingCreationError());
+    const kafka = kafkaStub(consumer);
+
+    await expect(
+      new KafkaConsumer(kafka).subscribe(
+        { ...subscription(), consumer: { retry: { retries: 2, initialRetryTime: 1 } } },
+        jest.fn(),
+        'orders-service',
+      ),
+    ).rejects.toThrow();
+
+    expect(consumer.subscribe).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not retry for other errors', async () => {
+    const consumer = consumerStub();
+    consumer.subscribe.mockRejectedValue(
+      Object.assign(new Error('not authorized'), { type: 'TOPIC_AUTHORIZATION_FAILED' }),
+    );
+    const kafka = kafkaStub(consumer);
+
+    await expect(
+      new KafkaConsumer(kafka).subscribe(
+        { ...subscription(), consumer: { retry: { initialRetryTime: 1 } } },
+        jest.fn(),
+        'orders-service',
+      ),
+    ).rejects.toThrow();
+
+    expect(consumer.subscribe).toHaveBeenCalledTimes(1);
+  });
+});
