@@ -32,26 +32,38 @@ the host application provides: `@nestjs/common`, `@nestjs/core`, `kafkajs`, and
 | `@kafkajs/confluent-schema-registry` (optional) | `>=3.0.0` |
 
 CI runs the type check, unit tests, and build against both NestJS 11 and NestJS 12, the
-integration tests against NestJS 12, and checks that the built package loads on Node.js 20.19 and
-22.12.
-
-The host needs Node.js `^20.19.0` or `>=22.12.0`, which is what `engines` declares. NestJS 12 is
-published as ES modules only, and this library is published as CommonJS, so it loads NestJS through
-Node's `require(esm)` support, which those versions provide unflagged. This applies whether the host
-application itself is CommonJS or ESM, and it is stricter than NestJS 12's own requirement. A NestJS
-11 host also runs on earlier Node.js 20 and 22 releases; npm only warns about `engines` there.
-
-**TypeScript on NestJS 12.** The type declarations are CommonJS, and they import the ESM-only
-NestJS 12 packages. With `skipLibCheck: false`, that is reported as `TS1479` / `TS1541` in this
-package's `.d.ts` files under `"moduleResolution": "node16"`, and under `"nodenext"` with TypeScript
-5.7 or older. `"nodenext"` with TypeScript 5.8 or newer and `"bundler"` resolve cleanly, as does
-`skipLibCheck: true`, which the Nest CLI sets by default. NestJS 11 is unaffected.
+integration tests against NestJS 12, checks that both entry points of the built package load on
+Node.js 20.19 and 22.12, and checks that the ES module entry loads on Node.js 20.18 and 22.11.
 
 Avro support additionally needs the optional peer `@kafkajs/confluent-schema-registry`:
 
 ```sh
 npm install @kafkajs/confluent-schema-registry
 ```
+
+### Module formats
+
+The package ships one implementation, compiled as ES modules, behind an `exports` map. `import`
+resolves to the ES module build; `require` resolves to a CommonJS entry that loads that same build.
+Both hand out the same classes, so a host that reaches the package through both still has a single
+`ConsumerProxy` and `ProducerProxy`. Only the package root is exported: deep imports such as
+`nestjs-kafka-connector/dist/...` are not available.
+
+### Node.js versions
+
+`engines` declares Node.js `^20.19.0` or `>=22.12.0`. That is exact for a CommonJS host, whose
+`require` of this package loads ES modules through Node's `require(esm)` support, unflagged from
+those versions. An ES module host needs nothing extra from this package and also runs on earlier
+Node.js 20 and 22 releases, where npm only warns about `engines`.
+
+### TypeScript
+
+The `import` and `require` conditions each have declarations in their own module format. With
+`skipLibCheck: false`, NestJS 11 and 12, ES module and CommonJS hosts, and `"moduleResolution"` set
+to `"node16"`, `"nodenext"`, or `"bundler"` all type-check cleanly, with one exception: a CommonJS
+host on NestJS 12 under `"node16"`, or under `"nodenext"` with TypeScript 5.7 or older. There the
+host's own imports of the ESM-only NestJS 12 packages fail with `TS1479`, and this package's
+declarations report the same. Use `"nodenext"` with TypeScript 5.8 or newer, or `"bundler"`.
 
 ## Quickstart
 
