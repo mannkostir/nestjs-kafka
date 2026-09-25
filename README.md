@@ -11,7 +11,7 @@ own Kafka consumer.
 Messages are parsed by a pluggable strategy (JSON or Avro via Confluent Schema Registry), and
 per-handler failures are routed through a pluggable error policy (`fail`, `ignore`, or `dlq`).
 
-**Status: pre-1.0 (`0.1.0`).** The public API may still change between versions.
+**Status: pre-1.0 (`0.2.0`).** The public API may still change between versions.
 Integration-tested against `confluentinc/cp-kafka:7.6.1` in KRaft mode.
 
 ## Installation
