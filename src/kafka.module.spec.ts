@@ -1,4 +1,5 @@
 import { Test } from '@nestjs/testing';
+import { Kafka, Partitioners } from 'kafkajs';
 import { KafkaModule } from './kafka.module';
 import { KafkaModuleOptions } from './types/kafka-module-options.type';
 import { KAFKA_PRODUCER } from './tokens';
@@ -53,5 +54,25 @@ describe('KafkaModule option validation', () => {
     const moduleRef = await compileWith({ clientOptions });
 
     await expect(moduleRef.close()).resolves.toBeUndefined();
+  });
+});
+
+describe('KafkaModule producer', () => {
+  it('creates the producer with the kafkajs default partitioner stated explicitly', async () => {
+    const kafka = { producer: jest.fn().mockReturnValue(producerStub()) };
+
+    const moduleRef = await Test.createTestingModule({
+      imports: [KafkaModule.register({ clientOptions })],
+    })
+      .overrideProvider(Kafka)
+      .useValue(kafka)
+      .compile();
+    await moduleRef.close();
+
+    expect(kafka.producer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        createPartitioner: Partitioners.DefaultPartitioner,
+      }),
+    );
   });
 });

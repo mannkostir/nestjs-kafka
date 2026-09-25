@@ -486,7 +486,8 @@ send(
 The record's `value` is `JSON.stringify(message.value)` and its `headers` are `message.headers`.
 The record key comes from `options.key`, not from `message.key`. Topics are namespace-prefixed as
 described above unless `options.namespaced` is `false`, and the underlying producer is created with
-`allowAutoTopicCreation: true`.
+`allowAutoTopicCreation: true` and kafkajs's `Partitioners.DefaultPartitioner`, which assigns keyed
+records to partitions the same way the Java client does.
 
 ```ts
 await this.producer.send(

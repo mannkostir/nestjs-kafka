@@ -1,6 +1,6 @@
 import { DynamicModule, Module, Provider } from '@nestjs/common';
 import { DiscoveryModule } from '@nestjs/core';
-import { Kafka, KafkaConfig, Producer } from 'kafkajs';
+import { Kafka, KafkaConfig, Producer, Partitioners } from 'kafkajs';
 import {
   SchemaRegistryOptions,
   KafkaModuleOptions,
@@ -38,6 +38,7 @@ const kafkaProducerProvider: Provider<Producer> = {
   useFactory: (kafka: Kafka) =>
     kafka.producer({
       allowAutoTopicCreation: true,
+      createPartitioner: Partitioners.DefaultPartitioner,
     }),
   inject: [Kafka],
 };
