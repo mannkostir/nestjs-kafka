@@ -54,7 +54,7 @@ Both hand out the same classes, so a host that reaches the package through both 
 `engines` declares Node.js `^20.19.0` or `>=22.12.0`. That is exact for a CommonJS host, whose
 `require` of this package loads ES modules through Node's `require(esm)` support, unflagged from
 those versions. An ES module host needs nothing extra from this package and also runs on earlier
-Node.js 20 and 22 releases, where npm only warns about `engines`.
+Node.js 20 and 22 releases, verified on 20.18 and 22.11, where npm only warns about `engines`.
 
 ### TypeScript
 
@@ -64,6 +64,41 @@ to `"node16"`, `"nodenext"`, or `"bundler"` all type-check cleanly, with one exc
 host on NestJS 12 under `"node16"`, or under `"nodenext"` with TypeScript 5.7 or older. There the
 host's own imports of the ESM-only NestJS 12 packages fail with `TS1479`, and this package's
 declarations report the same. Use `"nodenext"` with TypeScript 5.8 or newer, or `"bundler"`.
+
+### Testing with Jest
+
+Jest runs tests in its own module sandbox, which cannot `require` ES modules unless Jest 30 runs
+on Node.js 24.9 or newer with `--experimental-vm-modules`. A CommonJS host that tests with the
+Nest CLI's default Jest setup therefore needs one of two changes. Run Jest with the flag:
+
+```sh
+node --experimental-vm-modules node_modules/jest/bin/jest.js
+```
+
+or let ts-jest transpile this package to CommonJS:
+
+```js
+module.exports = {
+  testEnvironment: 'node',
+  transform: {
+    '^.+\\.[tj]s$': [
+      'ts-jest',
+      {
+        tsconfig: {
+          allowJs: true,
+          experimentalDecorators: true,
+          emitDecoratorMetadata: true,
+          esModuleInterop: true,
+        },
+      },
+    ],
+  },
+  transformIgnorePatterns: ['node_modules/(?!nestjs-kafka-connector/)'],
+};
+```
+
+A NestJS 12 host needs the flag either way, because NestJS 12 is itself published as ES modules
+only.
 
 ## Quickstart
 
