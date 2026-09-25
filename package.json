@@ -13,6 +13,9 @@
   "bugs": {
     "url": "https://github.com/mannkostir/nestjs-kafka/issues"
   },
+  "engines": {
+    "node": ">=20"
+  },
   "keywords": [
     "nestjs",
     "kafka",
@@ -30,13 +33,13 @@
     "prebuild": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "build": "tsc -p tsconfig.build.json",
     "prepublishOnly": "npm run build",
-    "test": "jest --selectProjects unit --passWithNoTests",
-    "test:integration": "jest --selectProjects integration --runInBand --testTimeout=180000"
+    "test": "node --experimental-vm-modules --disable-warning=ExperimentalWarning node_modules/jest/bin/jest.js --selectProjects unit --passWithNoTests",
+    "test:integration": "node --experimental-vm-modules --disable-warning=ExperimentalWarning node_modules/jest/bin/jest.js --selectProjects integration --runInBand --testTimeout=180000"
   },
   "peerDependencies": {
     "@kafkajs/confluent-schema-registry": ">=3.0.0",
-    "@nestjs/common": ">=10.0.0",
-    "@nestjs/core": ">=10.0.0",
+    "@nestjs/common": "^11.0.0 || ^12.0.0",
+    "@nestjs/core": "^11.0.0 || ^12.0.0",
     "kafkajs": ">=2.0.0",
     "reflect-metadata": "^0.2.0"
   },
@@ -47,9 +50,9 @@
   },
   "devDependencies": {
     "@kafkajs/confluent-schema-registry": "^3.9.0",
-    "@nestjs/common": "^11.1.6",
-    "@nestjs/core": "^11.1.6",
-    "@nestjs/testing": "^11.2.6",
+    "@nestjs/common": "^12.1.0",
+    "@nestjs/core": "^12.1.0",
+    "@nestjs/testing": "^12.1.0",
     "@testcontainers/kafka": "^12.1.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^20.0.0",
