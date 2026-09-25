@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "NestJS Kafka Connector",
   "license": "MIT",
+  "type": "commonjs",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "repository": {
