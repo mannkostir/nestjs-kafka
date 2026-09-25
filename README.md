@@ -22,8 +22,21 @@ npm install nestjs-kafka-connector kafkajs
 
 The library has no runtime dependencies of its own. Everything it needs is a peer dependency that
 the host application provides: `@nestjs/common`, `@nestjs/core`, `kafkajs`, and
-`reflect-metadata`. The supported ranges are the `peerDependencies` in `package.json`; CI tests
-against NestJS 11.
+`reflect-metadata`.
+
+| Peer | Supported range |
+| --- | --- |
+| `@nestjs/common`, `@nestjs/core` | `^11.0.0 \|\| ^12.0.0` |
+| `kafkajs` | `>=2.0.0` |
+| `reflect-metadata` | `^0.2.0` |
+| `@kafkajs/confluent-schema-registry` (optional) | `>=3.0.0` |
+
+CI tests against both NestJS 11 and NestJS 12.
+
+The host needs Node.js 20 or newer. On NestJS 12 the floor is higher: NestJS 12 is published as ES
+modules only, and this library is published as CommonJS, so it loads NestJS through Node's
+`require(esm)` support. That needs Node.js `^20.19.0` or `>=22.12.0`, whether the host application
+itself is CommonJS or ESM.
 
 Avro support additionally needs the optional peer `@kafkajs/confluent-schema-registry`:
 
@@ -121,12 +134,12 @@ export class OrderPublisher {
 | `clientOptions` | `KafkaConfig` (kafkajs) | yes | Passed straight to `new Kafka(...)`: `brokers`, `clientId`, `ssl`, `sasl`, and the rest. |
 | `namespace` | `string` | no | Prefixes produced and consumed topics and consumer group ids. See [Topics, namespace, and group ids](#topics-namespace-and-group-ids). |
 | `connectorName` | `string` | no | Scopes handler discovery when `KafkaModule` is registered more than once in the same app. See [Registering more than once](#registering-more-than-once). |
+| `schemaRegistry` | `{ url: string }` | no | Enables Avro. Constructs a `SchemaRegistry` against `url`. |
+| `consumerDefaults` | `ConsumerConfig` | no | Consumer settings applied to every handler unless overridden per handler. |
 
 `namespace` and `connectorName` must not be empty strings: `''` fails module construction with an
 error saying so. Leave either option `undefined` to opt out of it; this matters most when the value
 comes from an environment variable that may be set but empty.
-| `schemaRegistry` | `{ url: string }` | no | Enables Avro. Constructs a `SchemaRegistry` against `url`. |
-| `consumerDefaults` | `ConsumerConfig` | no | Consumer settings applied to every handler unless overridden per handler. |
 
 There is no `moduleName` option. Handlers are discovered application-wide regardless of which
 module declares `KafkaModule` or which module declares the handler provider.
@@ -216,6 +229,11 @@ Passing none of the three throws at module construction.
 declare the same `groupId` fail application bootstrap before any consumer connects, with an error
 naming the group id and both handlers as `ClassName.methodName`. Handlers registered on different
 connectors (different `connectorName`s) are checked separately.
+
+The same check catches a handler class listed in the `providers` of more than one module: each
+listing creates its own instance, which would consume the topic twice. That failure says so and
+asks you to provide the class from exactly one module. Aliasing a handler with `useExisting` is not
+a second registration and subscribes once.
 
 ### `ConsumerConfig`
 
@@ -509,3 +527,19 @@ can die before its offset is committed, in which case the message is delivered a
   then disconnects the producer. DLQ publishes and producer calls made from handlers therefore
   still have a connected producer while the consumers stop. Call `app.enableShutdownHooks()` in the
   host application so these run on `SIGTERM` and `SIGINT`.
+
+## Development
+
+Running the tests needs Node.js 24.9 or newer. NestJS 12 is ESM-only, and Jest can load it only
+through `require(esm)` inside its module sandbox, which is available from Node.js 24.9 behind
+`--experimental-vm-modules`. The npm scripts pass that flag for you.
+
+```sh
+npm test
+npm run test:integration
+npx tsc --noEmit
+npm run build
+```
+
+`npm run test:integration` starts a Kafka broker with Testcontainers and needs a running Docker
+daemon.
