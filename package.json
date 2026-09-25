@@ -45,7 +45,8 @@
   ],
   "scripts": {
     "prebuild": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
-    "build": "tsc -p tsconfig.build.esm.json && tsc -p tsconfig.build.cjs.json && node scripts/write-entry-points.js && node scripts/check-entry-points.js",
+    "build:compile": "tsc -p tsconfig.build.esm.json && tsc -p tsconfig.build.cjs.json && node scripts/write-entry-points.js",
+    "build": "npm run build:compile && node scripts/check-entry-points.js",
     "prepublishOnly": "npm run build",
     "test": "node --experimental-vm-modules --disable-warning=ExperimentalWarning node_modules/jest/bin/jest.js --selectProjects unit --passWithNoTests",
     "test:integration": "node --experimental-vm-modules --disable-warning=ExperimentalWarning node_modules/jest/bin/jest.js --selectProjects integration --runInBand --testTimeout=180000"
