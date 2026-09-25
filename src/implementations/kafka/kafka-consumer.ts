@@ -7,23 +7,23 @@ import {
   Producer,
 } from 'kafkajs';
 import { Logger, OnModuleDestroy } from '@nestjs/common';
-import { MessageType } from '../../types/message.type';
-import { ConsumerProxy } from '../../base/consumer-proxy';
-import { ConsumerSubscriptionParameters } from '../../types/consumer-subscription-parameters.type';
-import { MessageHandlerCallback } from '../../types/message-handler-callback.type';
-import { KafkaMessage } from './kafka-message';
+import { MessageType } from '../../types/message.type.js';
+import { ConsumerProxy } from '../../base/consumer-proxy.js';
+import { ConsumerSubscriptionParameters } from '../../types/consumer-subscription-parameters.type.js';
+import { MessageHandlerCallback } from '../../types/message-handler-callback.type.js';
+import { KafkaMessage } from './kafka-message.js';
 import type { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
-import { MessageFormat } from '../../types/message-format.type';
-import { MessageErrorHandlingConfig } from '../../types/message-error-handling.type';
-import { KafkaMessageParseStrategy } from './parse-strategies/kafka-message-parse.strategy';
-import { KafkaMessageJsonStrategy } from './parse-strategies/kafka-message-json.strategy';
-import { KafkaMessageAvroStrategy } from './parse-strategies/kafka-message-avro.strategy';
-import { KafkaErrorHandleStrategy } from './error-handle-strategies/kafka-error-handle.strategy';
-import { KafkaErrorHandleDlqStrategy } from './error-handle-strategies/kafka-error-handle-dlq.strategy';
-import { KafkaErrorHandleIgnoreStrategy } from './error-handle-strategies/kafka-error-handle-ignore.strategy';
-import { KafkaErrorHandleFailStrategy } from './error-handle-strategies/kafka-error-handle-fail.strategy';
-import { ConsumerConfig } from '../../types/consumer-config.type';
-import { TopicNamespacer } from './topic-namespacer';
+import { MessageFormat } from '../../types/message-format.type.js';
+import { MessageErrorHandlingConfig } from '../../types/message-error-handling.type.js';
+import { KafkaMessageParseStrategy } from './parse-strategies/kafka-message-parse.strategy.js';
+import { KafkaMessageJsonStrategy } from './parse-strategies/kafka-message-json.strategy.js';
+import { KafkaMessageAvroStrategy } from './parse-strategies/kafka-message-avro.strategy.js';
+import { KafkaErrorHandleStrategy } from './error-handle-strategies/kafka-error-handle.strategy.js';
+import { KafkaErrorHandleDlqStrategy } from './error-handle-strategies/kafka-error-handle-dlq.strategy.js';
+import { KafkaErrorHandleIgnoreStrategy } from './error-handle-strategies/kafka-error-handle-ignore.strategy.js';
+import { KafkaErrorHandleFailStrategy } from './error-handle-strategies/kafka-error-handle-fail.strategy.js';
+import { ConsumerConfig } from '../../types/consumer-config.type.js';
+import { TopicNamespacer } from './topic-namespacer.js';
 
 export interface KafkaConsumerOptions {
   namespace?: string;

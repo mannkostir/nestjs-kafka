@@ -1,8 +1,8 @@
 import { Test } from '@nestjs/testing';
 import { Kafka, Partitioners } from 'kafkajs';
-import { KafkaModule } from './kafka.module';
-import { KafkaModuleOptions } from './types/kafka-module-options.type';
-import { KAFKA_PRODUCER } from './tokens';
+import { KafkaModule } from './kafka.module.js';
+import { KafkaModuleOptions } from './types/kafka-module-options.type.js';
+import { KAFKA_PRODUCER } from './tokens.js';
 
 const clientOptions = { brokers: ['localhost:9092'] };
 

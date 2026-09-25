@@ -1,6 +1,6 @@
-import { MessageType } from '../types/message.type';
-import { ConsumerSubscriptionParameters } from '../types/consumer-subscription-parameters.type';
-import { MessageHandlerCallback } from '../types/message-handler-callback.type';
+import { MessageType } from '../types/message.type.js';
+import { ConsumerSubscriptionParameters } from '../types/consumer-subscription-parameters.type.js';
+import { MessageHandlerCallback } from '../types/message-handler-callback.type.js';
 
 export interface IConsumeMessages<TMessage extends MessageType = MessageType> {
   subscribe(

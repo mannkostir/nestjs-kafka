@@ -1,5 +1,5 @@
 import { KafkaMessage as KafkaJSMessage } from 'kafkajs';
-import { KafkaMessageJsonStrategy } from './kafka-message-json.strategy';
+import { KafkaMessageJsonStrategy } from './kafka-message-json.strategy.js';
 
 type Payload = { orderId: string };
 

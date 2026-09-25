@@ -1,5 +1,5 @@
 import { EachBatchPayload, IHeaders, KafkaJSError, KafkaMessage, Producer } from "kafkajs";
-import { KafkaErrorHandleStrategy } from "./kafka-error-handle.strategy";
+import { KafkaErrorHandleStrategy } from "./kafka-error-handle.strategy.js";
 
 export class KafkaErrorHandleDlqStrategy extends KafkaErrorHandleStrategy {
     private static readonly DEFAULT_DLQ_SUFFIX = '.dlq';

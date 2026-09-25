@@ -7,15 +7,15 @@ import {
 } from '@nestjs/common';
 import { DiscoveryService, MetadataScanner } from '@nestjs/core';
 
-import { ConsumerProxy } from '../base/consumer-proxy';
+import { ConsumerProxy } from '../base/consumer-proxy.js';
 import {
   Message,
   MessageHandlerKey,
-} from '../decorators/message-handler.decorator';
-import { MessageFormat } from '../types/message-format.type';
-import { MessageHandlerCallback } from '../types/message-handler-callback.type';
-import { MessageType } from '../types/message.type';
-import { CONNECTOR_NAME } from '../tokens';
+} from '../decorators/message-handler.decorator.js';
+import { MessageFormat } from '../types/message-format.type.js';
+import { MessageHandlerCallback } from '../types/message-handler-callback.type.js';
+import { MessageType } from '../types/message.type.js';
+import { CONNECTOR_NAME } from '../tokens.js';
 
 type HandlerMetadata = Parameters<typeof Message>;
 

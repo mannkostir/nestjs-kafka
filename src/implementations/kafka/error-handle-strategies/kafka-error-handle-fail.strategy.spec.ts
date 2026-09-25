@@ -1,5 +1,5 @@
 import { EachBatchPayload, KafkaJSError, KafkaMessage } from 'kafkajs';
-import { KafkaErrorHandleFailStrategy } from './kafka-error-handle-fail.strategy';
+import { KafkaErrorHandleFailStrategy } from './kafka-error-handle-fail.strategy.js';
 
 const record = (): KafkaMessage => ({
   key: null,

@@ -6,15 +6,15 @@ import {
   KafkaModuleOptions,
   KafkaModuleAsyncOptions,
   KafkaModuleOptionsFactory,
-} from './types/kafka-module-options.type';
-import { ConsumerConfig } from './types/consumer-config.type';
-import { ConsumerProxy } from './base/consumer-proxy';
-import { KafkaConsumer } from './implementations/kafka/kafka-consumer';
-import { KafkaProducer } from './implementations/kafka/kafka-producer';
-import { ProducerProxy } from './base/producer-proxy';
-import { TopicNamespacer } from './implementations/kafka/topic-namespacer';
+} from './types/kafka-module-options.type.js';
+import { ConsumerConfig } from './types/consumer-config.type.js';
+import { ConsumerProxy } from './base/consumer-proxy.js';
+import { KafkaConsumer } from './implementations/kafka/kafka-consumer.js';
+import { KafkaProducer } from './implementations/kafka/kafka-producer.js';
+import { ProducerProxy } from './base/producer-proxy.js';
+import { TopicNamespacer } from './implementations/kafka/topic-namespacer.js';
 import type { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
-import { MessageHandlersDiscoveryService } from './services/message-handlers.discovery-service';
+import { MessageHandlersDiscoveryService } from './services/message-handlers.discovery-service.js';
 import {
   KAFKA_MODULE_OPTIONS,
   TRANSPORT_CONFIG,
@@ -23,7 +23,7 @@ import {
   CONSUMER_DEFAULTS,
   CONNECTOR_NAME,
   KAFKA_PRODUCER,
-} from './tokens';
+} from './tokens.js';
 
 const kafkaProvider: Provider<Kafka> = {
   provide: Kafka,

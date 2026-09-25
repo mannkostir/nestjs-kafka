@@ -1,8 +1,8 @@
 import { Kafka, Producer } from 'kafkajs';
 import { Logger } from '@nestjs/common';
-import { KafkaConsumer } from './kafka-consumer';
-import { TopicNamespacer } from './topic-namespacer';
-import { MessageFormat } from '../../types/message-format.type';
+import { KafkaConsumer } from './kafka-consumer.js';
+import { TopicNamespacer } from './topic-namespacer.js';
+import { MessageFormat } from '../../types/message-format.type.js';
 
 const consumerStub = () => ({
   connect: jest.fn().mockResolvedValue(undefined),

@@ -1,6 +1,6 @@
 import { KafkaMessage as KafkaJSMessage } from 'kafkajs';
 import type { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
-import { KafkaMessageAvroStrategy } from './kafka-message-avro.strategy';
+import { KafkaMessageAvroStrategy } from './kafka-message-avro.strategy.js';
 
 type Payload = { orderId: string };
 

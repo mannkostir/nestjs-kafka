@@ -1,11 +1,11 @@
 import { Injectable, Module } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Kafka, KafkaMessage, Consumer } from 'kafkajs';
-import { KafkaModule } from '../../src/kafka.module';
-import { Message } from '../../src/decorators/message-handler.decorator';
-import { ProducerProxy } from '../../src/base/producer-proxy';
-import { MessageType } from '../../src/types/message.type';
-import { startBroker, StartedBroker } from './kafka-broker';
+import { KafkaModule } from '../../src/kafka.module.js';
+import { Message } from '../../src/decorators/message-handler.decorator.js';
+import { ProducerProxy } from '../../src/base/producer-proxy.js';
+import { MessageType } from '../../src/types/message.type.js';
+import { startBroker, StartedBroker } from './kafka-broker.js';
 
 @Injectable()
 class ExplodingHandler {

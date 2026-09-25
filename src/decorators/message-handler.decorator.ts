@@ -1,5 +1,5 @@
-import { ConsumerSubscriptionParameters } from '../types/consumer-subscription-parameters.type';
-import { MessageOptions } from '../types/message-options.type';
+import { ConsumerSubscriptionParameters } from '../types/consumer-subscription-parameters.type.js';
+import { MessageOptions } from '../types/message-options.type.js';
 
 export const MessageHandlerKey = 'HANDLE_MESSAGE' as const;
 

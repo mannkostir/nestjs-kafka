@@ -1,6 +1,6 @@
-import { ConsumerConfig } from "./consumer-config.type";
-import { MessageErrorHandlingConfig } from "./message-error-handling.type";
-import { MessageFormat } from "./message-format.type";
+import { ConsumerConfig } from "./consumer-config.type.js";
+import { MessageErrorHandlingConfig } from "./message-error-handling.type.js";
+import { MessageFormat } from "./message-format.type.js";
 
 export type ConsumerSubscriptionParameters = {
     topicPatterns: (string | RegExp)[];

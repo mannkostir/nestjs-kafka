@@ -1,8 +1,8 @@
-import { KafkaMessageParseStrategy } from "./kafka-message-parse.strategy";
-import { KafkaMessage } from "../kafka-message";
+import { KafkaMessageParseStrategy } from "./kafka-message-parse.strategy.js";
+import { KafkaMessage } from "../kafka-message.js";
 import { KafkaMessage as KafkaJSMessage } from "kafkajs";
 import type { SchemaRegistry } from "@kafkajs/confluent-schema-registry";
-import { MessageValue } from "../../../types/message.type";
+import { MessageValue } from "../../../types/message.type.js";
 
 export class KafkaMessageAvroStrategy<Payload extends Record<string, any>> extends KafkaMessageParseStrategy<Payload> {
     constructor(private readonly registry: SchemaRegistry) {

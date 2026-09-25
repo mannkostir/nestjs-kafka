@@ -1,6 +1,6 @@
 import { Producer } from 'kafkajs';
-import { KafkaProducer } from './kafka-producer';
-import { TopicNamespacer } from './topic-namespacer';
+import { KafkaProducer } from './kafka-producer.js';
+import { TopicNamespacer } from './topic-namespacer.js';
 
 const producerStub = () =>
   ({

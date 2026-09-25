@@ -1,11 +1,11 @@
 import { Test } from '@nestjs/testing';
 import { Kafka, Producer } from 'kafkajs';
-import { ConsumerProxy } from '../../base/consumer-proxy';
-import { ProducerProxy } from '../../base/producer-proxy';
-import { MessageFormat } from '../../types/message-format.type';
-import { KafkaConsumer } from './kafka-consumer';
-import { KafkaProducer } from './kafka-producer';
-import { TopicNamespacer } from './topic-namespacer';
+import { ConsumerProxy } from '../../base/consumer-proxy.js';
+import { ProducerProxy } from '../../base/producer-proxy.js';
+import { MessageFormat } from '../../types/message-format.type.js';
+import { KafkaConsumer } from './kafka-consumer.js';
+import { KafkaProducer } from './kafka-producer.js';
+import { TopicNamespacer } from './topic-namespacer.js';
 
 describe('Kafka connector shutdown order', () => {
   it('disconnects consumers before the producer when the application closes', async () => {

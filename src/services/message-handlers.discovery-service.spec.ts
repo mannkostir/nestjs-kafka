@@ -1,12 +1,12 @@
 import { Injectable, Logger, Module, Provider, Type } from '@nestjs/common';
 import { DiscoveryModule } from '@nestjs/core';
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConsumerProxy } from '../base/consumer-proxy';
-import { Message } from '../decorators/message-handler.decorator';
-import { MessageFormat } from '../types/message-format.type';
-import { MessageType } from '../types/message.type';
-import { CONNECTOR_NAME } from '../tokens';
-import { MessageHandlersDiscoveryService } from './message-handlers.discovery-service';
+import { ConsumerProxy } from '../base/consumer-proxy.js';
+import { Message } from '../decorators/message-handler.decorator.js';
+import { MessageFormat } from '../types/message-format.type.js';
+import { MessageType } from '../types/message.type.js';
+import { CONNECTOR_NAME } from '../tokens.js';
+import { MessageHandlersDiscoveryService } from './message-handlers.discovery-service.js';
 
 @Injectable()
 class OrdersHandler {

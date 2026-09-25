@@ -1,9 +1,9 @@
 import { Producer, RecordMetadata } from 'kafkajs';
 import { BeforeApplicationShutdown, Logger } from '@nestjs/common';
-import { ProducerProxy } from '../../base/producer-proxy';
-import { MessageType } from '../../types/message.type';
-import { ProducerSendOptions } from '../../types/producer-send-options.type';
-import { TopicNamespacer } from './topic-namespacer';
+import { ProducerProxy } from '../../base/producer-proxy.js';
+import { MessageType } from '../../types/message.type.js';
+import { ProducerSendOptions } from '../../types/producer-send-options.type.js';
+import { TopicNamespacer } from './topic-namespacer.js';
 
 export class KafkaProducer<
   TPayload extends Record<string, any>,

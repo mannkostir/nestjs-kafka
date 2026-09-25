@@ -5,7 +5,7 @@ import type {
   Type,
 } from '@nestjs/common';
 import { KafkaConfig } from 'kafkajs';
-import { ConsumerConfig } from './consumer-config.type';
+import { ConsumerConfig } from './consumer-config.type.js';
 
 export type SchemaRegistryOptions = {
   url: string;

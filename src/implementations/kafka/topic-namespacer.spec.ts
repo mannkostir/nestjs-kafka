@@ -1,4 +1,4 @@
-import { TopicNamespacer } from './topic-namespacer';
+import { TopicNamespacer } from './topic-namespacer.js';
 
 describe('TopicNamespacer without a namespace', () => {
   const namespacer = new TopicNamespacer();

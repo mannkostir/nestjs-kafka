@@ -1,6 +1,6 @@
-import { MessageValue } from "../../../types/message.type";
-import { KafkaMessage } from "../kafka-message";
-import { KafkaMessageParseStrategy } from "./kafka-message-parse.strategy";
+import { MessageValue } from "../../../types/message.type.js";
+import { KafkaMessage } from "../kafka-message.js";
+import { KafkaMessageParseStrategy } from "./kafka-message-parse.strategy.js";
 import { KafkaMessage as KafkaJSMessage } from "kafkajs";
 
 export class KafkaMessageJsonStrategy<Payload extends Record<string, any>> extends KafkaMessageParseStrategy<Payload> {

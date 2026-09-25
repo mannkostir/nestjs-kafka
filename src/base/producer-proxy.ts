@@ -1,6 +1,6 @@
-import { IProduceMessages } from "../interfaces/produce-messages.interface";
-import { MessageType } from "../types/message.type";
-import { ProducerSendOptions } from "../types/producer-send-options.type";
+import { IProduceMessages } from "../interfaces/produce-messages.interface.js";
+import { MessageType } from "../types/message.type.js";
+import { ProducerSendOptions } from "../types/producer-send-options.type.js";
 
 
 export abstract class ProducerProxy<

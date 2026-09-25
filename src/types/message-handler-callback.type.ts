@@ -1,4 +1,4 @@
-import { MessageType } from "./message.type";
+import { MessageType } from "./message.type.js";
 
 export type MessageHandlerCallback<TMessage extends MessageType> = (
     message: TMessage,

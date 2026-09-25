@@ -1,6 +1,6 @@
 import { KafkaMessage as KafkaJSMessage } from "kafkajs";
-import { KafkaMessage } from "../kafka-message";
-import type { MessageKey } from "../../../types/message.type";
+import { KafkaMessage } from "../kafka-message.js";
+import type { MessageKey } from "../../../types/message.type.js";
 
 export abstract class KafkaMessageParseStrategy<Payload extends Record<string, any>> {
     abstract parse(message: KafkaJSMessage): Promise<KafkaMessage<Payload>>;
