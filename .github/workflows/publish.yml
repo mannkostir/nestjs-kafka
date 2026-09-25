@@ -63,3 +63,32 @@ jobs:
             exit 1
           fi
           echo "dist-tag=$dist_tag" >> "$GITHUB_OUTPUT"
+
+  ci:
+    needs: guard
+    uses: ./.github/workflows/ci.yml
+
+  stage:
+    needs: [guard, ci]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - run: npm install -g npm@11.20.0
+      - run: npm ci
+      - run: npm run build
+      - env:
+          DIST_TAG: ${{ needs.guard.outputs.dist-tag }}
+        run: |
+          if [ "$DIST_TAG" = next ]; then
+            npm stage publish --ignore-scripts --tag next
+          else
+            npm stage publish --ignore-scripts
+          fi
