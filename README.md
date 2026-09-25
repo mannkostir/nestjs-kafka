@@ -31,7 +31,9 @@ the host application provides: `@nestjs/common`, `@nestjs/core`, `kafkajs`, and
 | `reflect-metadata` | `^0.2.0` |
 | `@kafkajs/confluent-schema-registry` (optional) | `>=3.0.0` |
 
-CI tests against both NestJS 11 and NestJS 12.
+CI runs the type check, unit tests, and build against both NestJS 11 and NestJS 12, the
+integration tests against NestJS 12, and checks that the built package loads on Node.js 20.19 and
+22.12.
 
 The host needs Node.js `^20.19.0` or `>=22.12.0`, which is what `engines` declares. NestJS 12 is
 published as ES modules only, and this library is published as CommonJS, so it loads NestJS through
@@ -237,10 +239,10 @@ declare the same `groupId` fail application bootstrap before any consumer connec
 naming the group id and both handlers as `ClassName.methodName`. Handlers registered on different
 connectors (different `connectorName`s) are checked separately.
 
-The same check catches a handler class listed in the `providers` of more than one module: each
-listing creates its own instance, which would consume the topic twice. That failure says so and
-asks you to provide the class from exactly one module. Aliasing a handler with `useExisting` is not
-a second registration and subscribes once.
+The same check catches a handler class provided more than once — listed in the `providers` of
+more than one module, or under a second token with `useClass`: each creates its own instance, which
+would consume the topic twice. That failure says so and asks you to provide the class exactly once.
+Aliasing a handler with `useExisting` is not a second registration and subscribes once.
 
 ### `ConsumerConfig`
 

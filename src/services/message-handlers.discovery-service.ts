@@ -22,7 +22,7 @@ type HandlerMetadata = Parameters<typeof Message>;
 type HandlerMethod = MessageHandlerCallback<MessageType>;
 
 type DiscoveredHandler = {
-  declaringClass: Function;
+  handlerClass: Function;
   name: string;
   metadata: HandlerMetadata;
   handle: HandlerMethod;
@@ -101,7 +101,7 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
         return metadata
           ? [
               {
-                declaringClass: instance.constructor,
+                handlerClass: instance.constructor,
                 name: `${instance.constructor.name}.${methodName}`,
                 metadata,
                 handle: method.bind(instance),
@@ -144,17 +144,17 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
     challenger: DiscoveredHandler,
   ): boolean {
     return (
-      owner.declaringClass === challenger.declaringClass &&
+      owner.handlerClass === challenger.handlerClass &&
       owner.name === challenger.name
     );
   }
 
   private duplicateRegistration(handlerName: string, groupId: string): Error {
     return new Error(
-      `Message handler ${handlerName} is registered as a provider in more than one module, ` +
-        `so it would subscribe twice with groupId "${groupId}". ` +
-        'Register its class as a provider in exactly one module, export it from that module, ' +
-        'and import that module wherever the provider is needed.',
+      `Message handler ${handlerName} is provided more than once, by more than one module or ` +
+        `under more than one token, so it would subscribe twice with groupId "${groupId}". ` +
+        'Provide its class exactly once, export it from that module, and use useExisting ' +
+        'for any additional token.',
     );
   }
 

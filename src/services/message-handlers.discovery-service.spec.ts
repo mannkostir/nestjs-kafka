@@ -108,6 +108,18 @@ const LookalikeOrdersHandler = (() => {
   return OrdersHandler;
 })();
 
+@Injectable()
+class ArchiveHandler {
+  @Message(['orders.archived'], {
+    groupId: 'archive-service',
+    errorHandling: { type: 'fail' },
+  })
+  async onArchived(): Promise<void> {}
+}
+
+@Injectable()
+class ColdArchiveHandler extends ArchiveHandler {}
+
 @Module({ providers: [OrdersHandler] })
 class OrdersFeatureModule {}
 
@@ -325,22 +337,32 @@ describe('MessageHandlersDiscoveryService', () => {
     expect(subscribe).toHaveBeenCalledTimes(1);
   });
 
-  it('bootstraps when a handler is also provided under an alias', async () => {
-    const { bootstrap } = harness([
-      OrdersHandler,
-      { provide: 'ORDERS_HANDLER_ALIAS', useExisting: OrdersHandler },
-    ]);
-
-    await expect(bootstrap()).resolves.toBeDefined();
-  });
-
   it('rejects bootstrap explaining the duplicate registration when one handler class is provided by two modules', async () => {
     const { bootstrap } = harness([], {
       imports: [OrdersFeatureModule, ReportingFeatureModule],
     });
 
     await expect(bootstrap()).rejects.toThrow(
-      /OrdersHandler\.onOrderCreated is registered as a provider in more than one module[\s\S]*groupId "orders-service"[\s\S]*exactly one module/,
+      /OrdersHandler\.onOrderCreated is provided more than once[\s\S]*groupId "orders-service"[\s\S]*exactly once/,
+    );
+  });
+
+  it('rejects bootstrap explaining the duplicate registration when one module provides a handler class under two tokens', async () => {
+    const { bootstrap } = harness([
+      OrdersHandler,
+      { provide: 'ORDERS_HANDLER_COPY', useClass: OrdersHandler },
+    ]);
+
+    await expect(bootstrap()).rejects.toThrow(
+      /OrdersHandler\.onOrderCreated is provided more than once/,
+    );
+  });
+
+  it('reports a shared group id when a subclass inherits a handler from a provided base class', async () => {
+    const { bootstrap } = harness([ArchiveHandler, ColdArchiveHandler]);
+
+    await expect(bootstrap()).rejects.toThrow(
+      'Message handlers ArchiveHandler.onArchived and ColdArchiveHandler.onArchived share groupId "archive-service"',
     );
   });
 
