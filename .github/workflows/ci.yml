@@ -23,9 +23,29 @@ jobs:
       - run: npm ci
       - if: matrix.nest == 11
         run: npm install --no-save @nestjs/common@^11 @nestjs/core@^11 @nestjs/testing@^11
+      - run: |
+          node -e "process.exit(require('./node_modules/@nestjs/core/package.json').version.startsWith('${{ matrix.nest }}.') ? 0 : 1)"
       - run: npx tsc --noEmit
       - run: npm test
       - run: npm run build
+
+  load:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20.19.0', '22.12.0']
+    name: load (node ${{ matrix.node }})
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: node -e "require('./dist')"
 
   integration:
     runs-on: ubuntu-latest
