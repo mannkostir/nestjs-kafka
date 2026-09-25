@@ -33,10 +33,17 @@ the host application provides: `@nestjs/common`, `@nestjs/core`, `kafkajs`, and
 
 CI tests against both NestJS 11 and NestJS 12.
 
-The host needs Node.js 20 or newer. On NestJS 12 the floor is higher: NestJS 12 is published as ES
-modules only, and this library is published as CommonJS, so it loads NestJS through Node's
-`require(esm)` support. That needs Node.js `^20.19.0` or `>=22.12.0`, whether the host application
-itself is CommonJS or ESM.
+The host needs Node.js `^20.19.0` or `>=22.12.0`, which is what `engines` declares. NestJS 12 is
+published as ES modules only, and this library is published as CommonJS, so it loads NestJS through
+Node's `require(esm)` support, which those versions provide unflagged. This applies whether the host
+application itself is CommonJS or ESM, and it is stricter than NestJS 12's own requirement. A NestJS
+11 host also runs on earlier Node.js 20 and 22 releases; npm only warns about `engines` there.
+
+**TypeScript on NestJS 12.** The type declarations are CommonJS, and they import the ESM-only
+NestJS 12 packages. With `skipLibCheck: false`, that is reported as `TS1479` / `TS1541` in this
+package's `.d.ts` files under `"moduleResolution": "node16"`, and under `"nodenext"` with TypeScript
+5.7 or older. `"nodenext"` with TypeScript 5.8 or newer and `"bundler"` resolve cleanly, as does
+`skipLibCheck: true`, which the Nest CLI sets by default. NestJS 11 is unaffected.
 
 Avro support additionally needs the optional peer `@kafkajs/confluent-schema-registry`:
 
