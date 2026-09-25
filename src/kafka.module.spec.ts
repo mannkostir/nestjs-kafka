@@ -1,8 +1,13 @@
 import { Test } from '@nestjs/testing';
 import { Kafka, Partitioners } from 'kafkajs';
+import { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
 import { KafkaModule } from './kafka.module.js';
 import { KafkaModuleOptions } from './types/kafka-module-options.type.js';
 import { KAFKA_PRODUCER } from './tokens.js';
+
+jest.mock('@kafkajs/confluent-schema-registry', () => ({
+  SchemaRegistry: jest.fn(),
+}));
 
 const clientOptions = { brokers: ['localhost:9092'] };
 
@@ -74,5 +79,28 @@ describe('KafkaModule producer', () => {
         createPartitioner: Partitioners.DefaultPartitioner,
       }),
     );
+  });
+});
+
+describe('KafkaModule schema registry', () => {
+  beforeEach(() => {
+    jest.mocked(SchemaRegistry).mockClear();
+  });
+
+  it('constructs the schema registry against the configured url', async () => {
+    const moduleRef = await compileWith({
+      clientOptions,
+      schemaRegistry: { url: 'http://registry:8081' },
+    });
+    await moduleRef.close();
+
+    expect(SchemaRegistry).toHaveBeenCalledWith({ host: 'http://registry:8081' });
+  });
+
+  it('does not construct a schema registry when none is configured', async () => {
+    const moduleRef = await compileWith({ clientOptions });
+    await moduleRef.close();
+
+    expect(SchemaRegistry).not.toHaveBeenCalled();
   });
 });

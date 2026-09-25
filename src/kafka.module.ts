@@ -45,7 +45,7 @@ const kafkaProducerProvider: Provider<Producer> = {
 
 const consumerProxyProvider: Provider<ConsumerProxy> = {
   provide: ConsumerProxy,
-  useFactory: (
+  useFactory: async (
     kafka: Kafka,
     producer: Producer,
     schemaRegistryOptions: SchemaRegistryOptions | undefined,
@@ -56,8 +56,7 @@ const consumerProxyProvider: Provider<ConsumerProxy> = {
     let schemaRegistry: SchemaRegistry | undefined;
 
     if (schemaRegistryOptions) {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { SchemaRegistry } = require('@kafkajs/confluent-schema-registry');
+      const { SchemaRegistry } = await import('@kafkajs/confluent-schema-registry');
       schemaRegistry = new SchemaRegistry({
         host: schemaRegistryOptions.url,
       });
