@@ -45,7 +45,26 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - run: node -e "require('./dist')"
+      - run: node scripts/check-entry-points.js
+
+  esm-floor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20.18.3', '22.11.0']
+    name: esm floor (node ${{ matrix.node }})
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npx tsc -p tsconfig.build.esm.json && npx tsc -p tsconfig.build.cjs.json && node scripts/write-entry-points.js
+      - run: |
+          node --input-type=module -e "import 'reflect-metadata'; const { KafkaModule } = await import('nestjs-kafka-connector'); if (typeof KafkaModule.register !== 'function') process.exit(1);"
 
   integration:
     runs-on: ubuntu-latest
