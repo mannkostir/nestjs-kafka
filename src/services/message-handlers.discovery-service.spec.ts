@@ -95,8 +95,24 @@ class SecondarySharedGroupHandler {
   async onSecondaryShared(): Promise<void> {}
 }
 
+const LookalikeOrdersHandler = (() => {
+  @Injectable()
+  class OrdersHandler {
+    @Message(['orders.archived'], {
+      groupId: 'orders-service',
+      errorHandling: { type: 'fail' },
+    })
+    async onOrderCreated(): Promise<void> {}
+  }
+
+  return OrdersHandler;
+})();
+
 @Module({ providers: [OrdersHandler] })
 class OrdersFeatureModule {}
+
+@Module({ providers: [OrdersHandler] })
+class ReportingFeatureModule {}
 
 type Harness = {
   subscribe: jest.Mock;
@@ -104,7 +120,7 @@ type Harness = {
 };
 
 const harness = (
-  handlers: Type[],
+  handlers: Provider[],
   options: { connectorName?: string; imports?: Type[] } = {},
 ): Harness => {
   const subscribe = jest.fn().mockResolvedValue(undefined);
@@ -296,5 +312,43 @@ describe('MessageHandlersDiscoveryService', () => {
     await bootstrap();
 
     expect(subscribedTopics(subscribe)).toEqual([['primary.shared']]);
+  });
+
+  it('subscribes an aliased handler only once', async () => {
+    const { subscribe, bootstrap } = harness([
+      OrdersHandler,
+      { provide: 'ORDERS_HANDLER_ALIAS', useExisting: OrdersHandler },
+    ]);
+
+    await bootstrap();
+
+    expect(subscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('bootstraps when a handler is also provided under an alias', async () => {
+    const { bootstrap } = harness([
+      OrdersHandler,
+      { provide: 'ORDERS_HANDLER_ALIAS', useExisting: OrdersHandler },
+    ]);
+
+    await expect(bootstrap()).resolves.toBeDefined();
+  });
+
+  it('rejects bootstrap explaining the duplicate registration when one handler class is provided by two modules', async () => {
+    const { bootstrap } = harness([], {
+      imports: [OrdersFeatureModule, ReportingFeatureModule],
+    });
+
+    await expect(bootstrap()).rejects.toThrow(
+      /OrdersHandler\.onOrderCreated is registered as a provider in more than one module[\s\S]*groupId "orders-service"[\s\S]*exactly one module/,
+    );
+  });
+
+  it('reports a shared group id when two distinct classes share a name', async () => {
+    const { bootstrap } = harness([OrdersHandler, LookalikeOrdersHandler]);
+
+    await expect(bootstrap()).rejects.toThrow(
+      'Message handlers OrdersHandler.onOrderCreated and OrdersHandler.onOrderCreated share groupId "orders-service"',
+    );
   });
 });

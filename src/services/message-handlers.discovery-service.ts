@@ -22,6 +22,7 @@ type HandlerMetadata = Parameters<typeof Message>;
 type HandlerMethod = MessageHandlerCallback<MessageType>;
 
 type DiscoveredHandler = {
+  declaringClass: Function;
   name: string;
   metadata: HandlerMetadata;
   handle: HandlerMethod;
@@ -65,12 +66,19 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
   }
 
   private discoverHandlers(): DiscoveredHandler[] {
-    return this.discoveryService
+    return this.distinctProviderInstances().flatMap((instance) =>
+      this.handlersOf(instance),
+    );
+  }
+
+  private distinctProviderInstances(): object[] {
+    const instances = this.discoveryService
       .getProviders()
       .filter((wrapper) => wrapper.isDependencyTreeStatic())
       .map((wrapper): unknown => wrapper.instance)
-      .filter(isObject)
-      .flatMap((instance) => this.handlersOf(instance));
+      .filter(isObject);
+
+    return [...new Set(instances)];
   }
 
   private handlersOf(instance: object): DiscoveredHandler[] {
@@ -93,6 +101,7 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
         return metadata
           ? [
               {
+                declaringClass: instance.constructor,
                 name: `${instance.constructor.name}.${methodName}`,
                 metadata,
                 handle: method.bind(instance),
@@ -103,21 +112,50 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
   }
 
   private assertUniqueGroupIds(handlers: DiscoveredHandler[]): void {
-    const ownerByGroupId = new Map<string, string>();
+    const ownerByGroupId = new Map<string, DiscoveredHandler>();
 
     for (const handler of handlers) {
       const groupId = handler.metadata[1].groupId;
       const owner = ownerByGroupId.get(groupId);
 
       if (owner) {
-        throw new Error(
-          `Message handlers ${owner} and ${handler.name} share groupId "${groupId}". ` +
-            'Give each @Message handler its own groupId.',
-        );
+        throw this.groupIdCollision(owner, handler, groupId);
       }
 
-      ownerByGroupId.set(groupId, handler.name);
+      ownerByGroupId.set(groupId, handler);
     }
+  }
+
+  private groupIdCollision(
+    owner: DiscoveredHandler,
+    challenger: DiscoveredHandler,
+    groupId: string,
+  ): Error {
+    return this.isSameHandler(owner, challenger)
+      ? this.duplicateRegistration(owner.name, groupId)
+      : new Error(
+          `Message handlers ${owner.name} and ${challenger.name} share groupId "${groupId}". ` +
+            'Give each @Message handler its own groupId.',
+        );
+  }
+
+  private isSameHandler(
+    owner: DiscoveredHandler,
+    challenger: DiscoveredHandler,
+  ): boolean {
+    return (
+      owner.declaringClass === challenger.declaringClass &&
+      owner.name === challenger.name
+    );
+  }
+
+  private duplicateRegistration(handlerName: string, groupId: string): Error {
+    return new Error(
+      `Message handler ${handlerName} is registered as a provider in more than one module, ` +
+        `so it would subscribe twice with groupId "${groupId}". ` +
+        'Register its class as a provider in exactly one module, export it from that module, ' +
+        'and import that module wherever the provider is needed.',
+    );
   }
 
   private async subscribe(handler: DiscoveredHandler): Promise<void> {
