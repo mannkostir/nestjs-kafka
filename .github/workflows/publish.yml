@@ -1,0 +1,65 @@
+name: publish
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      dist-tag: ${{ steps.guard.outputs.dist-tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - id: guard
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          set -euo pipefail
+          name=$(node -p "require('./package.json').name")
+          version=$(node -p "require('./package.json').version")
+          if [ "$TAG" != "v$version" ]; then
+            echo "::error::Release tag $TAG does not match package.json version $version. Tag the release v$version, or bump package.json on main first."
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::Release tag $TAG points at a commit that is not on main. Merge the version bump to main and tag that commit."
+            exit 1
+          fi
+          core=${version%%+*}
+          if [[ "$core" == *-* ]]; then
+            expected_prerelease=true
+            dist_tag=next
+          else
+            expected_prerelease=false
+            dist_tag=latest
+          fi
+          if [ "$PRERELEASE" != "$expected_prerelease" ]; then
+            echo "::error::Version $version needs the Release's pre-release box set to $expected_prerelease, but it is $PRERELEASE. Edit the Release to match, then re-run."
+            exit 1
+          fi
+          if view=$(npm view "$name@$version" version 2>&1); then
+            if [ -n "$view" ]; then
+              echo "::error::$name@$version is already published. Bump the version in package.json."
+              exit 1
+            fi
+          elif ! grep -q E404 <<<"$view"; then
+            echo "::error::Could not check whether $name@$version is already published."
+            echo "$view"
+            exit 1
+          fi
+          echo "dist-tag=$dist_tag" >> "$GITHUB_OUTPUT"
