@@ -33,11 +33,11 @@ jobs:
           name=$(node -p "require('./package.json').name")
           version=$(node -p "require('./package.json').version")
           if [ "$TAG" != "v$version" ]; then
-            echo "::error::Release tag $TAG does not match package.json version $version. Tag the release v$version, or bump package.json on main first."
+            echo "::error::Release tag $TAG does not match package.json version $version. The Release tag must be v$version on the commit that carries that version. Delete this Release and publish a new one."
             exit 1
           fi
           if ! git merge-base --is-ancestor HEAD origin/main; then
-            echo "::error::Release tag $TAG points at a commit that is not on main. Merge the version bump to main and tag that commit."
+            echo "::error::Release tag $TAG points at a commit that is not on main. Merge the version bump to main, tag that commit, delete this Release, and publish a new one."
             exit 1
           fi
           core=${version%%+*}
@@ -49,17 +49,17 @@ jobs:
             dist_tag=latest
           fi
           if [ "$PRERELEASE" != "$expected_prerelease" ]; then
-            echo "::error::Version $version needs the Release's pre-release box set to $expected_prerelease, but it is $PRERELEASE. Edit the Release to match, then re-run."
+            echo "::error::Version $version needs the Release's pre-release box set to $expected_prerelease, but it is $PRERELEASE. Delete this Release and publish a new one from tag $TAG with the pre-release box set to $expected_prerelease."
             exit 1
           fi
-          if view=$(npm view "$name@$version" version 2>&1); then
-            if [ -n "$view" ]; then
+          if npm view "$name@$version" version >"$RUNNER_TEMP/npm-view.out" 2>"$RUNNER_TEMP/npm-view.err"; then
+            if [ -s "$RUNNER_TEMP/npm-view.out" ]; then
               echo "::error::$name@$version is already published. Bump the version in package.json."
               exit 1
             fi
-          elif ! grep -q E404 <<<"$view"; then
+          elif ! grep -q E404 "$RUNNER_TEMP/npm-view.err"; then
             echo "::error::Could not check whether $name@$version is already published."
-            echo "$view"
+            cat "$RUNNER_TEMP/npm-view.err"
             exit 1
           fi
           echo "dist-tag=$dist_tag" >> "$GITHUB_OUTPUT"
@@ -82,13 +82,13 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
       - run: npm install -g npm@11.20.0
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - run: npm run build
       - env:
           DIST_TAG: ${{ needs.guard.outputs.dist-tag }}
         run: |
           if [ "$DIST_TAG" = next ]; then
-            npm stage publish --ignore-scripts --tag next
+            npm stage publish --ignore-scripts --loglevel verbose --tag next
           else
-            npm stage publish --ignore-scripts
+            npm stage publish --ignore-scripts --loglevel verbose
           fi
