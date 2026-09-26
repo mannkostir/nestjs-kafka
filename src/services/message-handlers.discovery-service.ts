@@ -4,6 +4,7 @@ import {
   Logger,
   OnApplicationBootstrap,
   Optional,
+  Scope,
 } from '@nestjs/common';
 import { DiscoveryService, MetadataScanner } from '@nestjs/core';
 
@@ -20,6 +21,14 @@ import { CONNECTOR_NAME } from '../tokens.js';
 type HandlerMetadata = Parameters<typeof Message>;
 
 type HandlerMethod = MessageHandlerCallback<MessageType>;
+
+type ProviderWrapper = ReturnType<DiscoveryService['getProviders']>[number];
+
+type AnnotatedMethod = {
+  methodName: string;
+  method: HandlerMethod;
+  metadata: HandlerMetadata;
+};
 
 type DiscoveredHandler = {
   handlerClass: Function;
@@ -49,6 +58,8 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
   }
 
   private async mapEventsToHandlers(): Promise<void> {
+    this.assertNoScopedHandlers();
+
     const handlers = this.discoverHandlers().filter((handler) =>
       this.belongsToThisConnector(handler.metadata),
     );
@@ -74,17 +85,31 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
   private distinctProviderInstances(): object[] {
     const instances = this.discoveryService
       .getProviders()
-      .filter((wrapper) => wrapper.isDependencyTreeStatic())
+      .filter((wrapper) => this.isSingleton(wrapper))
       .map((wrapper): unknown => wrapper.instance)
       .filter(isObject);
 
     return [...new Set(instances)];
   }
 
-  private handlersOf(instance: object): DiscoveredHandler[] {
-    const prototype: Record<string, HandlerMethod> | null =
-      Object.getPrototypeOf(instance);
+  private isSingleton(wrapper: ProviderWrapper): boolean {
+    return !wrapper.isTransient && wrapper.isDependencyTreeStatic();
+  }
 
+  private handlersOf(instance: object): DiscoveredHandler[] {
+    return this.annotatedMethodsOf(Object.getPrototypeOf(instance)).map(
+      ({ methodName, method, metadata }) => ({
+        handlerClass: instance.constructor,
+        name: `${instance.constructor.name}.${methodName}`,
+        metadata,
+        handle: method.bind(instance),
+      }),
+    );
+  }
+
+  private annotatedMethodsOf(
+    prototype: Record<string, HandlerMethod> | null,
+  ): AnnotatedMethod[] {
     if (!prototype) {
       return [];
     }
@@ -98,17 +123,50 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
           method,
         );
 
-        return metadata
-          ? [
-              {
-                handlerClass: instance.constructor,
-                name: `${instance.constructor.name}.${methodName}`,
-                metadata,
-                handle: method.bind(instance),
-              },
-            ]
-          : [];
+        return metadata ? [{ methodName, method, metadata }] : [];
       });
+  }
+
+  private assertNoScopedHandlers(): void {
+    const violations = this.discoveryService
+      .getProviders()
+      .filter((wrapper) => !this.isSingleton(wrapper))
+      .flatMap((wrapper) => this.scopedHandlerViolations(wrapper));
+
+    if (violations.length > 0) {
+      throw new Error([...new Set(violations)].join('\n'));
+    }
+  }
+
+  private scopedHandlerViolations(wrapper: ProviderWrapper): string[] {
+    const { metatype } = wrapper;
+
+    if (!metatype || wrapper.isFactory) {
+      return [];
+    }
+
+    const prototype: Record<string, HandlerMethod> | null = metatype.prototype;
+    const scope = this.scopeDescription(wrapper);
+
+    return this.annotatedMethodsOf(prototype)
+      .filter(({ metadata }) => this.belongsToThisConnector(metadata))
+      .map(
+        ({ methodName }) =>
+          `Message handler ${metatype.name}.${methodName} is on ${scope}, so it can never be subscribed. ` +
+          'Make the provider and every provider it injects singleton-scoped.',
+      );
+  }
+
+  private scopeDescription(wrapper: ProviderWrapper): string {
+    if (wrapper.scope === Scope.REQUEST) {
+      return 'a request-scoped provider';
+    }
+
+    if (wrapper.isTransient) {
+      return 'a transient provider';
+    }
+
+    return 'a provider that depends on a request-scoped provider';
   }
 
   private assertUniqueGroupIds(handlers: DiscoveredHandler[]): void {

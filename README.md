@@ -158,6 +158,11 @@ export class OrderEventsHandler {
 The second argument is the topic the batch was read from. It is typed `string | RegExp` to match the
 declared patterns and is always the concrete topic string at runtime.
 
+A handler's provider must be a singleton, and so must every provider it injects. A Kafka message has
+no request to scope an instance to, so a `@Message` handler on a request-scoped or transient
+provider, or on a provider that depends on a request-scoped one, fails application bootstrap with an
+error naming the handler and its scope.
+
 Publish messages by injecting `ProducerProxy`:
 
 ```ts

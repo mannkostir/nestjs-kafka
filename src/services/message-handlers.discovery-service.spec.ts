@@ -1,4 +1,11 @@
-import { Injectable, Logger, Module, Provider, Type } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  Module,
+  Provider,
+  Scope,
+  Type,
+} from '@nestjs/common';
 import { DiscoveryModule } from '@nestjs/core';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConsumerProxy } from '../base/consumer-proxy.js';
@@ -119,6 +126,82 @@ class ArchiveHandler {
 
 @Injectable()
 class ColdArchiveHandler extends ArchiveHandler {}
+
+@Injectable({ scope: Scope.REQUEST })
+class RequestScopedAuditHandler {
+  @Message(['audit.logged'], {
+    groupId: 'audit-service',
+    errorHandling: { type: 'fail' },
+  })
+  async onAuditLogged(): Promise<void> {}
+}
+
+@Injectable({ scope: Scope.TRANSIENT })
+class TransientMetricsHandler {
+  @Message(['metrics.recorded'], {
+    groupId: 'metrics-service',
+    errorHandling: { type: 'fail' },
+  })
+  async onMetricRecorded(): Promise<void> {}
+}
+
+@Injectable({ scope: Scope.REQUEST })
+class RequestContext {}
+
+@Injectable()
+class SessionsHandler {
+  constructor(readonly context: RequestContext) {}
+
+  @Message(['sessions.opened'], {
+    groupId: 'sessions-service',
+    errorHandling: { type: 'fail' },
+  })
+  async onSessionOpened(): Promise<void> {}
+}
+
+@Injectable({ scope: Scope.TRANSIENT })
+class TransientClock {}
+
+@Injectable()
+class ShipmentsHandler {
+  constructor(readonly clock: TransientClock) {}
+
+  @Message(['shipments.dispatched'], {
+    groupId: 'shipments-service',
+    errorHandling: { type: 'fail' },
+  })
+  async onShipmentDispatched(): Promise<void> {}
+}
+
+@Injectable()
+class ReturnsHandler {
+  @Message(['returns.received'], {
+    groupId: 'returns-service',
+    errorHandling: { type: 'fail' },
+  })
+  async onReturnReceived(): Promise<void> {}
+}
+
+@Module({ providers: [RequestScopedAuditHandler] })
+class AuditFeatureModule {}
+
+@Module({ providers: [RequestScopedAuditHandler] })
+class ComplianceFeatureModule {}
+
+@Injectable({ scope: Scope.REQUEST })
+class RequestScopedService {
+  async doWork(): Promise<void> {}
+}
+
+@Injectable({ scope: Scope.REQUEST })
+class RequestScopedSecondaryHandler {
+  @Message(['secondary.audited'], {
+    groupId: 'secondary-audit-service',
+    errorHandling: { type: 'fail' },
+    connectorName: 'secondary',
+  })
+  async onSecondaryAudited(): Promise<void> {}
+}
 
 @Module({ providers: [OrdersHandler] })
 class OrdersFeatureModule {}
@@ -372,5 +455,137 @@ describe('MessageHandlersDiscoveryService', () => {
     await expect(bootstrap()).rejects.toThrow(
       'Message handlers OrdersHandler.onOrderCreated and OrdersHandler.onOrderCreated share groupId "orders-service"',
     );
+  });
+  it('rejects bootstrap naming a handler on a request-scoped provider and how to fix it', async () => {
+    const { bootstrap } = harness([RequestScopedAuditHandler]);
+
+    await expect(bootstrap()).rejects.toThrow(
+      'Message handler RequestScopedAuditHandler.onAuditLogged is on a request-scoped provider, so it can never be subscribed. Make the provider and every provider it injects singleton-scoped.',
+    );
+  });
+
+  it('rejects bootstrap naming a handler on a transient provider', async () => {
+    const { bootstrap } = harness([TransientMetricsHandler]);
+
+    await expect(bootstrap()).rejects.toThrow(
+      'Message handler TransientMetricsHandler.onMetricRecorded is on a transient provider',
+    );
+  });
+
+  it('rejects bootstrap naming a handler whose provider depends on a request-scoped provider', async () => {
+    const { bootstrap } = harness([RequestContext, SessionsHandler]);
+
+    await expect(bootstrap()).rejects.toThrow(
+      'Message handler SessionsHandler.onSessionOpened is on a provider that depends on a request-scoped provider',
+    );
+  });
+
+  it('rejects bootstrap naming a handler on a provider registered with a request scope', async () => {
+    const { bootstrap } = harness([
+      { provide: ReturnsHandler, useClass: ReturnsHandler, scope: Scope.REQUEST },
+    ]);
+
+    await expect(bootstrap()).rejects.toThrow(
+      'Message handler ReturnsHandler.onReturnReceived is on a request-scoped provider',
+    );
+  });
+
+  it('rejects bootstrap naming the first of several handlers on scoped providers', async () => {
+    const { bootstrap } = harness([
+      RequestScopedAuditHandler,
+      TransientMetricsHandler,
+    ]);
+
+    await expect(bootstrap()).rejects.toThrow(
+      'RequestScopedAuditHandler.onAuditLogged',
+    );
+  });
+
+  it('rejects bootstrap naming the second of several handlers on scoped providers', async () => {
+    const { bootstrap } = harness([
+      RequestScopedAuditHandler,
+      TransientMetricsHandler,
+    ]);
+
+    await expect(bootstrap()).rejects.toThrow(
+      'TransientMetricsHandler.onMetricRecorded',
+    );
+  });
+
+  it('names a scoped handler once when it is also aliased', async () => {
+    const { bootstrap } = harness([
+      RequestScopedAuditHandler,
+      { provide: 'AUDIT_HANDLER_ALIAS', useExisting: RequestScopedAuditHandler },
+    ]);
+
+    await expect(bootstrap()).rejects.toThrow(
+      /^Message handler RequestScopedAuditHandler\.onAuditLogged[^\n]*$/,
+    );
+  });
+
+  it('names a scoped handler once when two modules provide it', async () => {
+    const { bootstrap } = harness([], {
+      imports: [AuditFeatureModule, ComplianceFeatureModule],
+    });
+
+    await expect(bootstrap()).rejects.toThrow(
+      /^Message handler RequestScopedAuditHandler\.onAuditLogged[^\n]*$/,
+    );
+  });
+
+  it('subscribes nothing when a handler is on a scoped provider', async () => {
+    const { subscribe, bootstrap } = harness([
+      OrdersHandler,
+      RequestScopedAuditHandler,
+    ]);
+
+    await expect(bootstrap()).rejects.toThrow();
+
+    expect(subscribe).not.toHaveBeenCalled();
+  });
+
+  it('subscribes a singleton handler that injects a transient provider', async () => {
+    const { subscribe, bootstrap } = harness([TransientClock, ShipmentsHandler]);
+
+    await bootstrap();
+
+    expect(subscribedTopics(subscribe)).toEqual([['shipments.dispatched']]);
+  });
+
+  it('ignores a request-scoped factory provider', async () => {
+    const { subscribe, bootstrap } = harness([
+      OrdersHandler,
+      {
+        provide: 'SCOPED_RETURNS_HANDLER',
+        useFactory: () => new ReturnsHandler(),
+        scope: Scope.REQUEST,
+      },
+    ]);
+
+    await bootstrap();
+
+    expect(subscribedTopics(subscribe)).toEqual([['orders.created']]);
+  });
+
+  it('ignores a request-scoped provider without message handlers', async () => {
+    const { subscribe, bootstrap } = harness([
+      OrdersHandler,
+      RequestScopedService,
+    ]);
+
+    await bootstrap();
+
+    expect(subscribedTopics(subscribe)).toEqual([['orders.created']]);
+  });
+
+  it('ignores a scoped handler named for a different connector', async () => {
+    const { subscribe, bootstrap } = harness(
+      [PrimaryHandler, RequestScopedSecondaryHandler],
+      { connectorName: 'primary' },
+    );
+
+    await bootstrap();
+
+    expect(subscribedTopics(subscribe)).toEqual([['primary.events']]);
   });
 });
