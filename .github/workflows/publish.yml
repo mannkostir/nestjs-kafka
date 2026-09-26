@@ -18,12 +18,13 @@ jobs:
     outputs:
       dist-tag: ${{ steps.guard.outputs.dist-tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
+          package-manager-cache: false
       - id: guard
         env:
           TAG: ${{ github.event.release.tag_name }}
@@ -76,11 +77,12 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
+          package-manager-cache: false
       - run: npm install -g npm@11.20.0
       - run: npm ci --ignore-scripts
       - run: npm run build
