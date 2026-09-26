@@ -116,4 +116,25 @@ describe('namespaced round trip', () => {
   it('disconnects consumers and the producer on shutdown', async () => {
     await expect(moduleRef.close()).resolves.toBeUndefined();
   });
+
+  it('leaves the namespaced consumer group empty after shutdown', async () => {
+    const admin = new Kafka({
+      clientId: 'shutdown-observer',
+      brokers: broker.brokers,
+    }).admin();
+
+    await admin.connect();
+
+    const { groups } = await admin.describeGroups(['dev-namespaced']);
+
+    await admin.disconnect();
+
+    expect(groups).toEqual([
+      expect.objectContaining({
+        groupId: 'dev-namespaced',
+        state: 'Empty',
+        members: [],
+      }),
+    ]);
+  });
 });
