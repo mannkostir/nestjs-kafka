@@ -154,7 +154,12 @@ only.
    [Topic provisioning](#topic-provisioning).
 6. Expect application bootstrap to wait for each handler's consumer to join its group and receive
    its first partition assignment, roughly one heartbeat interval when other replicas are already
-   in the group. See [Delivery semantics](#delivery-semantics).
+   in the group. A handler subscribed only to `RegExp` patterns does not wait; see
+   [Delivery semantics](#delivery-semantics).
+7. `fail` no longer backs off between redeliveries: a failing message is redelivered immediately, in
+   a tight loop, until the handler succeeds or the policy changes.
+8. `rebalanceTimeout` now maps to `max.poll.interval.ms`: a batch that takes longer than it gets the
+   consumer evicted from its group. Raise it rather than lower it if handlers are slow.
 
 ## Quickstart
 
@@ -259,6 +264,9 @@ export class OrderPublisher {
 `namespace` and `connectorName` must not be empty strings: `''` fails module construction with an
 error saying so. Leave either option `undefined` to opt out of it; this matters most when the value
 comes from an environment variable that may be set but empty.
+
+The client logs through its own default logger. Pass `clientOptions.kafkaJS.logger` to route its
+logs elsewhere.
 
 There is no `moduleName` option. Handlers are discovered application-wide regardless of which
 module declares `KafkaModule` or which module declares the handler provider.
@@ -551,11 +559,11 @@ also when parsing the record throws.
 
 ### `{ type: 'fail' }`
 
-Rethrows. The offset is not resolved, so the batch is retried according to the consumer's `retry`
-configuration and the message is redelivered. Once those retries are exhausted, the default
-`restartOnFailure: async () => true` restarts the consumer, which reads the same message again. A
-message that always fails — a poison message — therefore blocks its partition until the handler or
-the message is fixed. Use `dlq` or `ignore` when one bad message must not stall its partition.
+Rethrows. The client logs the error through its own logger and immediately seeks back to the first
+unresolved offset, so the same message is redelivered — no backoff, no retry budget, no consumer
+restart. A message that always fails — a poison message — is redelivered in a tight loop until the
+handler succeeds or the policy changes. Use `dlq` for poison messages, or `ignore` when one bad
+message must not stall its partition.
 
 ```ts
 errorHandling: { type: 'fail' }
@@ -563,7 +571,7 @@ errorHandling: { type: 'fail' }
 
 ### `{ type: 'ignore' }`
 
-Resolves the offset, heartbeats, and moves to the next message. The failure is not recorded
+Resolves the offset and moves to the next message. The failure is not recorded
 anywhere; the message is not redelivered.
 
 ```ts
@@ -572,8 +580,8 @@ errorHandling: { type: 'ignore' }
 
 ### `{ type: 'dlq', topic?: string }`
 
-Produces the original record to a dead-letter topic, then resolves the offset and heartbeats, so
-the message is not redelivered.
+Produces the original record to a dead-letter topic, then resolves the offset, so the message is
+not redelivered.
 
 ```ts
 errorHandling: { type: 'dlq' }
@@ -647,21 +655,29 @@ can die before its offset is committed, in which case the message is delivered a
   one handler, and on the same topics it splits the messages between two different methods.
   Bootstrap fails instead; see [`@Message` options](#message-options).
 - **Offsets are resolved manually.** Consumers run with `eachBatchAutoResolve: false`. Within a
-  batch, each message is parsed, passed to the handler, and only then is its offset resolved,
-  followed by a heartbeat. A failing message never has its offset resolved by the framework — that
-  decision belongs to the error policy.
+  batch, each message is parsed, passed to the handler, and only then is its offset resolved. A
+  failing message never has its offset resolved by the framework — that decision belongs to the
+  error policy.
 - **Batches stop early when the consumer is stopping or the assignment is stale.** Before each
   message the loop checks `isRunning()` and `isStale()` and breaks out, leaving the remaining
   offsets unresolved for redelivery.
-- **Bootstrap waits for group assignment.** Before a handler's consumer starts consuming,
-  application bootstrap waits for it to join its group and receive its first partition assignment
-  (which may be empty). Expect roughly one heartbeat interval when other replicas of this service
-  are already members of the group. With `fromBeginning: false` (the default), a partition with no
-  committed offset starts at the log end as of that assignment, so every message produced after
-  bootstrap resolves is delivered — a committed offset, including `0`, is always honoured instead.
-  If no assignment arrives within `rebalanceTimeout + sessionTimeout` (defaults `300000 + 30000` ms),
-  bootstrap fails with an error naming the consumer group. This reserves librdkafka's `rebalance_cb`
-  consumer property; do not set it yourself.
+- **Bootstrap waits for group assignment, for handlers with at least one plain-string topic.**
+  Before such a handler's consumer starts consuming, application bootstrap waits for it to join its
+  group and receive its first partition assignment (which may be empty). Expect roughly one
+  heartbeat interval when other replicas of this service are already members of the group. A
+  handler subscribed only to `RegExp` patterns does not wait: librdkafka sends no `JoinGroup` while
+  a subscription matches no existing topic, so bootstrap would otherwise block until the join
+  timeout elapses and then fail. Such a handler starts consuming once the client's own metadata
+  refresh (`metadataMaxAge`, default `300000` ms, settable in `clientOptions.kafkaJS`) notices a
+  topic matching its pattern. With `fromBeginning: false` (the default), a partition with no
+  committed offset starts at the log end as of that assignment. Messages produced after bootstrap
+  are delivered to the consumer that holds the partition; until the group's first commit, a
+  partition that changes owner — for example a second replica joining, or a crash before the first
+  commit — starts again at the log end, as `latest` always did. A committed offset, including `0`,
+  is always honoured instead. If no assignment arrives within `rebalanceTimeout + sessionTimeout`
+  (defaults `300000 + 30000` ms) for a handler that waits, bootstrap fails with an error naming the
+  consumer group. This reserves librdkafka's `rebalance_cb` consumer property; do not set it
+  yourself.
 - **A failed bootstrap releases every connection it opened.** If any handler's `subscribe()` call
   ultimately throws, the module disconnects every consumer it had already opened — not only the one
   that failed — and the producer, then rethrows the original error out of `onApplicationBootstrap`,
@@ -695,6 +711,10 @@ creating them, and bootstrap fails if they do not:
 ```
 Topic(s) orders.created do not exist and allowAutoTopicCreation is false. Create them before the application starts, or enable allowAutoTopicCreation.
 ```
+
+DLQ topics are not provisioned this way. A DLQ topic is created by the producer on its first send,
+and only if the broker allows auto-creation (`auto.create.topics.enable=true`) — create it up front
+when the broker does not.
 
 ## Development
 
