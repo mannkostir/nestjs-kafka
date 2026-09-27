@@ -1,4 +1,4 @@
-import { KafkaMessage as KafkaJSMessage } from 'kafkajs';
+import type { KafkaJS } from '@confluentinc/kafka-javascript';
 import type { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
 import { KafkaMessageAvroStrategy } from './kafka-message-avro.strategy.js';
 
@@ -7,7 +7,7 @@ type Payload = { orderId: string };
 const record = (
   value: Buffer | null,
   key: Buffer | null = null,
-): KafkaJSMessage => ({
+): KafkaJS.KafkaMessage => ({
   key,
   value,
   timestamp: '0',

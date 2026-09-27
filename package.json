@@ -52,10 +52,10 @@
     "test:integration": "node --experimental-vm-modules --disable-warning=ExperimentalWarning node_modules/jest/bin/jest.js --selectProjects integration --runInBand --testTimeout=180000"
   },
   "peerDependencies": {
+    "@confluentinc/kafka-javascript": "^1.10.0",
     "@kafkajs/confluent-schema-registry": ">=3.0.0",
     "@nestjs/common": "^11.0.0 || ^12.0.0",
     "@nestjs/core": "^11.0.0 || ^12.0.0",
-    "kafkajs": ">=2.0.0",
     "reflect-metadata": "^0.2.0"
   },
   "peerDependenciesMeta": {

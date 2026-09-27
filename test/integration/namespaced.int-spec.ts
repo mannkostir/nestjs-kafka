@@ -50,7 +50,7 @@ describe('namespaced round trip', () => {
     @Module({
       imports: [
         KafkaModule.register({
-          clientOptions: { clientId: 'namespaced', brokers: broker.brokers },
+          clientOptions: { kafkaJS: { clientId: 'namespaced', brokers: broker.brokers } },
           namespace: 'dev',
         }),
       ],

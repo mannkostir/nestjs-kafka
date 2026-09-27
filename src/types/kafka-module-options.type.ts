@@ -4,7 +4,7 @@ import type {
   OptionalFactoryDependency,
   Type,
 } from '@nestjs/common';
-import { KafkaConfig } from 'kafkajs';
+import type { KafkaJS } from '@confluentinc/kafka-javascript';
 import { ConsumerConfig } from './consumer-config.type.js';
 
 export type SchemaRegistryOptions = {
@@ -12,7 +12,7 @@ export type SchemaRegistryOptions = {
 };
 
 export type KafkaModuleOptions = {
-  clientOptions: KafkaConfig;
+  clientOptions: KafkaJS.CommonConstructorConfig;
   namespace?: string;
   connectorName?: string;
   schemaRegistry?: {

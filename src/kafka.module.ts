@@ -1,6 +1,6 @@
 import { DynamicModule, Module, Provider } from '@nestjs/common';
 import { DiscoveryModule } from '@nestjs/core';
-import { Kafka, KafkaConfig, Producer, Partitioners } from 'kafkajs';
+import { KafkaJS } from '@confluentinc/kafka-javascript';
 import {
   SchemaRegistryOptions,
   KafkaModuleOptions,
@@ -25,29 +25,26 @@ import {
   KAFKA_PRODUCER,
 } from './tokens.js';
 
-const kafkaProvider: Provider<Kafka> = {
-  provide: Kafka,
-  useFactory: (options: KafkaConfig) => {
-    return new Kafka(options);
+const kafkaProvider: Provider<KafkaJS.Kafka> = {
+  provide: KafkaJS.Kafka,
+  useFactory: (options: KafkaJS.CommonConstructorConfig) => {
+    return new KafkaJS.Kafka(options);
   },
   inject: [TRANSPORT_CONFIG],
 };
 
-const kafkaProducerProvider: Provider<Producer> = {
+const kafkaProducerProvider: Provider<KafkaJS.Producer> = {
   provide: KAFKA_PRODUCER,
-  useFactory: (kafka: Kafka) =>
-    kafka.producer({
-      allowAutoTopicCreation: true,
-      createPartitioner: Partitioners.DefaultPartitioner,
-    }),
-  inject: [Kafka],
+  useFactory: (kafka: KafkaJS.Kafka) =>
+    kafka.producer({ kafkaJS: { allowAutoTopicCreation: true } }),
+  inject: [KafkaJS.Kafka],
 };
 
 const consumerProxyProvider: Provider<ConsumerProxy> = {
   provide: ConsumerProxy,
   useFactory: async (
-    kafka: Kafka,
-    producer: Producer,
+    kafka: KafkaJS.Kafka,
+    producer: KafkaJS.Producer,
     schemaRegistryOptions: SchemaRegistryOptions | undefined,
     namespace: string | undefined,
     consumerDefaults: ConsumerConfig | undefined,
@@ -70,7 +67,7 @@ const consumerProxyProvider: Provider<ConsumerProxy> = {
       namespacer,
     });
   },
-  inject: [Kafka, KAFKA_PRODUCER, SCHEMA_REGISTRY_OPTIONS, TRANSPORT_NAMESPACE, CONSUMER_DEFAULTS, TopicNamespacer],
+  inject: [KafkaJS.Kafka, KAFKA_PRODUCER, SCHEMA_REGISTRY_OPTIONS, TRANSPORT_NAMESPACE, CONSUMER_DEFAULTS, TopicNamespacer],
 };
 
 const topicNamespacerProvider: Provider<TopicNamespacer> = {
@@ -81,7 +78,7 @@ const topicNamespacerProvider: Provider<TopicNamespacer> = {
 
 const producerProxyProvider: Provider<ProducerProxy> = {
   provide: ProducerProxy,
-  useFactory: async (producer: Producer, namespacer: TopicNamespacer) => {
+  useFactory: async (producer: KafkaJS.Producer, namespacer: TopicNamespacer) => {
     const proxy = new KafkaProducer(producer, namespacer);
 
     await proxy.connect();

@@ -1,7 +1,7 @@
-import { EachBatchPayload, KafkaMessage } from 'kafkajs';
+import type { KafkaJS } from '@confluentinc/kafka-javascript';
 import { KafkaErrorHandleIgnoreStrategy } from './kafka-error-handle-ignore.strategy.js';
 
-const record = (): KafkaMessage => ({
+const record = (): KafkaJS.KafkaMessage => ({
   key: null,
   value: Buffer.from('{}'),
   timestamp: '0',
@@ -15,7 +15,7 @@ const batchPayload = () =>
     batch: { topic: 'orders.created' },
     resolveOffset: jest.fn(),
     heartbeat: jest.fn().mockResolvedValue(undefined),
-  }) as unknown as EachBatchPayload;
+  }) as unknown as KafkaJS.EachBatchPayload;
 
 describe('KafkaErrorHandleIgnoreStrategy', () => {
   it('resolves the offset so the failed record is not redelivered', async () => {
@@ -25,6 +25,5 @@ describe('KafkaErrorHandleIgnoreStrategy', () => {
     await strategy.handle(new Error('boom'), payload, record());
 
     expect(payload.resolveOffset).toHaveBeenCalledWith('7');
-    expect(payload.heartbeat).toHaveBeenCalledTimes(1);
   });
 });

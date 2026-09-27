@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { Kafka, Producer } from 'kafkajs';
+import type { KafkaJS } from '@confluentinc/kafka-javascript';
 import { ConsumerProxy } from '../../base/consumer-proxy.js';
 import { ProducerProxy } from '../../base/producer-proxy.js';
 import { MessageFormat } from '../../types/message-format.type.js';
@@ -22,8 +22,8 @@ describe('Kafka connector shutdown order', () => {
       disconnect: jest.fn(async () => {
         disconnected.push('producer');
       }),
-    } as unknown as Producer;
-    const kafka = { consumer: () => consumer } as unknown as Kafka;
+    } as unknown as KafkaJS.Producer;
+    const kafka = { consumer: () => consumer } as unknown as KafkaJS.Kafka;
     const moduleRef = await Test.createTestingModule({
       providers: [
         {

@@ -1,4 +1,4 @@
-import { Kafka, Producer } from 'kafkajs';
+import type { KafkaJS } from '@confluentinc/kafka-javascript';
 import { Logger } from '@nestjs/common';
 import { KafkaConsumer } from './kafka-consumer.js';
 import { TopicNamespacer } from './topic-namespacer.js';
@@ -12,7 +12,10 @@ const consumerStub = () => ({
 });
 
 const kafkaStub = (consumer: ReturnType<typeof consumerStub>) =>
-  ({ consumer: jest.fn().mockReturnValue(consumer) }) as unknown as Kafka;
+  ({ consumer: jest.fn().mockReturnValue(consumer) }) as unknown as KafkaJS.Kafka;
+
+const consumerConfig = (kafka: KafkaJS.Kafka) =>
+  (kafka.consumer as jest.Mock).mock.calls[0][0].kafkaJS;
 
 const subscription = () => ({
   topicPatterns: ['orders.created'],
@@ -31,7 +34,7 @@ describe('KafkaConsumer group id', () => {
       'orders-service',
     );
 
-    expect(kafka.consumer).toHaveBeenCalledWith(
+    expect(consumerConfig(kafka)).toEqual(
       expect.objectContaining({ groupId: 'orders-service' }),
     );
   });
@@ -46,7 +49,7 @@ describe('KafkaConsumer group id', () => {
       'orders-service',
     );
 
-    expect(kafka.consumer).toHaveBeenCalledWith(
+    expect(consumerConfig(kafka)).toEqual(
       expect.objectContaining({ groupId: 'dev-orders-service' }),
     );
   });
@@ -63,15 +66,30 @@ describe('KafkaConsumer configuration precedence', () => {
       'orders-service',
     );
 
-    expect(kafka.consumer).toHaveBeenCalledWith(
+    expect(consumerConfig(kafka)).toEqual(
       expect.objectContaining({
-        heartbeatInterval: undefined,
         allowAutoTopicCreation: true,
+        fromBeginning: false,
       }),
     );
-    expect(consumer.subscribe).toHaveBeenCalledWith(
-      expect.objectContaining({ fromBeginning: false }),
+  });
+
+  it('omits settings left unset at every level so the client defaults apply', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+
+    await new KafkaConsumer(kafka).subscribe(
+      subscription(),
+      jest.fn(),
+      'orders-service',
     );
+
+    expect(Object.keys(consumerConfig(kafka)).sort()).toEqual([
+      'allowAutoTopicCreation',
+      'fromBeginning',
+      'groupId',
+      'retry',
+    ]);
   });
 
   it('applies module level consumer defaults over the built-in defaults', async () => {
@@ -82,11 +100,8 @@ describe('KafkaConsumer configuration precedence', () => {
       consumerDefaults: { heartbeatInterval: 1000, fromBeginning: true },
     }).subscribe(subscription(), jest.fn(), 'orders-service');
 
-    expect(kafka.consumer).toHaveBeenCalledWith(
-      expect.objectContaining({ heartbeatInterval: 1000 }),
-    );
-    expect(consumer.subscribe).toHaveBeenCalledWith(
-      expect.objectContaining({ fromBeginning: true }),
+    expect(consumerConfig(kafka)).toEqual(
+      expect.objectContaining({ heartbeatInterval: 1000, fromBeginning: true }),
     );
   });
 
@@ -102,7 +117,7 @@ describe('KafkaConsumer configuration precedence', () => {
       'orders-service',
     );
 
-    expect(kafka.consumer).toHaveBeenCalledWith(
+    expect(consumerConfig(kafka)).toEqual(
       expect.objectContaining({
         heartbeatInterval: 500,
         sessionTimeout: 20000,
@@ -110,23 +125,33 @@ describe('KafkaConsumer configuration precedence', () => {
     );
   });
 
-  it('merges retry options shallowly across all three levels', async () => {
+  it('merges retry options shallowly across module and handler levels', async () => {
     const consumer = consumerStub();
     const kafka = kafkaStub(consumer);
 
     await new KafkaConsumer(kafka, {
-      consumerDefaults: { retry: { retries: 5, initialRetryTime: 100 } },
+      consumerDefaults: { retry: { maxRetryTime: 5000, initialRetryTime: 100 } },
     }).subscribe(
-      { ...subscription(), consumer: { retry: { retries: 2 } } },
+      { ...subscription(), consumer: { retry: { maxRetryTime: 2000 } } },
       jest.fn(),
       'orders-service',
     );
 
-    const config = (kafka.consumer as jest.Mock).mock.calls[0][0];
+    expect(consumerConfig(kafka).retry).toEqual({
+      maxRetryTime: 2000,
+      initialRetryTime: 100,
+    });
+  });
 
-    expect(config.retry.retries).toBe(2);
-    expect(config.retry.initialRetryTime).toBe(100);
-    expect(config.retry.maxRetryTime).toBe(30000);
+  it('subscribes without a per subscription fromBeginning flag', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+
+    await new KafkaConsumer(kafka, {
+      consumerDefaults: { fromBeginning: true },
+    }).subscribe(subscription(), jest.fn(), 'orders-service');
+
+    expect(consumer.subscribe.mock.calls[0][0]).not.toHaveProperty('fromBeginning');
   });
 });
 
@@ -186,7 +211,7 @@ describe('KafkaConsumer topic namespacing', () => {
     const kafka = kafkaStub(consumer);
     const producer = {
       send: jest.fn().mockResolvedValue([]),
-    } as unknown as Producer;
+    } as unknown as KafkaJS.Producer;
 
     const subject = new KafkaConsumer(kafka, {
       namespace: 'dev',

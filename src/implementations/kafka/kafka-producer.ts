@@ -1,4 +1,4 @@
-import { Producer, RecordMetadata } from 'kafkajs';
+import type { KafkaJS } from '@confluentinc/kafka-javascript';
 import { BeforeApplicationShutdown, Logger } from '@nestjs/common';
 import { ProducerProxy } from '../../base/producer-proxy.js';
 import { MessageType } from '../../types/message.type.js';
@@ -12,7 +12,7 @@ export class KafkaProducer<
   private readonly logger = new Logger(KafkaProducer.name);
 
   constructor(
-    private readonly producer: Producer,
+    private readonly producer: KafkaJS.Producer,
     private readonly namespacer: TopicNamespacer,
   ) {
     super();
@@ -26,7 +26,7 @@ export class KafkaProducer<
     topic: string,
     message: MessageType<TPayload>,
     options?: ProducerSendOptions,
-  ): Promise<RecordMetadata[]> {
+  ): Promise<KafkaJS.RecordMetadata[]> {
     const namespaced = options?.namespaced ?? true;
 
     return this.producer.send({

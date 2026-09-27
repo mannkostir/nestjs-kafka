@@ -1,4 +1,4 @@
-import { Producer } from 'kafkajs';
+import type { KafkaJS } from '@confluentinc/kafka-javascript';
 import { KafkaProducer } from './kafka-producer.js';
 import { TopicNamespacer } from './topic-namespacer.js';
 
@@ -7,7 +7,7 @@ const producerStub = () =>
     connect: jest.fn().mockResolvedValue(undefined),
     disconnect: jest.fn().mockResolvedValue(undefined),
     send: jest.fn().mockResolvedValue([]),
-  }) as unknown as Producer;
+  }) as unknown as KafkaJS.Producer;
 
 const message = () => ({
   key: null,
