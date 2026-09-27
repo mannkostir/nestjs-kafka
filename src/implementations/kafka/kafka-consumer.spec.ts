@@ -438,6 +438,17 @@ describe('KafkaConsumer shutdown', () => {
 
     expect(consumer.disconnect).toHaveBeenCalledTimes(2);
   });
+
+  it('disconnectAll leaves nothing for onModuleDestroy to disconnect', async () => {
+    const consumer = consumerStub();
+    const kafkaConsumer = new KafkaConsumer(kafkaStub(consumer));
+    await kafkaConsumer.subscribe(subscription(), jest.fn(), 'orders-service');
+
+    await kafkaConsumer.disconnectAll();
+    await kafkaConsumer.onModuleDestroy();
+
+    expect(consumer.disconnect).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('KafkaConsumer topic provisioning', () => {

@@ -271,10 +271,16 @@ export class KafkaConsumer<
   }
 
   async onModuleDestroy(): Promise<void> {
-    this.logger.log(`Disconnecting ${this.consumers.length} consumer(s)...`);
+    await this.disconnectAll();
+  }
+
+  public async disconnectAll(): Promise<void> {
+    const consumers = this.consumers.splice(0);
+
+    this.logger.log(`Disconnecting ${consumers.length} consumer(s)...`);
 
     const results = await Promise.allSettled(
-      this.consumers.map((consumer) => consumer.disconnect()),
+      consumers.map((consumer) => consumer.disconnect()),
     );
 
     for (const result of results) {

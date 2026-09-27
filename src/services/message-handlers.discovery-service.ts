@@ -16,7 +16,8 @@ import {
 import { MessageFormat } from '../types/message-format.type.js';
 import { MessageHandlerCallback } from '../types/message-handler-callback.type.js';
 import { MessageType } from '../types/message.type.js';
-import { CONNECTOR_NAME } from '../tokens.js';
+import { IReleaseConnections } from '../interfaces/release-connections.interface.js';
+import { CONNECTOR_NAME, KAFKA_CONNECTIONS } from '../tokens.js';
 
 type HandlerMetadata = Parameters<typeof Message>;
 
@@ -48,13 +49,20 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
     private readonly consumerProxy: ConsumerProxy,
     private readonly discoveryService: DiscoveryService,
     private readonly metadataScanner: MetadataScanner,
+    @Inject(KAFKA_CONNECTIONS)
+    private readonly connections: IReleaseConnections,
     @Optional()
     @Inject(CONNECTOR_NAME)
     private readonly connectorName?: string,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
-    return this.mapEventsToHandlers();
+    try {
+      await this.mapEventsToHandlers();
+    } catch (error) {
+      await this.connections.releaseConnections();
+      throw error;
+    }
   }
 
   private async mapEventsToHandlers(): Promise<void> {
@@ -66,13 +74,16 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
 
     this.assertUniqueGroupIds(handlers);
 
-    const promises = handlers.map((handler) => this.subscribe(handler));
+    const results = await Promise.allSettled(
+      handlers.map((handler) => this.subscribe(handler)),
+    );
+    const failure = results.find(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    );
 
-    try {
-      await Promise.all(promises);
-    } catch (error) {
-      this.logger.error('Failed to subscribe message handlers', error);
-      throw error;
+    if (failure) {
+      this.logger.error('Failed to subscribe message handlers', failure.reason);
+      throw failure.reason;
     }
   }
 
