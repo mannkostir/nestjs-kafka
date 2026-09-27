@@ -1,11 +1,12 @@
 import { Injectable, Module } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { Kafka, KafkaMessage, Consumer } from 'kafkajs';
+import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { KafkaModule } from '../../src/kafka.module.js';
 import { Message } from '../../src/decorators/message-handler.decorator.js';
 import { ProducerProxy } from '../../src/base/producer-proxy.js';
 import { MessageType } from '../../src/types/message.type.js';
 import { startBroker, StartedBroker } from './kafka-broker.js';
+import { waitFor } from './wait.js';
 
 @Injectable()
 class ExplodingHandler {
@@ -19,37 +20,25 @@ class ExplodingHandler {
   }
 }
 
-const waitFor = async (
-  predicate: () => boolean,
-  timeoutMs = 60000,
-): Promise<void> => {
-  const deadline = Date.now() + timeoutMs;
-
-  while (Date.now() < deadline) {
-    if (predicate()) {
-      return;
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-
-  throw new Error('Timed out waiting for the expected condition');
-};
-
 describe('dead letter routing', () => {
   let broker: StartedBroker;
   let moduleRef: TestingModule;
-  let kafka: Kafka;
-  let observer: Consumer;
-  const dlqRecords: KafkaMessage[] = [];
+  let kafka: KafkaJS.Kafka;
+  let observer: KafkaJS.Consumer;
+  const dlqRecords: KafkaJS.KafkaMessage[] = [];
 
   beforeAll(async () => {
     broker = await startBroker();
-    kafka = new Kafka({ clientId: 'dlq-observer', brokers: broker.brokers });
+    kafka = new KafkaJS.Kafka({
+      kafkaJS: { clientId: 'dlq-observer', brokers: broker.brokers },
+    });
 
     const admin = kafka.admin();
     await admin.connect();
-    await admin.createTopics({ topics: [{ topic: 'payments.created.dlq' }] });
+    await admin.createTopics({
+      topics: [{ topic: 'payments.created.dlq' }],
+      timeout: 30000,
+    });
     await admin.disconnect();
 
     @Module({
@@ -66,13 +55,12 @@ describe('dead letter routing', () => {
 
     await moduleRef.init();
 
-    observer = kafka.consumer({ groupId: 'dlq-observer' });
+    observer = kafka.consumer({
+      kafkaJS: { groupId: 'dlq-observer', fromBeginning: true },
+    });
 
     await observer.connect();
-    await observer.subscribe({
-      topics: ['payments.created.dlq'],
-      fromBeginning: true,
-    });
+    await observer.subscribe({ topics: ['payments.created.dlq'] });
     await observer.run({
       eachMessage: async ({ message }) => {
         dlqRecords.push(message);
@@ -89,10 +77,11 @@ describe('dead letter routing', () => {
   it('publishes a failed record to the suffixed dead letter topic with error context', async () => {
     const producer = moduleRef.get(ProducerProxy);
 
-    await producer.send('payments.created', {
-      key: null,
-      value: { payload: { paymentId: 'p-1' } },
-    });
+    await producer.send(
+      'payments.created',
+      { key: null, value: { payload: { paymentId: 'p-1' } } },
+      { key: 'payment-1' },
+    );
 
     await waitFor(() => dlqRecords.length > 0);
 
@@ -102,5 +91,14 @@ describe('dead letter routing', () => {
     expect(headers['dlq.error.message']?.toString()).toBe('handler exploded');
     expect(headers['dlq.error.name']?.toString()).toBe('Error');
     expect(headers['dlq.timestamp']?.toString()).toEqual(expect.any(String));
+  });
+
+  it('keeps the failed record key and value on the dead letter copy', async () => {
+    await waitFor(() => dlqRecords.length > 0);
+
+    expect(dlqRecords[0].key?.toString()).toBe('payment-1');
+    expect(JSON.parse(dlqRecords[0].value?.toString() ?? 'null')).toEqual({
+      payload: { paymentId: 'p-1' },
+    });
   });
 });

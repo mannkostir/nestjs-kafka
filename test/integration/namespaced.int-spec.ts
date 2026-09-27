@@ -1,11 +1,12 @@
 import { Injectable, Module } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { Kafka } from 'kafkajs';
+import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { KafkaModule } from '../../src/kafka.module.js';
 import { Message } from '../../src/decorators/message-handler.decorator.js';
 import { ProducerProxy } from '../../src/base/producer-proxy.js';
 import { MessageType } from '../../src/types/message.type.js';
 import { startBroker, StartedBroker } from './kafka-broker.js';
+import { waitFor } from './wait.js';
 
 type OrderCreated = { orderId: string };
 
@@ -23,22 +24,19 @@ class NamespacedHandler {
   }
 }
 
-const waitFor = async (
-  predicate: () => boolean,
-  timeoutMs = 60000,
-): Promise<void> => {
-  const deadline = Date.now() + timeoutMs;
+const audited: MessageType[] = [];
 
-  while (Date.now() < deadline) {
-    if (predicate()) {
-      return;
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 250));
+@Injectable()
+class AuditHandler {
+  @Message([/^audit\..+/], {
+    groupId: 'audit',
+    errorHandling: { type: 'fail' },
+    consumer: { fromBeginning: true },
+  })
+  async handle(message: MessageType): Promise<void> {
+    audited.push(message);
   }
-
-  throw new Error('Timed out waiting for the expected condition');
-};
+}
 
 describe('namespaced round trip', () => {
   let broker: StartedBroker;
@@ -47,6 +45,16 @@ describe('namespaced round trip', () => {
   beforeAll(async () => {
     broker = await startBroker();
 
+    const setup = new KafkaJS.Kafka({
+      kafkaJS: { clientId: 'namespace-setup', brokers: broker.brokers },
+    }).admin();
+    await setup.connect();
+    await setup.createTopics({
+      topics: [{ topic: 'dev.audit.login' }],
+      timeout: 30000,
+    });
+    await setup.disconnect();
+
     @Module({
       imports: [
         KafkaModule.register({
@@ -54,7 +62,7 @@ describe('namespaced round trip', () => {
           namespace: 'dev',
         }),
       ],
-      providers: [NamespacedHandler],
+      providers: [NamespacedHandler, AuditHandler],
     })
     class TestModule {}
 
@@ -80,10 +88,22 @@ describe('namespaced round trip', () => {
     expect(received[0].value?.payload).toEqual({ orderId: 'o-1' });
   });
 
+  it('delivers to a pattern handler through the namespaced pattern', async () => {
+    const producer = moduleRef.get(ProducerProxy);
+
+    await producer.send('audit.login', {
+      key: null,
+      value: { payload: { userId: 'u-1' } },
+    });
+
+    await waitFor(() => audited.length > 0);
+
+    expect(audited[0].value?.payload).toEqual({ userId: 'u-1' });
+  });
+
   it('writes to the namespaced topic on the broker', async () => {
-    const admin = new Kafka({
-      clientId: 'namespace-observer',
-      brokers: broker.brokers,
+    const admin = new KafkaJS.Kafka({
+      kafkaJS: { clientId: 'namespace-observer', brokers: broker.brokers },
     }).admin();
 
     await admin.connect();
@@ -97,9 +117,8 @@ describe('namespaced round trip', () => {
   });
 
   it('registers the consumer group under the namespace', async () => {
-    const admin = new Kafka({
-      clientId: 'group-observer',
-      brokers: broker.brokers,
+    const admin = new KafkaJS.Kafka({
+      kafkaJS: { clientId: 'group-observer', brokers: broker.brokers },
     }).admin();
 
     await admin.connect();
@@ -118,9 +137,8 @@ describe('namespaced round trip', () => {
   });
 
   it('leaves the namespaced consumer group empty after shutdown', async () => {
-    const admin = new Kafka({
-      clientId: 'shutdown-observer',
-      brokers: broker.brokers,
+    const admin = new KafkaJS.Kafka({
+      kafkaJS: { clientId: 'shutdown-observer', brokers: broker.brokers },
     }).admin();
 
     await admin.connect();
@@ -132,7 +150,7 @@ describe('namespaced round trip', () => {
     expect(groups).toEqual([
       expect.objectContaining({
         groupId: 'dev-namespaced',
-        state: 'Empty',
+        state: KafkaJS.ConsumerGroupStates.EMPTY,
         members: [],
       }),
     ]);
