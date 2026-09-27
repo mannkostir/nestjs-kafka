@@ -202,7 +202,7 @@ describe('KafkaConsumer topic namespacing', () => {
 
     const topics = (consumer.subscribe as jest.Mock).mock.calls[0][0].topics;
 
-    expect((topics[0] as RegExp).source).toBe('^dev\\.(?:orders\\..*)');
+    expect((topics[0] as RegExp).source).toBe('^dev\\.(orders\\..*)');
   });
 
   it('namespaces an explicitly configured dead letter topic', async () => {
@@ -308,6 +308,20 @@ describe('KafkaConsumer configuration errors', () => {
         'orders-service',
       ),
     ).rejects.toThrow(/DLQ error handling requires a producer/);
+    expect(kafka.consumer).not.toHaveBeenCalled();
+  });
+
+  it('rejects a pattern librdkafka cannot match before creating a consumer', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+
+    await expect(
+      new KafkaConsumer(kafka).subscribe(
+        { ...subscription(), topicPatterns: [/^orders/i] },
+        jest.fn(),
+        'orders-service',
+      ),
+    ).rejects.toThrow(/Topic pattern \/\^orders\/i cannot be subscribed/);
     expect(kafka.consumer).not.toHaveBeenCalled();
   });
 });
