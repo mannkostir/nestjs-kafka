@@ -24,7 +24,7 @@ describe('Kafka connector shutdown order', () => {
       }),
     } as unknown as KafkaJS.Producer;
     const kafka = {
-      consumer: () => consumer,
+      consumer: jest.fn(() => consumer),
       admin: () => ({
         connect: jest.fn().mockResolvedValue(undefined),
         disconnect: jest.fn().mockResolvedValue(undefined),
@@ -32,6 +32,10 @@ describe('Kafka connector shutdown order', () => {
         createTopics: jest.fn().mockResolvedValue(true),
       }),
     } as unknown as KafkaJS.Kafka;
+    consumer.run.mockImplementation(async () => {
+      const config = (kafka.consumer as jest.Mock).mock.calls.at(-1)[0];
+      await config.rebalance_cb({ code: -175 }, []);
+    });
     const moduleRef = await Test.createTestingModule({
       providers: [
         {

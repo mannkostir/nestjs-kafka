@@ -16,8 +16,8 @@ const provisionerStub = () => ({
   assertExisting: jest.fn().mockResolvedValue(undefined),
 });
 
-const kafkaStub = (consumer: ReturnType<typeof consumerStub>) =>
-  ({
+const kafkaStub = (consumer: ReturnType<typeof consumerStub>) => {
+  const kafka = {
     consumer: jest.fn().mockReturnValue(consumer),
     admin: jest.fn().mockReturnValue({
       connect: jest.fn().mockResolvedValue(undefined),
@@ -25,7 +25,17 @@ const kafkaStub = (consumer: ReturnType<typeof consumerStub>) =>
       listTopics: jest.fn().mockResolvedValue([]),
       createTopics: jest.fn().mockResolvedValue(true),
     }),
-  }) as unknown as KafkaJS.Kafka;
+  } as unknown as KafkaJS.Kafka;
+
+  consumer.run.mockImplementation(async () => {
+    const config = (kafka.consumer as jest.Mock).mock.calls.at(-1)[0];
+    await config.rebalance_cb({ code: -175 }, []);
+  });
+
+  return kafka;
+};
+
+const flush = () => new Promise((resolve) => setImmediate(resolve));
 
 const consumerConfig = (kafka: KafkaJS.Kafka) =>
   (kafka.consumer as jest.Mock).mock.calls[0][0].kafkaJS;
@@ -337,6 +347,59 @@ describe('KafkaConsumer configuration errors', () => {
       ),
     ).rejects.toThrow(/Topic pattern \/\^orders\/i cannot be subscribed/);
     expect(kafka.consumer).not.toHaveBeenCalled();
+  });
+});
+
+describe('KafkaConsumer group assignment', () => {
+  it('resolves subscribe only after the first assignment', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+    let releaseRun!: () => void;
+    consumer.run.mockImplementation(
+      () => new Promise<void>((resolve) => { releaseRun = resolve; }),
+    );
+
+    let resolved = false;
+    const subscribePromise = new KafkaConsumer(kafka)
+      .subscribe(subscription(), jest.fn(), 'orders-service')
+      .then(() => {
+        resolved = true;
+      });
+
+    await flush();
+    releaseRun();
+    await flush();
+
+    expect(resolved).toBe(false);
+
+    const config = (kafka.consumer as jest.Mock).mock.calls.at(-1)[0];
+    await config.rebalance_cb({ code: -175 }, []);
+    await subscribePromise;
+
+    expect(resolved).toBe(true);
+  });
+
+  it('rejects naming the group and closes the consumer when no assignment arrives', async () => {
+    jest.useFakeTimers();
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+    consumer.run.mockImplementation(() => Promise.resolve());
+
+    const subscribePromise = new KafkaConsumer(kafka).subscribe(
+      { ...subscription(), consumer: { rebalanceTimeout: 1000, sessionTimeout: 500 } },
+      jest.fn(),
+      'orders-service',
+    );
+
+    const assertion = expect(subscribePromise).rejects.toThrow(
+      /Consumer group "orders-service" received no partition assignment within 1500 ms/,
+    );
+
+    await jest.advanceTimersByTimeAsync(1500);
+    await assertion;
+
+    expect(consumer.disconnect).toHaveBeenCalledTimes(1);
+    jest.useRealTimers();
   });
 });
 

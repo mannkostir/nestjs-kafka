@@ -19,6 +19,7 @@ import { ConsumerConfig } from '../../types/consumer-config.type.js';
 import { TopicNamespacer } from './topic-namespacer.js';
 import { LibrdkafkaTopicPattern } from './librdkafka-topic-pattern.js';
 import { KafkaTopicProvisioner } from './kafka-topic-provisioner.js';
+import { KafkaGroupMember } from './kafka-group-member.js';
 
 export interface KafkaConsumerOptions {
   namespace?: string;
@@ -164,17 +165,25 @@ export class KafkaConsumer<
       await this.topicProvisioner.assertExisting(topicNames);
     }
 
-    const consumer = this.kafka.consumer({
-      kafkaJS: KafkaConsumer.withoutUndefined({
-        groupId: [this.namespace, consumerGroupId].filter(Boolean).join('-'),
-        fromBeginning: overrides.fromBeginning ?? defaults.fromBeginning ?? false,
+    const groupId = [this.namespace, consumerGroupId].filter(Boolean).join('-');
+    const fromBeginning = overrides.fromBeginning ?? defaults.fromBeginning ?? false;
+    const sessionTimeout = overrides.sessionTimeout ?? defaults.sessionTimeout;
+    const rebalanceTimeout = overrides.rebalanceTimeout ?? defaults.rebalanceTimeout;
+
+    const member = new KafkaGroupMember(
+      this.kafka,
+      KafkaConsumer.withoutUndefined({
+        groupId,
+        fromBeginning,
         allowAutoTopicCreation,
         heartbeatInterval: overrides.heartbeatInterval ?? defaults.heartbeatInterval,
-        sessionTimeout: overrides.sessionTimeout ?? defaults.sessionTimeout,
-        rebalanceTimeout: overrides.rebalanceTimeout ?? defaults.rebalanceTimeout,
+        sessionTimeout,
+        rebalanceTimeout,
         retry: { ...defaults.retry, ...overrides.retry },
       }),
-    });
+      !fromBeginning,
+    );
+    const consumer = member.consumer;
 
     this.consumers.push(consumer);
 
@@ -186,10 +195,19 @@ export class KafkaConsumer<
       await consumer.subscribe(topics);
 
       await this.run(consumer, cb, parseStrategy, errorStrategy);
+      await member.joined(groupId, KafkaConsumer.joinTimeoutMs(rebalanceTimeout, sessionTimeout));
     } catch (error) {
       await this.closeFailedConsumer(consumer);
       throw error;
     }
+  }
+
+  private static readonly DEFAULT_REBALANCE_TIMEOUT_MS = 300000;
+  private static readonly DEFAULT_SESSION_TIMEOUT_MS = 30000;
+
+  private static joinTimeoutMs(rebalanceTimeout?: number, sessionTimeout?: number): number {
+    return (rebalanceTimeout ?? KafkaConsumer.DEFAULT_REBALANCE_TIMEOUT_MS) +
+      (sessionTimeout ?? KafkaConsumer.DEFAULT_SESSION_TIMEOUT_MS);
   }
 
   private async closeFailedConsumer(consumer: KafkaJS.Consumer): Promise<void> {
