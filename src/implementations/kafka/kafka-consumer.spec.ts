@@ -1,5 +1,6 @@
 import type { KafkaJS } from '@confluentinc/kafka-javascript';
 import { KafkaConsumer } from './kafka-consumer.js';
+import { KafkaTopicProvisioner } from './kafka-topic-provisioner.js';
 import { TopicNamespacer } from './topic-namespacer.js';
 import { MessageFormat } from '../../types/message-format.type.js';
 
@@ -10,8 +11,21 @@ const consumerStub = () => ({
   disconnect: jest.fn().mockResolvedValue(undefined),
 });
 
+const provisionerStub = () => ({
+  createMissing: jest.fn().mockResolvedValue(undefined),
+  assertExisting: jest.fn().mockResolvedValue(undefined),
+});
+
 const kafkaStub = (consumer: ReturnType<typeof consumerStub>) =>
-  ({ consumer: jest.fn().mockReturnValue(consumer) }) as unknown as KafkaJS.Kafka;
+  ({
+    consumer: jest.fn().mockReturnValue(consumer),
+    admin: jest.fn().mockReturnValue({
+      connect: jest.fn().mockResolvedValue(undefined),
+      disconnect: jest.fn().mockResolvedValue(undefined),
+      listTopics: jest.fn().mockResolvedValue([]),
+      createTopics: jest.fn().mockResolvedValue(true),
+    }),
+  }) as unknown as KafkaJS.Kafka;
 
 const consumerConfig = (kafka: KafkaJS.Kafka) =>
   (kafka.consumer as jest.Mock).mock.calls[0][0].kafkaJS;
@@ -357,5 +371,63 @@ describe('KafkaConsumer shutdown', () => {
     await kafkaConsumer.onModuleDestroy();
 
     expect(consumer.disconnect).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('KafkaConsumer topic provisioning', () => {
+  it('creates the namespaced string topics before creating the consumer', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+    const topicProvisioner = provisionerStub();
+    topicProvisioner.createMissing.mockImplementation(async () => {
+      expect(kafka.consumer).not.toHaveBeenCalled();
+    });
+
+    await new KafkaConsumer(kafka, {
+      namespace: 'dev',
+      namespacer: new TopicNamespacer('dev'),
+      topicProvisioner: topicProvisioner as unknown as KafkaTopicProvisioner,
+    }).subscribe(
+      { ...subscription(), topicPatterns: ['orders.created', /^audit\..+/] },
+      jest.fn(),
+      'orders-service',
+    );
+
+    expect(topicProvisioner.createMissing).toHaveBeenCalledWith(['dev.orders.created']);
+  });
+
+  it('only checks existence when auto topic creation is disabled', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+    const topicProvisioner = provisionerStub();
+
+    await new KafkaConsumer(kafka, {
+      topicProvisioner: topicProvisioner as unknown as KafkaTopicProvisioner,
+    }).subscribe(
+      { ...subscription(), consumer: { allowAutoTopicCreation: false } },
+      jest.fn(),
+      'orders-service',
+    );
+
+    expect(topicProvisioner.assertExisting).toHaveBeenCalledWith(['orders.created']);
+    expect(topicProvisioner.createMissing).not.toHaveBeenCalled();
+  });
+
+  it('creates no consumer when a required topic is missing', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+    const topicProvisioner = provisionerStub();
+    topicProvisioner.assertExisting.mockRejectedValue(new Error('missing'));
+
+    await expect(
+      new KafkaConsumer(kafka, {
+        topicProvisioner: topicProvisioner as unknown as KafkaTopicProvisioner,
+      }).subscribe(
+        { ...subscription(), consumer: { allowAutoTopicCreation: false } },
+        jest.fn(),
+        'orders-service',
+      ),
+    ).rejects.toThrow('missing');
+    expect(kafka.consumer).not.toHaveBeenCalled();
   });
 });
