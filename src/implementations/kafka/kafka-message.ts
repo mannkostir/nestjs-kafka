@@ -1,4 +1,4 @@
-import { KafkaMessage as KafkaJSMessage } from 'kafkajs';
+import type { KafkaJS } from '@confluentinc/kafka-javascript';
 import { MessageKey, MessageType, MessageValue } from '../../types/message.type.js';
 import { KafkaMessageParseStrategy } from './parse-strategies/kafka-message-parse.strategy.js';
 
@@ -15,7 +15,7 @@ export class KafkaMessage<
     this.value = value;
   }
 
-  public static from<Payload extends Record<string, any>>(strategy: KafkaMessageParseStrategy<Payload>, message: KafkaJSMessage): Promise<KafkaMessage<Payload>> {
+  public static from<Payload extends Record<string, any>>(strategy: KafkaMessageParseStrategy<Payload>, message: KafkaJS.KafkaMessage): Promise<KafkaMessage<Payload>> {
     return strategy.parse(message);
   }
 }

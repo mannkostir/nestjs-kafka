@@ -1,10 +1,4 @@
-import {
-  Consumer,
-  ConsumerSubscribeTopics,
-  EachBatchPayload,
-  Kafka,
-  Producer,
-} from 'kafkajs';
+import type { KafkaJS } from '@confluentinc/kafka-javascript';
 import { Logger, OnModuleDestroy } from '@nestjs/common';
 import { MessageType } from '../../types/message.type.js';
 import { ConsumerProxy } from '../../base/consumer-proxy.js';
@@ -27,7 +21,7 @@ import { TopicNamespacer } from './topic-namespacer.js';
 export interface KafkaConsumerOptions {
   namespace?: string;
   schemaRegistry?: SchemaRegistry;
-  producer?: Producer;
+  producer?: KafkaJS.Producer;
   consumerDefaults?: ConsumerConfig;
   namespacer?: TopicNamespacer;
 }
@@ -44,14 +38,14 @@ export class KafkaConsumer<
   private readonly logger = new Logger(KafkaConsumer.name);
   private readonly schemaRegistry?: SchemaRegistry;
   private readonly namespace?: string;
-  private readonly producer?: Producer;
+  private readonly producer?: KafkaJS.Producer;
   private readonly consumerDefaults?: ConsumerConfig;
   private readonly namespacer: TopicNamespacer;
   private readonly strategyCache = new Map<string, KafkaErrorHandleStrategy>();
-  private readonly consumers: Consumer[] = [];
+  private readonly consumers: KafkaJS.Consumer[] = [];
 
   constructor(
-    private readonly kafka: Kafka,
+    private readonly kafka: KafkaJS.Kafka,
     options?: KafkaConsumerOptions,
   ) {
     super();
@@ -150,27 +144,19 @@ export class KafkaConsumer<
     const defaults = this.consumerDefaults ?? {};
     const overrides = subscription.consumer ?? {};
 
-    const effectiveRetry = {
-      maxRetryTime: 30000,
-      initialRetryTime: 300,
-      factor: 0.2,
-      multiplier: 2,
-      retries: 15,
-      restartOnFailure: async () => true,
-      ...defaults.retry,
-      ...overrides.retry,
-    };
-
     const allowAutoTopicCreation =
       overrides.allowAutoTopicCreation ?? defaults.allowAutoTopicCreation ?? true;
 
     const consumer = this.kafka.consumer({
-      groupId: [this.namespace, consumerGroupId].filter(Boolean).join('-'),
-      allowAutoTopicCreation,
-      heartbeatInterval: overrides.heartbeatInterval ?? defaults.heartbeatInterval,
-      sessionTimeout: overrides.sessionTimeout ?? defaults.sessionTimeout,
-      rebalanceTimeout: overrides.rebalanceTimeout ?? defaults.rebalanceTimeout,
-      retry: effectiveRetry,
+      kafkaJS: KafkaConsumer.withoutUndefined({
+        groupId: [this.namespace, consumerGroupId].filter(Boolean).join('-'),
+        fromBeginning: overrides.fromBeginning ?? defaults.fromBeginning ?? false,
+        allowAutoTopicCreation,
+        heartbeatInterval: overrides.heartbeatInterval ?? defaults.heartbeatInterval,
+        sessionTimeout: overrides.sessionTimeout ?? defaults.sessionTimeout,
+        rebalanceTimeout: overrides.rebalanceTimeout ?? defaults.rebalanceTimeout,
+        retry: { ...defaults.retry, ...overrides.retry },
+      }),
     });
 
     this.consumers.push(consumer);
@@ -178,8 +164,7 @@ export class KafkaConsumer<
     try {
       await consumer.connect();
 
-      const topics: ConsumerSubscribeTopics = {
-        fromBeginning: overrides.fromBeginning ?? defaults.fromBeginning ?? false,
+      const topics: KafkaJS.ConsumerSubscribeTopics = {
         topics: subscription.topicPatterns
           .filter(Boolean)
           .map((pattern) =>
@@ -200,7 +185,7 @@ export class KafkaConsumer<
     }
   }
 
-  private async closeFailedConsumer(consumer: Consumer): Promise<void> {
+  private async closeFailedConsumer(consumer: KafkaJS.Consumer): Promise<void> {
     const index = this.consumers.indexOf(consumer);
     if (index !== -1) {
       this.consumers.splice(index, 1);
@@ -214,8 +199,8 @@ export class KafkaConsumer<
   }
 
   private async subscribeAwaitingTopicCreation(
-    consumer: Consumer,
-    topics: ConsumerSubscribeTopics,
+    consumer: KafkaJS.Consumer,
+    topics: KafkaJS.ConsumerSubscribeTopics,
   ): Promise<void> {
     for (let attempt = 0; ; attempt++) {
       try {
@@ -250,12 +235,18 @@ export class KafkaConsumer<
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
+  private static withoutUndefined<T extends object>(config: T): T {
+    return Object.fromEntries(
+      Object.entries(config).filter(([, value]) => value !== undefined),
+    ) as T;
+  }
+
   private handleBatchByMessage(
     cb: MessageHandlerCallback<TMessage>,
     parseStrategy: KafkaMessageParseStrategy<TMessage>,
     errorStrategy: KafkaErrorHandleStrategy,
   ) {
-    return async (payload: EachBatchPayload) => {
+    return async (payload: KafkaJS.EachBatchPayload) => {
       for (const message of payload.batch.messages) {
         if (!payload.isRunning() || payload.isStale()) {
           break;
@@ -268,8 +259,6 @@ export class KafkaConsumer<
           );
 
           payload.resolveOffset(message.offset);
-
-          await payload.heartbeat();
         } catch (err) {
           await errorStrategy.handle(err, payload, message);
         }
@@ -278,7 +267,7 @@ export class KafkaConsumer<
   }
 
   private async run(
-    consumer: Consumer,
+    consumer: KafkaJS.Consumer,
     cb: MessageHandlerCallback<TMessage>,
     parseStrategy: KafkaMessageParseStrategy<TMessage>,
     errorStrategy: KafkaErrorHandleStrategy,

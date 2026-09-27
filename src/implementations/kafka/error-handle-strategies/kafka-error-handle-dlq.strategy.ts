@@ -1,4 +1,4 @@
-import { EachBatchPayload, IHeaders, KafkaMessage, Producer } from "kafkajs";
+import type { KafkaJS } from "@confluentinc/kafka-javascript";
 import { KafkaErrorHandleStrategy } from "./kafka-error-handle.strategy.js";
 
 type FailureDescription = {
@@ -11,7 +11,7 @@ export class KafkaErrorHandleDlqStrategy extends KafkaErrorHandleStrategy {
     private static readonly DEFAULT_DLQ_SUFFIX = '.dlq';
 
     constructor(
-        private readonly producer: Producer,
+        private readonly producer: KafkaJS.Producer,
         private readonly dlqTopic?: string,
     ) {
         super();
@@ -33,7 +33,7 @@ export class KafkaErrorHandleDlqStrategy extends KafkaErrorHandleStrategy {
         return { name: 'Error', message: String(error) };
     }
 
-    private buildDlqHeaders(error: unknown, originalTopic: string, originalHeaders?: IHeaders): IHeaders {
+    private buildDlqHeaders(error: unknown, originalTopic: string, originalHeaders?: KafkaJS.IHeaders): KafkaJS.IHeaders {
         const failure = KafkaErrorHandleDlqStrategy.describeFailure(error);
 
         return {
@@ -46,7 +46,7 @@ export class KafkaErrorHandleDlqStrategy extends KafkaErrorHandleStrategy {
         };
     }
 
-    public async handle(error: unknown, payload: EachBatchPayload, message: KafkaMessage): Promise<void> {
+    public async handle(error: unknown, payload: KafkaJS.EachBatchPayload, message: KafkaJS.KafkaMessage): Promise<void> {
         const originalTopic = payload.batch.topic;
 
         await this.producer.send({
@@ -60,6 +60,5 @@ export class KafkaErrorHandleDlqStrategy extends KafkaErrorHandleStrategy {
         });
 
         payload.resolveOffset(message.offset);
-        await payload.heartbeat();
     }
 }

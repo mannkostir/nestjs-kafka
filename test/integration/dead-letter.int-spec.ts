@@ -55,7 +55,7 @@ describe('dead letter routing', () => {
     @Module({
       imports: [
         KafkaModule.register({
-          clientOptions: { clientId: 'dead-letter', brokers: broker.brokers },
+          clientOptions: { kafkaJS: { clientId: 'dead-letter', brokers: broker.brokers } },
         }),
       ],
       providers: [ExplodingHandler],

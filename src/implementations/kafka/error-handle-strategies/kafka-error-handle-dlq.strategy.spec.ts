@@ -1,7 +1,7 @@
-import { EachBatchPayload, KafkaMessage, Producer } from 'kafkajs';
+import type { KafkaJS } from '@confluentinc/kafka-javascript';
 import { KafkaErrorHandleDlqStrategy } from './kafka-error-handle-dlq.strategy.js';
 
-const record = (): KafkaMessage => ({
+const record = (): KafkaJS.KafkaMessage => ({
   key: null,
   value: Buffer.from('{}'),
   timestamp: '0',
@@ -15,10 +15,10 @@ const batchPayload = () =>
     batch: { topic: 'orders.created' },
     resolveOffset: jest.fn(),
     heartbeat: jest.fn().mockResolvedValue(undefined),
-  }) as unknown as EachBatchPayload;
+  }) as unknown as KafkaJS.EachBatchPayload;
 
 const producerStub = () =>
-  ({ send: jest.fn().mockResolvedValue([]) }) as unknown as Producer;
+  ({ send: jest.fn().mockResolvedValue([]) }) as unknown as KafkaJS.Producer;
 
 describe('KafkaErrorHandleDlqStrategy', () => {
   it('publishes to the suffixed dead letter topic by default', async () => {

@@ -98,7 +98,7 @@ describe('produce and consume round trip', () => {
     @Module({
       imports: [
         KafkaModule.register({
-          clientOptions: { clientId: 'round-trip', brokers: broker.brokers },
+          clientOptions: { kafkaJS: { clientId: 'round-trip', brokers: broker.brokers } },
         }),
       ],
       providers: [OrderHandler],

@@ -1,7 +1,7 @@
-import { EachBatchPayload, KafkaMessage } from 'kafkajs';
+import type { KafkaJS } from '@confluentinc/kafka-javascript';
 import { KafkaErrorHandleFailStrategy } from './kafka-error-handle-fail.strategy.js';
 
-const record = (): KafkaMessage => ({
+const record = (): KafkaJS.KafkaMessage => ({
   key: null,
   value: Buffer.from('{}'),
   timestamp: '0',
@@ -15,7 +15,7 @@ const batchPayload = () =>
     batch: { topic: 'orders.created' },
     resolveOffset: jest.fn(),
     heartbeat: jest.fn().mockResolvedValue(undefined),
-  }) as unknown as EachBatchPayload;
+  }) as unknown as KafkaJS.EachBatchPayload;
 
 describe('KafkaErrorHandleFailStrategy', () => {
   it('rethrows the error so the client stops the batch', async () => {

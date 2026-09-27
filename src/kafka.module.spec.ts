@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { Kafka, Partitioners } from 'kafkajs';
+import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
 import { KafkaModule } from './kafka.module.js';
 import { KafkaModuleOptions } from './types/kafka-module-options.type.js';
@@ -9,7 +9,7 @@ jest.mock('@kafkajs/confluent-schema-registry', () => ({
   SchemaRegistry: jest.fn(),
 }));
 
-const clientOptions = { brokers: ['localhost:9092'] };
+const clientOptions = { kafkaJS: { brokers: ['localhost:9092'] } };
 
 const producerStub = () => ({
   connect: jest.fn().mockResolvedValue(undefined),
@@ -63,22 +63,20 @@ describe('KafkaModule option validation', () => {
 });
 
 describe('KafkaModule producer', () => {
-  it('creates the producer with the kafkajs default partitioner stated explicitly', async () => {
+  it('creates the producer with auto topic creation and the client default partitioner', async () => {
     const kafka = { producer: jest.fn().mockReturnValue(producerStub()) };
 
     const moduleRef = await Test.createTestingModule({
       imports: [KafkaModule.register({ clientOptions })],
     })
-      .overrideProvider(Kafka)
+      .overrideProvider(KafkaJS.Kafka)
       .useValue(kafka)
       .compile();
     await moduleRef.close();
 
-    expect(kafka.producer).toHaveBeenCalledWith(
-      expect.objectContaining({
-        createPartitioner: Partitioners.DefaultPartitioner,
-      }),
-    );
+    expect(kafka.producer).toHaveBeenCalledWith({
+      kafkaJS: { allowAutoTopicCreation: true },
+    });
   });
 });
 
