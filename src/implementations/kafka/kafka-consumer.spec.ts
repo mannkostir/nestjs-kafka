@@ -351,6 +351,10 @@ describe('KafkaConsumer configuration errors', () => {
 });
 
 describe('KafkaConsumer group assignment', () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   it('resolves subscribe only after the first assignment', async () => {
     const consumer = consumerStub();
     const kafka = kafkaStub(consumer);
@@ -399,7 +403,6 @@ describe('KafkaConsumer group assignment', () => {
     await assertion;
 
     expect(consumer.disconnect).toHaveBeenCalledTimes(1);
-    jest.useRealTimers();
   });
 });
 
