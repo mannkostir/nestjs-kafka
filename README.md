@@ -4,7 +4,8 @@
 
 A NestJS dynamic module that wires a Kafka client, a producer, a consumer, and decorator-driven
 message-handler discovery into a host application, built on top of
-[kafkajs](https://kafka.js.org/). Handlers are ordinary provider methods marked with
+[`@confluentinc/kafka-javascript`](https://github.com/confluentinc/confluent-kafka-javascript)'s
+KafkaJS-compatible API (backed by librdkafka). Handlers are ordinary provider methods marked with
 `@Message(...)`; the module discovers them on application bootstrap and subscribes each one to its
 own Kafka consumer.
 
@@ -14,20 +15,42 @@ per-handler failures are routed through a pluggable error policy (`fail`, `ignor
 **Status: pre-1.0 (`0.2.1`).** The public API may still change between versions.
 Integration-tested against `confluentinc/cp-kafka:7.6.1` in KRaft mode.
 
+## Compared with `@nestjs/microservices`
+
+`@nestjs/microservices` ships its own Kafka transport (`Transport.KAFKA`). Both sit on top of a
+Kafka client and move messages into NestJS providers, but they solve different shapes of problem.
+
+| | This library | `@nestjs/microservices` (Kafka transport) |
+| --- | --- | --- |
+| Bootstrap | A plain dynamic module (`KafkaModule.register`) in any Nest application | A dedicated microservice (`NestFactory.createMicroservice()`) or a hybrid app (`app.connectMicroservice()`) |
+| Consumer groups | One consumer group per `@Message` handler | One `groupId`, set once for the whole server in `options.consumer` (not per handler); `postfixId` customises the `-client` / `-server` suffix Nest appends to `clientId` and `groupId` |
+| Dead-letter routing | Built-in `errorHandling: { type: 'dlq' }` policy | No built-in mechanism; the docs show a hand-rolled `KafkaMaxRetryExceptionFilter` that republishes with a retry-count header and commits the offset once retries are exhausted |
+| Avro / schema registry | Built-in `MessageFormat.AVRO`, backed by `@kafkajs/confluent-schema-registry` | Not documented |
+| Offset handling on handler failure | Per the three `errorHandling` policies (`fail`, `ignore`, `dlq`) | Auto-commit by default; disable with `run: { autoCommit: false }` and commit manually via `KafkaContext`. A thrown exception makes `kafkajs` retry the message instead of committing its offset — always for `@EventPattern` handlers, only via the dedicated `KafkaRetriableException` for `@MessagePattern` handlers |
+| Topic namespacing | Built-in `namespace` option, applied symmetrically to topics and group ids | Not documented |
+| Underlying client | `@confluentinc/kafka-javascript` (librdkafka) | `kafkajs` |
+
+Use Nest's transport instead if you need request-reply over Kafka (`@MessagePattern` with a reply
+topic), want one codebase to switch between transports, or prefer first-party support.
+
 ## Installation
 
 ```sh
-npm install nestjs-kafka-connector kafkajs
+npm install nestjs-kafka-connector @confluentinc/kafka-javascript
 ```
 
+`@confluentinc/kafka-javascript` ships prebuilt native binaries for its supported platforms, so
+this install does not need a local build toolchain on those platforms (see
+[Node.js versions](#nodejs-versions)).
+
 The library has no runtime dependencies of its own. Everything it needs is a peer dependency that
-the host application provides: `@nestjs/common`, `@nestjs/core`, `kafkajs`, and
-`reflect-metadata`.
+the host application provides: `@nestjs/common`, `@nestjs/core`, `@confluentinc/kafka-javascript`,
+and `reflect-metadata`.
 
 | Peer | Supported range |
 | --- | --- |
 | `@nestjs/common`, `@nestjs/core` | `^11.0.0 \|\| ^12.0.0` |
-| `kafkajs` | `>=2.0.0` |
+| `@confluentinc/kafka-javascript` | `^1.10.0` |
 | `reflect-metadata` | `^0.2.0` |
 | `@kafkajs/confluent-schema-registry` (optional) | `>=3.0.0` |
 
@@ -55,6 +78,11 @@ Both hand out the same classes, so a host that reaches the package through both 
 `require` of this package loads ES modules through Node's `require(esm)` support, unflagged from
 those versions. An ES module host needs nothing extra from this package and also runs on earlier
 Node.js 20 and 22 releases, verified on 20.18 and 22.11, where npm only warns about `engines`.
+
+`@confluentinc/kafka-javascript` (`1.10.1`) ships prebuilt native binaries only for Node.js 18, 20,
+21, 22, 23, and 24, on darwin (arm64/x64), linux glibc and musl (arm64/x64), and win32 (x64). On any
+other Node.js version — Node.js 25 or 26, for example — `npm install` falls back to compiling
+librdkafka from source, which needs a working C++ toolchain on the machine running the install.
 
 ### TypeScript
 
@@ -100,6 +128,34 @@ module.exports = {
 A NestJS 12 host needs the flag either way, because NestJS 12 is itself published as ES modules
 only.
 
+## Migrating from 0.2.x
+
+0.3.0 replaces `kafkajs` with `@confluentinc/kafka-javascript`. This is a breaking change:
+
+1. Swap the peer: `npm uninstall kafkajs && npm install @confluentinc/kafka-javascript`.
+2. Wrap your client options in `kafkaJS`:
+
+   ```ts
+   KafkaModule.register({
+     clientOptions: { kafkaJS: { clientId: 'orders', brokers: ['kafka:9092'] } },
+   });
+   ```
+3. Remove `factor`, `multiplier`, and `restartOnFailure` from any `retry` option; the client fixes
+   them and throws if you set them.
+4. Rewrite any `RegExp` topic pattern that used JS-only syntax. Topic patterns are now matched as
+   POSIX extended regular expressions: flags (`/x/i`), `(?` groups (non-capturing, lookaround,
+   inline flags), lazy quantifiers, and letter or digit escapes (`\d`, `\w`, `\s`, `\b`) are
+   rejected at bootstrap with a message saying how to rewrite the pattern. See
+   [Pattern (RegExp) topics](#pattern-regexp-topics).
+5. Grant the application's Kafka principal Create permission on every topic its handlers consume.
+   The library now creates missing plain-string topics itself before subscribing, even when the
+   broker has `auto.create.topics.enable=false`; with `allowAutoTopicCreation: false`, bootstrap
+   instead fails naming the missing topics. See
+   [Topic provisioning](#topic-provisioning).
+6. Expect application bootstrap to wait for each handler's consumer to join its group and receive
+   its first partition assignment, roughly one heartbeat interval when other replicas are already
+   in the group. See [Delivery semantics](#delivery-semantics).
+
 ## Quickstart
 
 Register the module anywhere in your application:
@@ -113,8 +169,10 @@ import { OrderEventsHandler } from './order-events.handler';
   imports: [
     KafkaModule.register({
       clientOptions: {
-        clientId: 'orders-service',
-        brokers: ['localhost:9092'],
+        kafkaJS: {
+          clientId: 'orders-service',
+          brokers: ['localhost:9092'],
+        },
       },
     }),
   ],
@@ -192,7 +250,7 @@ export class OrderPublisher {
 
 | Option | Type | Required | Description |
 | --- | --- | --- | --- |
-| `clientOptions` | `KafkaConfig` (kafkajs) | yes | Passed straight to `new Kafka(...)`: `brokers`, `clientId`, `ssl`, `sasl`, and the rest. |
+| `clientOptions` | `KafkaJS.CommonConstructorConfig` (`@confluentinc/kafka-javascript`) | yes | Passed straight to `new KafkaJS.Kafka(...)`. KafkaJS-compatible options — `brokers`, `clientId`, `ssl`, `sasl`, and the rest — go under `kafkaJS`: `{ kafkaJS: { brokers, clientId, ssl, sasl } }`. librdkafka properties (e.g. `'socket.keepalive.enable'`) sit alongside `kafkaJS`, outside that block. |
 | `namespace` | `string` | no | Prefixes produced and consumed topics and consumer group ids. See [Topics, namespace, and group ids](#topics-namespace-and-group-ids). |
 | `connectorName` | `string` | no | Scopes handler discovery when `KafkaModule` is registered more than once in the same app. See [Registering more than once](#registering-more-than-once). |
 | `schemaRegistry` | `{ url: string }` | no | Enables Avro. Constructs a `SchemaRegistry` against `url`. |
@@ -216,7 +274,7 @@ without one subscribes only handlers that declare none.
 ```ts
 KafkaModule.register({
   connectorName: 'analytics-cluster',
-  clientOptions: { brokers: ['analytics-broker:9092'] },
+  clientOptions: { kafkaJS: { brokers: ['analytics-broker:9092'] } },
 });
 ```
 
@@ -243,8 +301,10 @@ KafkaModule.registerAsync({
   useFactory: (config: ConfigService) => ({
     namespace: config.get('KAFKA_NAMESPACE'),
     clientOptions: {
-      clientId: config.get('KAFKA_CLIENT_ID'),
-      brokers: config.get<string>('KAFKA_BROKERS').split(','),
+      kafkaJS: {
+        clientId: config.get('KAFKA_CLIENT_ID'),
+        brokers: config.get<string>('KAFKA_BROKERS').split(','),
+      },
     },
   }),
 });
@@ -263,7 +323,7 @@ import {
 export class KafkaConfigFactory implements KafkaModuleOptionsFactory {
   createKafkaOptions(): KafkaModuleOptions {
     return {
-      clientOptions: { brokers: ['localhost:9092'] },
+      clientOptions: { kafkaJS: { brokers: ['localhost:9092'] } },
     };
   }
 }
@@ -304,18 +364,22 @@ The same shape is used for module-wide `consumerDefaults` and per-handler `consu
 | --- | --- | --- |
 | `fromBeginning` | `boolean` | `false` |
 | `allowAutoTopicCreation` | `boolean` | `true` |
-| `heartbeatInterval` | `number` (ms) | unset — kafkajs applies its own (currently `3000`) |
-| `sessionTimeout` | `number` (ms) | unset — kafkajs applies its own (currently `30000`) |
-| `rebalanceTimeout` | `number` (ms) | unset — kafkajs applies its own (currently `60000`) |
-| `retry` | `Partial<RetryOptions>` (kafkajs) | see below |
+| `heartbeatInterval` | `number` (ms) | unset — the client applies its own (currently `3000`) |
+| `sessionTimeout` | `number` (ms) | unset — the client applies its own (currently `30000`) |
+| `rebalanceTimeout` | `number` (ms) | unset — the client applies its own (currently `300000`) |
+| `retry` | `KafkaJS.RetryOptions` (`@confluentinc/kafka-javascript`) | see below |
 
 `heartbeatInterval`, `sessionTimeout`, and `rebalanceTimeout` are left unset unless you set them,
-so kafkajs's own defaults apply — for `heartbeatInterval` that is `3000`. If you set
-`heartbeatInterval`, keep it below the effective `sessionTimeout`: kafkajs rejects a heartbeat
-interval that is not strictly less than the session timeout.
+so the client's own defaults apply — for `heartbeatInterval` that is `3000`. Keep
+`heartbeatInterval` well below the effective `sessionTimeout`, as Kafka requires. `rebalanceTimeout`
+maps to librdkafka's `max.poll.interval.ms`; bootstrap's wait for group assignment (see
+[Delivery semantics](#delivery-semantics)) is bounded by `rebalanceTimeout + sessionTimeout`.
 
-`retry` defaults are `maxRetryTime: 30000`, `initialRetryTime: 300`, `factor: 0.2`, `multiplier: 2`,
-`retries: 15`, `restartOnFailure: async () => true`.
+`retry` is `KafkaJS.RetryOptions`: `maxRetryTime`, `initialRetryTime`, `retries`. Defaults are
+`maxRetryTime: 30000` and `initialRetryTime: 300`. `factor`, `multiplier`, and `restartOnFailure`
+are no longer configurable — the client fixes them (`0.2`, `2`, and always-restart respectively)
+and throws if you set them. `retries` is read only for produce requests; setting it in a handler's
+or module's consumer `retry` has no effect on that consumer.
 
 ### Precedence
 
@@ -330,10 +394,10 @@ default `initialRetryTime` and the rest.
 
 ```ts
 KafkaModule.register({
-  clientOptions: { brokers: ['localhost:9092'] },
+  clientOptions: { kafkaJS: { brokers: ['localhost:9092'] } },
   consumerDefaults: {
     heartbeatInterval: 10000,
-    retry: { retries: 5 },
+    retry: { maxRetryTime: 5000 },
   },
 });
 ```
@@ -344,13 +408,13 @@ KafkaModule.register({
   errorHandling: { type: 'fail' },
   consumer: {
     fromBeginning: true,
-    retry: { retries: 20 },
+    retry: { maxRetryTime: 20000 },
   },
 })
 ```
 
-That handler runs with `fromBeginning: true`, `heartbeatInterval: 10000`, `retries: 20`,
-`initialRetryTime: 300`, and `allowAutoTopicCreation: true`.
+That handler runs with `fromBeginning: true`, `heartbeatInterval: 10000`,
+`maxRetryTime: 20000`, `initialRetryTime: 300`, and `allowAutoTopicCreation: true`.
 
 ## Topics, namespace, and group ids
 
@@ -372,19 +436,34 @@ logical topic, not the namespaced one, in every call site.
 
 ### Pattern (RegExp) topics
 
-A `RegExp` topic pattern given to `@Message` is rewritten so the namespace becomes part of the
-match, not merely a produced/consumed string prefix. The namespace is regex-escaped before
-insertion, so a namespace containing `.` cannot widen the match, and the original source is wrapped
-in a non-capturing group so capture-group numbering and top-level alternation are preserved:
+A `RegExp` topic pattern given to `@Message` is matched by librdkafka, which compiles it as a
+**POSIX extended regular expression** (`regcomp` on Linux and macOS) — not as a JavaScript `RegExp`.
+Only a subset of JavaScript regex syntax survives that translation:
 
-| Input pattern | Namespace `dev` | Reason |
+- **Supported:** plain `(...)` groups, `|`, bracket expressions including character classes such as
+  `[[:alnum:]]`, greedy quantifiers (`*`, `+`, `?`, `{n,m}`), `^`, `$`.
+- **Rejected at bootstrap**, with a message saying how to rewrite the pattern: any flags (e.g.
+  `/orders/i`), `(?` groups (non-capturing groups, lookaround, inline flags), lazy quantifiers
+  (e.g. `*?`), and letter or digit escapes such as `\d`, `\w`, `\s`, `\b` — these either mismatch
+  silently or differ between macOS and Linux under POSIX ERE, so the library rejects them outright.
+  Use a bracket expression instead, for example `[0-9]` or `[[:alnum:]_]`.
+
+An unanchored pattern is anchored as `^.*(...)` so it still matches anywhere in the topic name.
+Under a namespace, a pattern is rewritten instead to keep the namespace anchored to the start of the
+match:
+
+| Input pattern | Namespace `dev` | Form |
 | --- | --- | --- |
-| `/^orders\..*/` | `/^dev\.(?:orders\..*)/` | Anchored: the prefix is inserted after `^`. |
-| `/orders\.\w+/` | `/^dev\..*(?:orders\.\w+)/` | Unanchored: anchor, prefix, then allow any intermediate segments. |
-| `/^orders\|payments/` | `/^dev\.(?:orders\|payments)/` | Without the group this would parse as `(^dev\.orders)\|(payments)` and match another stand's bare `payments` topic. |
+| `/^orders\..*/` | `/^dev\.(orders\..*)/` | Anchored: `^<ns>\.(...)` |
+| `/orders\.[[:alnum:]]+/` | `/^dev\..*(orders\.[[:alnum:]]+)/` | Unanchored: `^<ns>\..*(...)` |
 
-Existing flags on the pattern are preserved, including `i` — a case-insensitive pattern gets a
-case-insensitive namespace prefix too.
+The namespace is regex-escaped before insertion, so a namespace containing `.` cannot widen the
+match.
+
+A topic created after a pattern handler has already subscribed is picked up only at the client's
+next metadata refresh (`metadataMaxAge`, default 5 minutes) — plain-string topics, by contrast, are
+provisioned up front (see [Topic provisioning](#topic-provisioning)). If the first messages on a
+newly created topic matter to a pattern handler, subscribe it with `fromBeginning: true`.
 
 ### Opting out per call site
 
@@ -444,7 +523,7 @@ consumers who use Avro:
 
 ```ts
 KafkaModule.register({
-  clientOptions: { brokers: ['localhost:9092'] },
+  clientOptions: { kafkaJS: { brokers: ['localhost:9092'] } },
   schemaRegistry: { url: 'http://localhost:8081' },
 });
 ```
@@ -514,13 +593,16 @@ The original headers are preserved, and these are added:
 | `dlq.error.stack` | `error.stack`, present only when the error has one |
 | `dlq.timestamp` | ISO 8601 timestamp of the failure |
 
+A thrown value that is not an `Error` is recorded as `dlq.error.name: 'Error'` and
+`dlq.error.message: String(value)`.
+
 DLQ delivery uses the module's producer. Strategy instances are cached per configuration on the
 consumer, so a strategy is shared across every handler that declares the same policy.
 
 **Known limitation: handlers cannot see headers.** `@Message` handlers receive `key` and `value`
 only — the consumed record's headers are not exposed through `MessageType`. A handler subscribed to
 a DLQ topic through this library therefore cannot read the `dlq.*` headers above. Inspect them with
-a plain kafkajs consumer instead.
+a plain client consumer instead.
 
 ## Producing
 
@@ -538,7 +620,7 @@ send(
 The record's `value` is `JSON.stringify(message.value)` and its `headers` are `message.headers`.
 The record key comes from `options.key`, not from `message.key`. Topics are namespace-prefixed as
 described above unless `options.namespaced` is `false`, and the underlying producer is created with
-`allowAutoTopicCreation: true` and kafkajs's `Partitioners.DefaultPartitioner`, which assigns keyed
+`allowAutoTopicCreation: true`. The client's default partitioner (`murmur2_random`) assigns keyed
 records to partitions the same way the Java client does.
 
 ```ts
@@ -558,12 +640,12 @@ await this.producer.send(
 **Delivery is at-least-once. Handlers must be idempotent.** A handler can succeed and the process
 can die before its offset is committed, in which case the message is delivered again on restart.
 
-- **One kafkajs consumer per handler, in its own consumer group.** Each `@Message` method gets its
+- **One client consumer per handler, in its own consumer group.** Each `@Message` method gets its
   own consumer, created, connected, and run at application bootstrap. Handlers of one connector
-  cannot share a `groupId`: kafkajs assigns a group's partitions only for the topics its leader
-  subscribed to, so a shared group across different topics silently starves one handler, and on the
-  same topics it splits the messages between two different methods. Bootstrap fails instead; see
-  [`@Message` options](#message-options).
+  cannot share a `groupId`: the Kafka consumer group protocol assigns a group's partitions only for
+  the topics its members subscribed to, so a shared group across different topics silently starves
+  one handler, and on the same topics it splits the messages between two different methods.
+  Bootstrap fails instead; see [`@Message` options](#message-options).
 - **Offsets are resolved manually.** Consumers run with `eachBatchAutoResolve: false`. Within a
   batch, each message is parsed, passed to the handler, and only then is its offset resolved,
   followed by a heartbeat. A failing message never has its offset resolved by the framework — that
@@ -571,24 +653,48 @@ can die before its offset is committed, in which case the message is delivered a
 - **Batches stop early when the consumer is stopping or the assignment is stale.** Before each
   message the loop checks `isRunning()` and `isStale()` and breaks out, leaving the remaining
   offsets unresolved for redelivery.
-- **A topic that does not exist yet is waited for, briefly.** When `allowAutoTopicCreation` is
-  enabled (the default), subscribing to a topic the broker does not have yet retries up to 5 times
-  with backoff, about 2.5 seconds in total, logging a warning naming the topic on each retry. Any
-  other subscribe failure — a different error, auto-creation disabled, or the retries running out —
-  is not retried. On a broker configured with `auto.create.topics.enable=false`, topics must exist
-  before the application starts.
-- **A failed subscription fails application bootstrap.** If any handler's `subscribe()` call
-  ultimately throws — including a topic that never gets created — the consumer that was being
-  opened is disconnected and the error propagates out of `onApplicationBootstrap`, which fails Nest
-  application bootstrap. No consumer connection is left open for the handler that failed to
-  subscribe, but consumers of other handlers that had already connected, and the producer, stay
-  open until `app.close()` is called. A host that catches the bootstrap error and keeps running
-  must close the application itself.
+- **Bootstrap waits for group assignment.** Before a handler's consumer starts consuming,
+  application bootstrap waits for it to join its group and receive its first partition assignment
+  (which may be empty). Expect roughly one heartbeat interval when other replicas of this service
+  are already members of the group. With `fromBeginning: false` (the default), a partition with no
+  committed offset starts at the log end as of that assignment, so every message produced after
+  bootstrap resolves is delivered — a committed offset, including `0`, is always honoured instead.
+  If no assignment arrives within `rebalanceTimeout + sessionTimeout` (defaults `300000 + 30000` ms),
+  bootstrap fails with an error naming the consumer group. This reserves librdkafka's `rebalance_cb`
+  consumer property; do not set it yourself.
+- **A failed bootstrap releases every connection it opened.** If any handler's `subscribe()` call
+  ultimately throws, the module disconnects every consumer it had already opened — not only the one
+  that failed — and the producer, then rethrows the original error out of `onApplicationBootstrap`,
+  which fails Nest application bootstrap. No Kafka connection from this module is left open after a
+  failed bootstrap. Note that Nest's `app.close()` on a context whose `init()` failed rethrows that
+  same error without running shutdown hooks (true on both Nest 11 and 12), so a host or test that
+  catches the bootstrap error should not rely on `close()` to clean up further.
 - **Shutdown closes consumers before the producer.** `onModuleDestroy` disconnects every consumer
   and logs any that fail; `beforeApplicationShutdown`, which Nest runs after every destroy hook,
   then disconnects the producer. DLQ publishes and producer calls made from handlers therefore
   still have a connected producer while the consumers stop. Call `app.enableShutdownHooks()` in the
   host application so these run on `SIGTERM` and `SIGINT`.
+
+### Topic provisioning
+
+Before each handler's consumer is created, the library lists the broker's topics and creates any
+missing plain-string topics itself through the admin API, using the broker's default partition
+count and replication factor, with a 30 second create timeout. `RegExp` subscriptions are never
+provisioned this way — a pattern matches whatever topics already exist, or come to exist later (see
+[Pattern (RegExp) topics](#pattern-regexp-topics)).
+
+This happens even when the broker has `auto.create.topics.enable=false`, and needs Create
+permission on those topics for the application's Kafka principal. The reason: the client's consumer
+does not create a topic on subscribe, and only notices a topic created after that point at its next
+metadata refresh — so without this step, a handler subscribing to a brand-new topic could sit idle
+indefinitely.
+
+With `allowAutoTopicCreation: false`, the library asserts the topics already exist instead of
+creating them, and bootstrap fails if they do not:
+
+```
+Topic(s) orders.created do not exist and allowAutoTopicCreation is false. Create them before the application starts, or enable allowAutoTopicCreation.
+```
 
 ## Development
 

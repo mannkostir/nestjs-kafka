@@ -37,7 +37,9 @@
     "dead-letter",
     "avro",
     "namespace",
-    "multi-environment"
+    "multi-environment",
+    "confluent",
+    "librdkafka"
   ],
   "files": [
     "dist"
