@@ -12,7 +12,7 @@ import { ConsumerProxy } from '../base/consumer-proxy.js';
 import { Message } from '../decorators/message-handler.decorator.js';
 import { MessageFormat } from '../types/message-format.type.js';
 import { MessageType } from '../types/message.type.js';
-import { CONNECTOR_NAME } from '../tokens.js';
+import { CONNECTOR_NAME, KAFKA_CONNECTIONS } from '../tokens.js';
 import { MessageHandlersDiscoveryService } from './message-handlers.discovery-service.js';
 
 @Injectable()
@@ -211,6 +211,7 @@ class ReportingFeatureModule {}
 
 type Harness = {
   subscribe: jest.Mock;
+  releaseConnections: jest.Mock;
   bootstrap: () => Promise<TestingModule>;
 };
 
@@ -219,6 +220,7 @@ const harness = (
   options: { connectorName?: string; imports?: Type[] } = {},
 ): Harness => {
   const subscribe = jest.fn().mockResolvedValue(undefined);
+  const releaseConnections = jest.fn().mockResolvedValue(undefined);
   const connectorProviders: Provider[] =
     options.connectorName === undefined
       ? []
@@ -231,6 +233,7 @@ const harness = (
         ...handlers,
         ...connectorProviders,
         { provide: ConsumerProxy, useValue: { subscribe } },
+        { provide: KAFKA_CONNECTIONS, useValue: { releaseConnections } },
         MessageHandlersDiscoveryService,
       ],
     }).compile();
@@ -238,7 +241,7 @@ const harness = (
     return moduleRef.init();
   };
 
-  return { subscribe, bootstrap };
+  return { subscribe, releaseConnections, bootstrap };
 };
 
 const subscribedTopics = (subscribe: jest.Mock): string[][] =>
@@ -587,5 +590,58 @@ describe('MessageHandlersDiscoveryService', () => {
     await bootstrap();
 
     expect(subscribedTopics(subscribe)).toEqual([['primary.events']]);
+  });
+
+  it('releases the Kafka connections and rethrows when a handler fails to subscribe', async () => {
+    const failure = new Error('broker unavailable');
+    const { subscribe, releaseConnections, bootstrap } = harness([OrdersHandler]);
+    subscribe.mockRejectedValue(failure);
+
+    await expect(bootstrap()).rejects.toBe(failure);
+
+    expect(releaseConnections).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits for in-flight subscriptions to settle before releasing', async () => {
+    const failure = new Error('broker unavailable');
+    const { subscribe, releaseConnections, bootstrap } = harness([
+      OrdersHandler,
+      AvroNonNamespacedHandler,
+    ]);
+    let resolveSecond!: () => void;
+    const secondSubscription = new Promise<void>((resolve) => {
+      resolveSecond = resolve;
+    });
+    subscribe.mockImplementation((_subscription, _cb, groupId) =>
+      groupId === 'orders-service' ? Promise.reject(failure) : secondSubscription,
+    );
+
+    const bootstrapPromise = bootstrap();
+
+    expect(releaseConnections).not.toHaveBeenCalled();
+
+    resolveSecond();
+
+    await expect(bootstrapPromise).rejects.toBe(failure);
+    expect(releaseConnections).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases the Kafka connections when bootstrap fails on duplicate group ids', async () => {
+    const { releaseConnections, bootstrap } = harness([
+      InvoicesHandler,
+      RefundsHandler,
+    ]);
+
+    await expect(bootstrap()).rejects.toThrow();
+
+    expect(releaseConnections).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not release connections after a successful bootstrap', async () => {
+    const { releaseConnections, bootstrap } = harness([OrdersHandler]);
+
+    await bootstrap();
+
+    expect(releaseConnections).not.toHaveBeenCalled();
   });
 });

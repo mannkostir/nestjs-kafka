@@ -42,6 +42,10 @@ export class KafkaProducer<
   }
 
   async beforeApplicationShutdown(): Promise<void> {
+    await this.disconnect();
+  }
+
+  public async disconnect(): Promise<void> {
     this.logger.log('Disconnecting producer...');
 
     try {

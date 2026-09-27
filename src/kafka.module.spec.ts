@@ -3,7 +3,8 @@ import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
 import { KafkaModule } from './kafka.module.js';
 import { KafkaModuleOptions } from './types/kafka-module-options.type.js';
-import { KAFKA_PRODUCER } from './tokens.js';
+import { IReleaseConnections } from './interfaces/release-connections.interface.js';
+import { KAFKA_PRODUCER, KAFKA_CONNECTIONS } from './tokens.js';
 
 jest.mock('@kafkajs/confluent-schema-registry', () => ({
   SchemaRegistry: jest.fn(),
@@ -100,5 +101,22 @@ describe('KafkaModule schema registry', () => {
     await moduleRef.close();
 
     expect(SchemaRegistry).not.toHaveBeenCalled();
+  });
+});
+
+describe('KafkaModule connections', () => {
+  it('provides the Kafka connections for bootstrap cleanup', async () => {
+    const moduleRef = await compileWith({ clientOptions });
+    const asyncModuleRef = await compileAsyncWith({ clientOptions });
+
+    expect(
+      moduleRef.get<IReleaseConnections>(KAFKA_CONNECTIONS).releaseConnections,
+    ).toBeInstanceOf(Function);
+    expect(
+      asyncModuleRef.get<IReleaseConnections>(KAFKA_CONNECTIONS).releaseConnections,
+    ).toBeInstanceOf(Function);
+
+    await moduleRef.close();
+    await asyncModuleRef.close();
   });
 });

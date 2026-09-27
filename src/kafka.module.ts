@@ -8,6 +8,7 @@ import {
   KafkaModuleOptionsFactory,
 } from './types/kafka-module-options.type.js';
 import { ConsumerConfig } from './types/consumer-config.type.js';
+import { MessageType } from './types/message.type.js';
 import { ConsumerProxy } from './base/consumer-proxy.js';
 import { KafkaConsumer } from './implementations/kafka/kafka-consumer.js';
 import { KafkaProducer } from './implementations/kafka/kafka-producer.js';
@@ -15,6 +16,8 @@ import { ProducerProxy } from './base/producer-proxy.js';
 import { TopicNamespacer } from './implementations/kafka/topic-namespacer.js';
 import type { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
 import { MessageHandlersDiscoveryService } from './services/message-handlers.discovery-service.js';
+import { KafkaConnections } from './implementations/kafka/kafka-connections.js';
+import { IReleaseConnections } from './interfaces/release-connections.interface.js';
 import {
   KAFKA_MODULE_OPTIONS,
   TRANSPORT_CONFIG,
@@ -23,6 +26,7 @@ import {
   CONSUMER_DEFAULTS,
   CONNECTOR_NAME,
   KAFKA_PRODUCER,
+  KAFKA_CONNECTIONS,
 } from './tokens.js';
 
 const kafkaProvider: Provider<KafkaJS.Kafka> = {
@@ -86,6 +90,15 @@ const producerProxyProvider: Provider<ProducerProxy> = {
     return proxy;
   },
   inject: [KAFKA_PRODUCER, TopicNamespacer],
+};
+
+const kafkaConnectionsProvider: Provider<IReleaseConnections> = {
+  provide: KAFKA_CONNECTIONS,
+  useFactory: (
+    consumer: KafkaConsumer<MessageType>,
+    producer: KafkaProducer<Record<string, unknown>>,
+  ) => new KafkaConnections(consumer, producer),
+  inject: [ConsumerProxy, ProducerProxy],
 };
 
 function rejectEmptyString(
@@ -161,6 +174,7 @@ export class KafkaModule {
         consumerProxyProvider,
         topicNamespacerProvider,
         producerProxyProvider,
+        kafkaConnectionsProvider,
         MessageHandlersDiscoveryService,
       ],
       exports: [ConsumerProxy, ProducerProxy],
@@ -181,6 +195,7 @@ export class KafkaModule {
         consumerProxyProvider,
         topicNamespacerProvider,
         producerProxyProvider,
+        kafkaConnectionsProvider,
         MessageHandlersDiscoveryService,
       ],
       exports: [ConsumerProxy, ProducerProxy],

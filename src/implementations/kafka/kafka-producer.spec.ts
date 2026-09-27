@@ -79,4 +79,12 @@ describe('KafkaProducer', () => {
 
     expect(producer.disconnect).toHaveBeenCalledTimes(1);
   });
+
+  it('disconnects through disconnect', async () => {
+    const producer = producerStub();
+
+    await new KafkaProducer(producer, new TopicNamespacer()).disconnect();
+
+    expect(producer.disconnect).toHaveBeenCalledTimes(1);
+  });
 });
