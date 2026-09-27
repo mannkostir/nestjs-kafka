@@ -51,7 +51,7 @@ export class KafkaGroupMember {
     this.consumer = kafka.consumer({ rebalance_cb: this.onRebalance, kafkaJS: config });
   }
 
-  public async joined(groupId: string, timeoutMs: number): Promise<void> {
+  public async joined(timeoutMs: number): Promise<void> {
     let timer: NodeJS.Timeout | undefined;
 
     const expiry = new Promise<never>((_, reject) => {
@@ -59,7 +59,7 @@ export class KafkaGroupMember {
         () =>
           reject(
             new Error(
-              `Consumer group "${groupId}" received no partition assignment within ${timeoutMs} ms. ` +
+              `Consumer group "${this.groupId}" received no partition assignment within ${timeoutMs} ms. ` +
                 'Check that the brokers are reachable and that this client may join the group, ' +
                 'or raise rebalanceTimeout / sessionTimeout if the group rebalances slowly.',
             ),
@@ -79,9 +79,10 @@ export class KafkaGroupMember {
     assignment: KafkaJS.TopicPartition[],
   ): Promise<RdKafka.TopicPartitionOffset[]> {
     const admin = this.consumer.dependentAdmin();
-    await admin.connect();
 
     try {
+      await admin.connect();
+
       const committed = await this.committedOffsets(admin, assignment);
       const logEnds = await KafkaGroupMember.logEndOffsets(
         admin,

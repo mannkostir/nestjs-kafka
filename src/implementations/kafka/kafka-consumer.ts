@@ -195,7 +195,10 @@ export class KafkaConsumer<
       await consumer.subscribe(topics);
 
       await this.run(consumer, cb, parseStrategy, errorStrategy);
-      await member.joined(groupId, KafkaConsumer.joinTimeoutMs(rebalanceTimeout, sessionTimeout));
+
+      if (topicNames.length > 0) {
+        await member.joined(KafkaConsumer.joinTimeoutMs(rebalanceTimeout, sessionTimeout));
+      }
     } catch (error) {
       await this.closeFailedConsumer(consumer);
       throw error;

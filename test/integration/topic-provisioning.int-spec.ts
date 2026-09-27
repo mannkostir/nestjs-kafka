@@ -21,6 +21,15 @@ class LateTopicHandler {
 }
 
 @Injectable()
+class PatternOnlyHandler {
+  @Message([/^inventory\..+/], {
+    groupId: 'pattern-only',
+    errorHandling: { type: 'fail' },
+  })
+  async handle(_message: MessageType): Promise<void> {}
+}
+
+@Injectable()
 class StrictTopicHandler {
   @Message(['refunds.created'], {
     groupId: 'strict-topic',
@@ -74,6 +83,27 @@ describe('topic provisioning', () => {
 
       expect(shipped[0].value?.payload).toEqual({ shipmentId: 's-1' });
     });
+  });
+
+  describe('a pattern handler whose pattern matches no topic yet', () => {
+    it('bootstraps without waiting for a matching topic', async () => {
+      @Module({
+        imports: [
+          KafkaModule.register({
+            clientOptions: { kafkaJS: { clientId: 'pattern-only', brokers: broker.brokers } },
+          }),
+        ],
+        providers: [PatternOnlyHandler],
+      })
+      class PatternOnlyModule {}
+
+      const moduleRef = await Test.createTestingModule({
+        imports: [PatternOnlyModule],
+      }).compile();
+
+      await moduleRef.init();
+      await moduleRef.close();
+    }, 30000);
   });
 
   describe('a handler that forbids topic creation', () => {
