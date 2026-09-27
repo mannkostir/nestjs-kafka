@@ -3,7 +3,6 @@ import {
   ConsumerSubscribeTopics,
   EachBatchPayload,
   Kafka,
-  KafkaJSError,
   Producer,
 } from 'kafkajs';
 import { Logger, OnModuleDestroy } from '@nestjs/common';
@@ -272,7 +271,7 @@ export class KafkaConsumer<
 
           await payload.heartbeat();
         } catch (err) {
-          await errorStrategy.handle(err as KafkaJSError, payload, message);
+          await errorStrategy.handle(err, payload, message);
         }
       }
     };

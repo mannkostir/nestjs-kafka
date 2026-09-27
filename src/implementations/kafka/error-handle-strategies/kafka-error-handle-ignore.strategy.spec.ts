@@ -1,4 +1,4 @@
-import { EachBatchPayload, KafkaJSError, KafkaMessage } from 'kafkajs';
+import { EachBatchPayload, KafkaMessage } from 'kafkajs';
 import { KafkaErrorHandleIgnoreStrategy } from './kafka-error-handle-ignore.strategy.js';
 
 const record = (): KafkaMessage => ({
@@ -22,7 +22,7 @@ describe('KafkaErrorHandleIgnoreStrategy', () => {
     const strategy = new KafkaErrorHandleIgnoreStrategy();
     const payload = batchPayload();
 
-    await strategy.handle(new KafkaJSError('boom'), payload, record());
+    await strategy.handle(new Error('boom'), payload, record());
 
     expect(payload.resolveOffset).toHaveBeenCalledWith('7');
     expect(payload.heartbeat).toHaveBeenCalledTimes(1);
