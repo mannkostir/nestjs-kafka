@@ -30,11 +30,6 @@ export class KafkaConsumer<
   TMessage extends MessageType,
 > extends ConsumerProxy<TMessage> implements OnModuleDestroy {
 
-  private static readonly TOPIC_CREATION_MAX_RETRIES = 5;
-  private static readonly TOPIC_CREATION_INITIAL_DELAY_MS = 100;
-  private static readonly TOPIC_CREATION_BACKOFF_MULTIPLIER = 2;
-  private static readonly TOPIC_CREATION_MAX_DELAY_MS = 1000;
-
   private readonly logger = new Logger(KafkaConsumer.name);
   private readonly schemaRegistry?: SchemaRegistry;
   private readonly namespace?: string;
@@ -172,11 +167,7 @@ export class KafkaConsumer<
           ),
       };
 
-      if (allowAutoTopicCreation) {
-        await this.subscribeAwaitingTopicCreation(consumer, topics);
-      } else {
-        await consumer.subscribe(topics);
-      }
+      await consumer.subscribe(topics);
 
       await this.run(consumer, cb, parseStrategy, errorStrategy);
     } catch (error) {
@@ -196,43 +187,6 @@ export class KafkaConsumer<
     } catch (disconnectError) {
       this.logger.error('Error disconnecting consumer after failed subscribe', disconnectError);
     }
-  }
-
-  private async subscribeAwaitingTopicCreation(
-    consumer: KafkaJS.Consumer,
-    topics: KafkaJS.ConsumerSubscribeTopics,
-  ): Promise<void> {
-    for (let attempt = 0; ; attempt++) {
-      try {
-        await consumer.subscribe(topics);
-        return;
-      } catch (error) {
-        if (
-          !KafkaConsumer.isTopicAwaitingCreation(error) ||
-          attempt >= KafkaConsumer.TOPIC_CREATION_MAX_RETRIES
-        ) {
-          throw error;
-        }
-        this.logger.warn(
-          `Topic(s) ${topics.topics.join(', ')} not found yet, awaiting auto-creation (attempt ${attempt + 1}/${KafkaConsumer.TOPIC_CREATION_MAX_RETRIES})`,
-        );
-        await KafkaConsumer.delay(
-          Math.min(
-            KafkaConsumer.TOPIC_CREATION_INITIAL_DELAY_MS *
-              KafkaConsumer.TOPIC_CREATION_BACKOFF_MULTIPLIER ** attempt,
-            KafkaConsumer.TOPIC_CREATION_MAX_DELAY_MS,
-          ),
-        );
-      }
-    }
-  }
-
-  private static isTopicAwaitingCreation(error: unknown): boolean {
-    return (error as { type?: unknown }).type === 'UNKNOWN_TOPIC_OR_PARTITION';
-  }
-
-  private static delay(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   private static withoutUndefined<T extends object>(config: T): T {
