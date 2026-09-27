@@ -17,6 +17,7 @@ import { KafkaErrorHandleIgnoreStrategy } from './error-handle-strategies/kafka-
 import { KafkaErrorHandleFailStrategy } from './error-handle-strategies/kafka-error-handle-fail.strategy.js';
 import { ConsumerConfig } from '../../types/consumer-config.type.js';
 import { TopicNamespacer } from './topic-namespacer.js';
+import { LibrdkafkaTopicPattern } from './librdkafka-topic-pattern.js';
 
 export interface KafkaConsumerOptions {
   namespace?: string;
@@ -136,6 +137,13 @@ export class KafkaConsumer<
       namespaced,
     );
 
+    const topicPatterns = subscription.topicPatterns
+      .filter(Boolean)
+      .map((pattern) =>
+        namespaced ? this.namespacer.applyPattern(pattern) : pattern,
+      )
+      .map((pattern) => LibrdkafkaTopicPattern.normalize(pattern));
+
     const defaults = this.consumerDefaults ?? {};
     const overrides = subscription.consumer ?? {};
 
@@ -159,13 +167,7 @@ export class KafkaConsumer<
     try {
       await consumer.connect();
 
-      const topics: KafkaJS.ConsumerSubscribeTopics = {
-        topics: subscription.topicPatterns
-          .filter(Boolean)
-          .map((pattern) =>
-            namespaced ? this.namespacer.applyPattern(pattern) : pattern,
-          ),
-      };
+      const topics: KafkaJS.ConsumerSubscribeTopics = { topics: topicPatterns };
 
       await consumer.subscribe(topics);
 

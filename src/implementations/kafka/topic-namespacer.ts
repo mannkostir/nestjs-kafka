@@ -16,8 +16,8 @@ export class TopicNamespacer {
 
     const prefix = `${TopicNamespacer.escape(this.namespace)}\\.`;
     const source = pattern.source.startsWith('^')
-      ? `^${prefix}(?:${pattern.source.slice(1)})`
-      : `^${prefix}.*(?:${pattern.source})`;
+      ? `^${prefix}(${pattern.source.slice(1)})`
+      : `^${prefix}.*(${pattern.source})`;
 
     return new RegExp(source, pattern.flags);
   }
