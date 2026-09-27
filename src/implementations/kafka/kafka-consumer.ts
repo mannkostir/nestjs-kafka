@@ -18,6 +18,7 @@ import { KafkaErrorHandleFailStrategy } from './error-handle-strategies/kafka-er
 import { ConsumerConfig } from '../../types/consumer-config.type.js';
 import { TopicNamespacer } from './topic-namespacer.js';
 import { LibrdkafkaTopicPattern } from './librdkafka-topic-pattern.js';
+import { KafkaTopicProvisioner } from './kafka-topic-provisioner.js';
 
 export interface KafkaConsumerOptions {
   namespace?: string;
@@ -25,6 +26,7 @@ export interface KafkaConsumerOptions {
   producer?: KafkaJS.Producer;
   consumerDefaults?: ConsumerConfig;
   namespacer?: TopicNamespacer;
+  topicProvisioner?: KafkaTopicProvisioner;
 }
 
 export class KafkaConsumer<
@@ -37,6 +39,7 @@ export class KafkaConsumer<
   private readonly producer?: KafkaJS.Producer;
   private readonly consumerDefaults?: ConsumerConfig;
   private readonly namespacer: TopicNamespacer;
+  private readonly topicProvisioner: KafkaTopicProvisioner;
   private readonly strategyCache = new Map<string, KafkaErrorHandleStrategy>();
   private readonly consumers: KafkaJS.Consumer[] = [];
 
@@ -50,6 +53,7 @@ export class KafkaConsumer<
     this.producer = options?.producer;
     this.consumerDefaults = options?.consumerDefaults;
     this.namespacer = options?.namespacer ?? new TopicNamespacer();
+    this.topicProvisioner = options?.topicProvisioner ?? new KafkaTopicProvisioner(kafka);
   }
 
   private getParseStrategy<Payload extends Record<string, any>>(type: MessageFormat): KafkaMessageParseStrategy<Payload> {
@@ -149,6 +153,16 @@ export class KafkaConsumer<
 
     const allowAutoTopicCreation =
       overrides.allowAutoTopicCreation ?? defaults.allowAutoTopicCreation ?? true;
+
+    const topicNames = topicPatterns.filter(
+      (pattern): pattern is string => typeof pattern === 'string',
+    );
+
+    if (allowAutoTopicCreation) {
+      await this.topicProvisioner.createMissing(topicNames);
+    } else {
+      await this.topicProvisioner.assertExisting(topicNames);
+    }
 
     const consumer = this.kafka.consumer({
       kafkaJS: KafkaConsumer.withoutUndefined({

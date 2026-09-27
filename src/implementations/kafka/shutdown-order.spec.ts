@@ -23,7 +23,15 @@ describe('Kafka connector shutdown order', () => {
         disconnected.push('producer');
       }),
     } as unknown as KafkaJS.Producer;
-    const kafka = { consumer: () => consumer } as unknown as KafkaJS.Kafka;
+    const kafka = {
+      consumer: () => consumer,
+      admin: () => ({
+        connect: jest.fn().mockResolvedValue(undefined),
+        disconnect: jest.fn().mockResolvedValue(undefined),
+        listTopics: jest.fn().mockResolvedValue([]),
+        createTopics: jest.fn().mockResolvedValue(true),
+      }),
+    } as unknown as KafkaJS.Kafka;
     const moduleRef = await Test.createTestingModule({
       providers: [
         {
