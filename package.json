@@ -64,6 +64,7 @@
     }
   },
   "devDependencies": {
+    "@confluentinc/kafka-javascript": "^1.10.1",
     "@kafkajs/confluent-schema-registry": "^3.9.0",
     "@nestjs/common": "^12.1.0",
     "@nestjs/core": "^12.1.0",
