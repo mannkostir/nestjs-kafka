@@ -50,7 +50,7 @@ describe('KafkaGroupMember.joined', () => {
 
     await rebalanceCallback(kafka)({ code: -175 }, [{ topic: 't', partition: 0 }]);
 
-    await expect(member.joined('g', 1000)).resolves.toBeUndefined();
+    await expect(member.joined(1000)).resolves.toBeUndefined();
   });
 
   it('resolves joined on an empty first assignment', async () => {
@@ -59,7 +59,7 @@ describe('KafkaGroupMember.joined', () => {
 
     await rebalanceCallback(kafka)({ code: -175 }, []);
 
-    await expect(member.joined('g', 1000)).resolves.toBeUndefined();
+    await expect(member.joined(1000)).resolves.toBeUndefined();
   });
 
   it('ignores a revocation', async () => {
@@ -69,7 +69,7 @@ describe('KafkaGroupMember.joined', () => {
 
     await rebalanceCallback(kafka)({ code: -174 }, [{ topic: 't', partition: 0 }]);
 
-    const assertion = expect(member.joined('g', 1000)).rejects.toThrow(
+    const assertion = expect(member.joined(1000)).rejects.toThrow(
       /Consumer group "g" received no partition assignment within 1000 ms/,
     );
     jest.advanceTimersByTime(1000);
@@ -81,7 +81,7 @@ describe('KafkaGroupMember.joined', () => {
     const kafka = kafkaStub(consumerStub(adminStub()));
     const member = new KafkaGroupMember(kafka, config(), false);
 
-    const assertion = expect(member.joined('g', 1000)).rejects.toThrow(
+    const assertion = expect(member.joined(1000)).rejects.toThrow(
       /Consumer group "g" received no partition assignment within 1000 ms/,
     );
     jest.advanceTimersByTime(1000);
@@ -188,8 +188,21 @@ describe('KafkaGroupMember pin failure fallback', () => {
 
     await rebalanceCallback(kafka)({ code: -175 }, [{ topic: 't', partition: 0 }]);
 
-    await expect(member.joined('g', 1000)).resolves.toBeUndefined();
+    await expect(member.joined(1000)).resolves.toBeUndefined();
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('Consumer group "g"'));
+  });
+
+  it('disconnects the admin when connect fails', async () => {
+    const admin = adminStub();
+    admin.connect.mockRejectedValue(new Error('connection refused'));
+    const consumer = consumerStub(admin);
+    const kafka = kafkaStub(consumer);
+    const member = new KafkaGroupMember(kafka, config(), true);
+
+    await rebalanceCallback(kafka)({ code: -175 }, [{ topic: 't', partition: 0 }]);
+
+    expect(admin.disconnect).toHaveBeenCalledTimes(1);
+    await expect(member.joined(1000)).resolves.toBeUndefined();
   });
 
   it('falls back to the client default when a log end is unknown', async () => {
@@ -206,6 +219,6 @@ describe('KafkaGroupMember pin failure fallback', () => {
 
     expect(result).toBeUndefined();
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('t:0'));
-    await expect(member.joined('g', 1000)).resolves.toBeUndefined();
+    await expect(member.joined(1000)).resolves.toBeUndefined();
   });
 });

@@ -14,7 +14,6 @@ const batchPayload = () =>
   ({
     batch: { topic: 'orders.created' },
     resolveOffset: jest.fn(),
-    heartbeat: jest.fn().mockResolvedValue(undefined),
   }) as unknown as KafkaJS.EachBatchPayload;
 
 describe('KafkaErrorHandleFailStrategy', () => {

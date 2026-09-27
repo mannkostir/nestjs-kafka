@@ -52,6 +52,16 @@ describe('KafkaTopicProvisioner.createMissing', () => {
     ).rejects.toThrow('not authorized');
     expect(admin.disconnect).toHaveBeenCalledTimes(1);
   });
+
+  it('disconnects the admin when connect fails', async () => {
+    const admin = adminStub([]);
+    admin.connect.mockRejectedValue(new Error('connection refused'));
+
+    await expect(
+      new KafkaTopicProvisioner(kafkaWith(admin)).createMissing(['orders.created']),
+    ).rejects.toThrow('connection refused');
+    expect(admin.disconnect).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('KafkaTopicProvisioner.assertExisting', () => {

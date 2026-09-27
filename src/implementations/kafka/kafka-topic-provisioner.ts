@@ -40,9 +40,9 @@ export class KafkaTopicProvisioner {
     }
 
     const admin = this.kafka.admin();
-    await admin.connect();
 
     try {
+      await admin.connect();
       await work(admin);
     } finally {
       await admin.disconnect();

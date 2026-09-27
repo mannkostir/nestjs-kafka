@@ -299,7 +299,6 @@ describe('KafkaConsumer parse strategy resolution', () => {
       isRunning: () => true,
       isStale: () => false,
       resolveOffset: jest.fn(),
-      heartbeat: jest.fn().mockResolvedValue(undefined),
     });
 
     expect(resolve).toHaveBeenCalledTimes(1);
@@ -381,6 +380,20 @@ describe('KafkaConsumer group assignment', () => {
     await subscribePromise;
 
     expect(resolved).toBe(true);
+  });
+
+  it('does not wait for an assignment when every topic is a pattern', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+    consumer.run.mockImplementation(() => Promise.resolve());
+
+    await expect(
+      new KafkaConsumer(kafka).subscribe(
+        { ...subscription(), topicPatterns: [/^audit\..+/] },
+        jest.fn(),
+        'audit-service',
+      ),
+    ).resolves.toBeUndefined();
   });
 
   it('rejects naming the group and closes the consumer when no assignment arrives', async () => {
