@@ -609,15 +609,21 @@ describe('MessageHandlersDiscoveryService', () => {
       AvroNonNamespacedHandler,
     ]);
     let resolveSecond!: () => void;
-    const secondSubscription = new Promise<void>((resolve) => {
-      resolveSecond = resolve;
-    });
     subscribe.mockImplementation((_subscription, _cb, groupId) =>
-      groupId === 'orders-service' ? Promise.reject(failure) : secondSubscription,
+      groupId === 'orders-service'
+        ? Promise.reject(failure)
+        : new Promise<void>((resolve) => {
+            resolveSecond = resolve;
+          }),
     );
 
     const bootstrapPromise = bootstrap();
 
+    for (let tick = 0; tick < 50 && subscribe.mock.calls.length < 2; tick++) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+
+    expect(subscribe.mock.calls.length).toBe(2);
     expect(releaseConnections).not.toHaveBeenCalled();
 
     resolveSecond();
@@ -643,5 +649,24 @@ describe('MessageHandlersDiscoveryService', () => {
     await bootstrap();
 
     expect(releaseConnections).not.toHaveBeenCalled();
+  });
+
+  it('rethrows the original bootstrap error when releasing connections also fails', async () => {
+    const subscribeFailure = new Error('broker unavailable');
+    const releaseFailure = new Error('disconnect failed');
+    const { subscribe, releaseConnections, bootstrap } = harness([OrdersHandler]);
+    subscribe.mockRejectedValue(subscribeFailure);
+    releaseConnections.mockRejectedValue(releaseFailure);
+    const logError = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+
+    await expect(bootstrap()).rejects.toBe(subscribeFailure);
+
+    expect(logError).toHaveBeenCalledWith(
+      'Failed to release Kafka connections after a failed bootstrap',
+      releaseFailure,
+    );
+    logError.mockRestore();
   });
 });

@@ -60,7 +60,14 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
     try {
       await this.mapEventsToHandlers();
     } catch (error) {
-      await this.connections.releaseConnections();
+      try {
+        await this.connections.releaseConnections();
+      } catch (releaseError) {
+        this.logger.error(
+          'Failed to release Kafka connections after a failed bootstrap',
+          releaseError,
+        );
+      }
       throw error;
     }
   }
