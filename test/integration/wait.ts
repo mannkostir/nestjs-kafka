@@ -1,4 +1,4 @@
-const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+export const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export const waitFor = async (
   predicate: () => boolean,

@@ -1,0 +1,199 @@
+import type { KafkaJS } from '@confluentinc/kafka-javascript';
+import type { Logger } from '@nestjs/common';
+import { ExponentialBackoff } from './exponential-backoff.js';
+import { RedeliveryBackoff } from './redelivery-backoff.js';
+
+const record = (offset: string): KafkaJS.KafkaMessage => ({
+  key: null,
+  value: Buffer.from('{}'),
+  timestamp: '0',
+  size: 0,
+  attributes: 0,
+  offset,
+});
+
+const batchPayload = (partition: number, resume: () => void) =>
+  ({
+    batch: { topic: 'orders.created', partition },
+    pause: jest.fn(() => resume),
+  }) as unknown as KafkaJS.EachBatchPayload;
+
+const unpausablePayload = () =>
+  ({
+    batch: { topic: 'orders.created', partition: 0 },
+    pause: jest.fn(() => undefined),
+  }) as unknown as KafkaJS.EachBatchPayload;
+
+const stubLogger = () => ({ warn: jest.fn() }) as unknown as Logger & { warn: jest.Mock };
+
+const defaultBackoff = () => ExponentialBackoff.from({});
+
+describe('RedeliveryBackoff', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('pauses the failing partition', () => {
+    const redelivery = new RedeliveryBackoff(defaultBackoff(), stubLogger());
+    const payload = batchPayload(0, jest.fn());
+
+    redelivery.postpone(payload, record('7'));
+
+    expect(payload.pause).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not resume before the delay elapses', () => {
+    const redelivery = new RedeliveryBackoff(defaultBackoff(), stubLogger());
+    const resume = jest.fn();
+
+    redelivery.postpone(batchPayload(0, resume), record('7'));
+    jest.advanceTimersByTime(299);
+
+    expect(resume).not.toHaveBeenCalled();
+  });
+
+  it('resumes the partition once the delay elapses', () => {
+    const redelivery = new RedeliveryBackoff(defaultBackoff(), stubLogger());
+    const resume = jest.fn();
+
+    redelivery.postpone(batchPayload(0, resume), record('7'));
+    jest.advanceTimersByTime(300);
+
+    expect(resume).toHaveBeenCalledTimes(1);
+  });
+
+  it('warns with the topic, partition, offset and delay', () => {
+    const logger = stubLogger();
+    const redelivery = new RedeliveryBackoff(defaultBackoff(), logger);
+
+    redelivery.postpone(batchPayload(3, jest.fn()), record('7'));
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Pausing topic "orders.created" partition 3 for 300 ms before redelivering offset 7.',
+    );
+  });
+
+  it('lengthens the delay when the same offset fails again', () => {
+    const redelivery = new RedeliveryBackoff(defaultBackoff(), stubLogger());
+    const resume = jest.fn();
+    redelivery.postpone(batchPayload(0, jest.fn()), record('7'));
+    jest.advanceTimersByTime(300);
+
+    redelivery.postpone(batchPayload(0, resume), record('7'));
+    jest.advanceTimersByTime(599);
+
+    expect(resume).not.toHaveBeenCalled();
+  });
+
+  it('resumes after the lengthened delay when the same offset fails again', () => {
+    const redelivery = new RedeliveryBackoff(defaultBackoff(), stubLogger());
+    const resume = jest.fn();
+    redelivery.postpone(batchPayload(0, jest.fn()), record('7'));
+    jest.advanceTimersByTime(300);
+
+    redelivery.postpone(batchPayload(0, resume), record('7'));
+    jest.advanceTimersByTime(600);
+
+    expect(resume).toHaveBeenCalledTimes(1);
+  });
+
+  it('restarts from initialMs when a different offset fails', () => {
+    const redelivery = new RedeliveryBackoff(defaultBackoff(), stubLogger());
+    const resume = jest.fn();
+    redelivery.postpone(batchPayload(0, jest.fn()), record('7'));
+    jest.advanceTimersByTime(300);
+
+    redelivery.postpone(batchPayload(0, resume), record('8'));
+    jest.advanceTimersByTime(300);
+
+    expect(resume).toHaveBeenCalledTimes(1);
+  });
+
+  it('tracks attempts independently per partition', () => {
+    const redelivery = new RedeliveryBackoff(defaultBackoff(), stubLogger());
+    const resume = jest.fn();
+    redelivery.postpone(batchPayload(0, jest.fn()), record('7'));
+    jest.advanceTimersByTime(300);
+
+    redelivery.postpone(batchPayload(1, resume), record('7'));
+    jest.advanceTimersByTime(300);
+
+    expect(resume).toHaveBeenCalledTimes(1);
+  });
+
+  it('never resumes after being stopped', () => {
+    const redelivery = new RedeliveryBackoff(defaultBackoff(), stubLogger());
+    const resume = jest.fn();
+    redelivery.postpone(batchPayload(0, resume), record('7'));
+
+    redelivery.stop();
+    jest.advanceTimersByTime(30000);
+
+    expect(resume).not.toHaveBeenCalled();
+  });
+
+  it('schedules no resume once stopped', () => {
+    const redelivery = new RedeliveryBackoff(defaultBackoff(), stubLogger());
+    redelivery.stop();
+
+    redelivery.postpone(batchPayload(0, jest.fn()), record('7'));
+
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it('pauses no partition once stopped', () => {
+    const redelivery = new RedeliveryBackoff(defaultBackoff(), stubLogger());
+    const payload = batchPayload(0, jest.fn());
+    redelivery.stop();
+
+    redelivery.postpone(payload, record('7'));
+
+    expect(payload.pause).not.toHaveBeenCalled();
+  });
+
+  it('logs a resume failure instead of throwing it', () => {
+    const logger = stubLogger();
+    const redelivery = new RedeliveryBackoff(defaultBackoff(), logger);
+    redelivery.postpone(
+      batchPayload(0, () => {
+        throw new Error('partition revoked');
+      }),
+      record('7'),
+    );
+
+    jest.advanceTimersByTime(300);
+
+    expect(logger.warn).toHaveBeenLastCalledWith(
+      'Could not resume topic "orders.created" partition 0 after backoff: partition revoked',
+    );
+  });
+
+  it('logs a pause failure instead of throwing it', () => {
+    const logger = stubLogger();
+    const redelivery = new RedeliveryBackoff(defaultBackoff(), logger);
+    const payload = {
+      batch: { topic: 'orders.created', partition: 0 },
+      pause: jest.fn(() => {
+        throw new Error('Pause can only be called while connected.');
+      }),
+    } as unknown as KafkaJS.EachBatchPayload;
+
+    redelivery.postpone(payload, record('7'));
+
+    expect(logger.warn).toHaveBeenLastCalledWith(
+      'Could not pause topic "orders.created" partition 0 for backoff: Pause can only be called while connected.',
+    );
+  });
+
+  it('schedules nothing when the client pauses no partition', () => {
+    const redelivery = new RedeliveryBackoff(defaultBackoff(), stubLogger());
+
+    redelivery.postpone(unpausablePayload(), record('7'));
+
+    expect(jest.getTimerCount()).toBe(0);
+  });
+});
