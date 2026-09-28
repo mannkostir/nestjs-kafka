@@ -469,9 +469,19 @@ The namespace is regex-escaped before insertion, so a namespace containing `.` c
 match.
 
 A topic created after a pattern handler has already subscribed is picked up only at the client's
-next metadata refresh (`metadataMaxAge`, default 5 minutes) — plain-string topics, by contrast, are
-provisioned up front (see [Topic provisioning](#topic-provisioning)). If the first messages on a
-newly created topic matter to a pattern handler, subscribe it with `fromBeginning: true`.
+next metadata refresh (default 5 minutes) — plain-string topics, by contrast, are provisioned up
+front (see [Topic provisioning](#topic-provisioning)). If the first messages on a newly created
+topic matter to a pattern handler, subscribe it with `fromBeginning: true`. To discover new topics
+sooner, shorten the refresh interval with the librdkafka property next to `kafkaJS`:
+
+```ts
+KafkaModule.register({
+  clientOptions: {
+    kafkaJS: { brokers: ['kafka:9092'] },
+    'topic.metadata.refresh.interval.ms': 60000,
+  },
+});
+```
 
 ### Opting out per call site
 
@@ -668,7 +678,8 @@ can die before its offset is committed, in which case the message is delivered a
   handler subscribed only to `RegExp` patterns does not wait: librdkafka sends no `JoinGroup` while
   a subscription matches no existing topic, so bootstrap would otherwise block until the join
   timeout elapses and then fail. Such a handler starts consuming once the client's own metadata
-  refresh (`metadataMaxAge`, default `300000` ms, settable in `clientOptions.kafkaJS`) notices a
+  refresh (`'topic.metadata.refresh.interval.ms'`, default `300000`, settable at the top level of
+  `clientOptions`) notices a
   topic matching its pattern. With `fromBeginning: false` (the default), a partition with no
   committed offset starts at the log end as of that assignment. Messages produced after bootstrap
   are delivered to the consumer that holds the partition; until the group's first commit, a
