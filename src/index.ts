@@ -8,7 +8,7 @@ export { ProducerProxy } from "./base/producer-proxy.js";
 export { MessageType, MessageKey, MessageValue } from "./types/message.type.js";
 export { MessageOptions } from "./types/message-options.type.js";
 export { MessageFormat } from "./types/message-format.type.js";
-export { MessageErrorHandlingConfig } from "./types/message-error-handling.type.js";
+export { MessageErrorHandlingConfig, FailBackoffOptions } from "./types/message-error-handling.type.js";
 export { ConsumerConfig } from "./types/consumer-config.type.js";
 export { ConsumerSubscriptionParameters } from "./types/consumer-subscription-parameters.type.js";
 export { MessageHandlerCallback } from "./types/message-handler-callback.type.js";

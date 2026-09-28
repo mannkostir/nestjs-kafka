@@ -521,3 +521,148 @@ describe('KafkaConsumer topic provisioning', () => {
     expect(kafka.consumer).not.toHaveBeenCalled();
   });
 });
+
+describe('KafkaConsumer fail error handling', () => {
+  const failingMessage = (offset: string) => ({
+    key: null,
+    value: Buffer.from(JSON.stringify({ payload: {} })),
+    timestamp: '0',
+    size: 0,
+    attributes: 0,
+    offset,
+  });
+
+  const failingBatch = (resume: () => void) => ({
+    batch: { topic: 'orders.created', partition: 0, messages: [failingMessage('7')] },
+    isRunning: () => true,
+    isStale: () => false,
+    resolveOffset: jest.fn(),
+    pause: jest.fn(() => resume),
+  });
+
+  const eachBatchOf = (consumer: ReturnType<typeof consumerStub>, call = 0) =>
+    (consumer.run as jest.Mock).mock.calls[call][0].eachBatch;
+
+  const failingHandler = () => jest.fn().mockRejectedValue(new Error('handler exploded'));
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('pauses the failing partition and rethrows by default', async () => {
+    const consumer = consumerStub();
+    await new KafkaConsumer(kafkaStub(consumer)).subscribe(
+      { ...subscription(), errorHandling: { type: 'fail' } },
+      failingHandler(),
+      'orders-service',
+    );
+    const batch = failingBatch(jest.fn());
+
+    await expect(eachBatchOf(consumer)(batch)).rejects.toThrow('handler exploded');
+
+    expect(batch.pause).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not pause the partition when backoff is disabled', async () => {
+    const consumer = consumerStub();
+    await new KafkaConsumer(kafkaStub(consumer)).subscribe(
+      { ...subscription(), errorHandling: { type: 'fail', backoff: false } },
+      failingHandler(),
+      'orders-service',
+    );
+    const batch = failingBatch(jest.fn());
+
+    await expect(eachBatchOf(consumer)(batch)).rejects.toThrow('handler exploded');
+
+    expect(batch.pause).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid backoff options before connecting a consumer', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+
+    await expect(
+      new KafkaConsumer(kafka).subscribe(
+        { ...subscription(), errorHandling: { type: 'fail', backoff: { initialMs: 0 } } },
+        jest.fn(),
+        'orders-service',
+      ),
+    ).rejects.toThrow(/Invalid fail backoff/);
+    expect(kafka.consumer).not.toHaveBeenCalled();
+  });
+
+  it('keeps redelivery attempts independent between subscriptions', async () => {
+    const consumer = consumerStub();
+    const kafkaConsumer = new KafkaConsumer(kafkaStub(consumer));
+    const failSubscription = { ...subscription(), errorHandling: { type: 'fail' as const } };
+    await kafkaConsumer.subscribe(failSubscription, failingHandler(), 'orders-service');
+    await kafkaConsumer.subscribe(failSubscription, failingHandler(), 'audit-service');
+    await eachBatchOf(consumer, 0)(failingBatch(jest.fn())).catch(() => undefined);
+    const resume = jest.fn();
+
+    await eachBatchOf(consumer, 1)(failingBatch(resume)).catch(() => undefined);
+    await jest.advanceTimersByTimeAsync(300);
+
+    expect(resume).toHaveBeenCalledTimes(1);
+  });
+
+  it('never resumes a paused partition after every consumer is disconnected', async () => {
+    const consumer = consumerStub();
+    const kafkaConsumer = new KafkaConsumer(kafkaStub(consumer));
+    await kafkaConsumer.subscribe(
+      { ...subscription(), errorHandling: { type: 'fail' } },
+      failingHandler(),
+      'orders-service',
+    );
+    const resume = jest.fn();
+    await eachBatchOf(consumer)(failingBatch(resume)).catch(() => undefined);
+
+    await kafkaConsumer.disconnectAll();
+    await jest.advanceTimersByTimeAsync(30000);
+
+    expect(resume).not.toHaveBeenCalled();
+  });
+
+  it('stops the redelivery backoff before disconnecting the consumer', async () => {
+    const consumer = consumerStub();
+    const kafkaConsumer = new KafkaConsumer(kafkaStub(consumer));
+    await kafkaConsumer.subscribe(
+      { ...subscription(), errorHandling: { type: 'fail' } },
+      failingHandler(),
+      'orders-service',
+    );
+    const eachBatch = eachBatchOf(consumer);
+    const batch = failingBatch(jest.fn());
+    consumer.disconnect.mockImplementation(async () => {
+      await eachBatch(batch).catch(() => undefined);
+    });
+
+    await kafkaConsumer.disconnectAll();
+
+    expect(batch.pause).not.toHaveBeenCalled();
+  });
+
+  it('stops the redelivery backoff of a subscription that fails to start', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+    let eachBatch!: (payload: unknown) => Promise<void>;
+    consumer.run.mockImplementation(async (config: { eachBatch: typeof eachBatch }) => {
+      eachBatch = config.eachBatch;
+      throw new Error('run failed');
+    });
+    const batch = failingBatch(jest.fn());
+    consumer.disconnect.mockImplementation(async () => {
+      await eachBatch(batch).catch(() => undefined);
+    });
+
+    await new KafkaConsumer(kafka)
+      .subscribe({ ...subscription(), errorHandling: { type: 'fail' } }, failingHandler(), 'orders-service')
+      .catch(() => undefined);
+
+    expect(batch.pause).not.toHaveBeenCalled();
+  });
+});

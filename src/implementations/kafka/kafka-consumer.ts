@@ -7,7 +7,7 @@ import { MessageHandlerCallback } from '../../types/message-handler-callback.typ
 import { KafkaMessage } from './kafka-message.js';
 import type { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
 import { MessageFormat } from '../../types/message-format.type.js';
-import { MessageErrorHandlingConfig } from '../../types/message-error-handling.type.js';
+import { FailBackoffOptions, MessageErrorHandlingConfig } from '../../types/message-error-handling.type.js';
 import { KafkaMessageParseStrategy } from './parse-strategies/kafka-message-parse.strategy.js';
 import { KafkaMessageJsonStrategy } from './parse-strategies/kafka-message-json.strategy.js';
 import { KafkaMessageAvroStrategy } from './parse-strategies/kafka-message-avro.strategy.js';
@@ -15,6 +15,8 @@ import { KafkaErrorHandleStrategy } from './error-handle-strategies/kafka-error-
 import { KafkaErrorHandleDlqStrategy } from './error-handle-strategies/kafka-error-handle-dlq.strategy.js';
 import { KafkaErrorHandleIgnoreStrategy } from './error-handle-strategies/kafka-error-handle-ignore.strategy.js';
 import { KafkaErrorHandleFailStrategy } from './error-handle-strategies/kafka-error-handle-fail.strategy.js';
+import { ExponentialBackoff } from './error-handle-strategies/exponential-backoff.js';
+import { RedeliveryBackoff } from './error-handle-strategies/redelivery-backoff.js';
 import { ConsumerConfig } from '../../types/consumer-config.type.js';
 import { TopicNamespacer } from './topic-namespacer.js';
 import { LibrdkafkaTopicPattern } from './librdkafka-topic-pattern.js';
@@ -30,6 +32,11 @@ export interface KafkaConsumerOptions {
   topicProvisioner?: KafkaTopicProvisioner;
 }
 
+type ConsumerSubscription = {
+  consumer: KafkaJS.Consumer;
+  errorStrategy: KafkaErrorHandleStrategy;
+};
+
 export class KafkaConsumer<
   TMessage extends MessageType,
 > extends ConsumerProxy<TMessage> implements OnModuleDestroy {
@@ -42,7 +49,7 @@ export class KafkaConsumer<
   private readonly namespacer: TopicNamespacer;
   private readonly topicProvisioner: KafkaTopicProvisioner;
   private readonly strategyCache = new Map<string, KafkaErrorHandleStrategy>();
-  private readonly consumers: KafkaJS.Consumer[] = [];
+  private readonly subscriptions: ConsumerSubscription[] = [];
 
   constructor(
     private readonly kafka: KafkaJS.Kafka,
@@ -79,6 +86,10 @@ export class KafkaConsumer<
     config: MessageErrorHandlingConfig,
     namespaced: boolean,
   ): KafkaErrorHandleStrategy {
+    if (config.type === 'fail') {
+      return KafkaConsumer.buildFailStrategy(config.backoff);
+    }
+
     const dlqTopic = this.resolveDlqTopic(config, namespaced);
 
     const cacheKey = config.type === 'dlq' ? `dlq:${dlqTopic ?? ''}` : config.type;
@@ -91,9 +102,6 @@ export class KafkaConsumer<
     let strategy: KafkaErrorHandleStrategy;
 
     switch (config.type) {
-      case 'fail':
-        strategy = new KafkaErrorHandleFailStrategy();
-        break;
       case 'ignore':
         strategy = new KafkaErrorHandleIgnoreStrategy();
         break;
@@ -107,11 +115,23 @@ export class KafkaConsumer<
         strategy = new KafkaErrorHandleDlqStrategy(this.producer, dlqTopic);
         break;
       default:
-        throw new Error(`Message error handle strategy not found for type: ${(config as any).type}`);
+        throw new Error(`Message error handle strategy not found for type: ${(config as { type: unknown }).type}`);
     }
 
     this.strategyCache.set(cacheKey, strategy);
     return strategy;
+  }
+
+  private static buildFailStrategy(
+    backoff: FailBackoffOptions | false | undefined,
+  ): KafkaErrorHandleFailStrategy {
+    if (backoff === false) {
+      return new KafkaErrorHandleFailStrategy();
+    }
+
+    return new KafkaErrorHandleFailStrategy(
+      new RedeliveryBackoff(ExponentialBackoff.from(backoff ?? {}), new Logger(RedeliveryBackoff.name)),
+    );
   }
 
   private resolveDlqTopic(
@@ -184,8 +204,9 @@ export class KafkaConsumer<
       !fromBeginning,
     );
     const consumer = member.consumer;
+    const consumerSubscription: ConsumerSubscription = { consumer, errorStrategy };
 
-    this.consumers.push(consumer);
+    this.subscriptions.push(consumerSubscription);
 
     try {
       await consumer.connect();
@@ -200,7 +221,7 @@ export class KafkaConsumer<
         await member.joined(KafkaConsumer.joinTimeoutMs(rebalanceTimeout, sessionTimeout));
       }
     } catch (error) {
-      await this.closeFailedConsumer(consumer);
+      await this.closeFailedSubscription(consumerSubscription);
       throw error;
     }
   }
@@ -213,17 +234,22 @@ export class KafkaConsumer<
       (sessionTimeout ?? KafkaConsumer.DEFAULT_SESSION_TIMEOUT_MS);
   }
 
-  private async closeFailedConsumer(consumer: KafkaJS.Consumer): Promise<void> {
-    const index = this.consumers.indexOf(consumer);
+  private async closeFailedSubscription(subscription: ConsumerSubscription): Promise<void> {
+    const index = this.subscriptions.indexOf(subscription);
     if (index !== -1) {
-      this.consumers.splice(index, 1);
+      this.subscriptions.splice(index, 1);
     }
 
     try {
-      await consumer.disconnect();
+      await KafkaConsumer.close(subscription);
     } catch (disconnectError) {
       this.logger.error('Error disconnecting consumer after failed subscribe', disconnectError);
     }
+  }
+
+  private static async close({ consumer, errorStrategy }: ConsumerSubscription): Promise<void> {
+    errorStrategy.stop();
+    await consumer.disconnect();
   }
 
   private static withoutUndefined<T extends object>(config: T): T {
@@ -278,12 +304,12 @@ export class KafkaConsumer<
   }
 
   public async disconnectAll(): Promise<void> {
-    const consumers = this.consumers.splice(0);
+    const subscriptions = this.subscriptions.splice(0);
 
-    this.logger.log(`Disconnecting ${consumers.length} consumer(s)...`);
+    this.logger.log(`Disconnecting ${subscriptions.length} consumer(s)...`);
 
     const results = await Promise.allSettled(
-      consumers.map((consumer) => consumer.disconnect()),
+      subscriptions.map((subscription) => KafkaConsumer.close(subscription)),
     );
 
     for (const result of results) {

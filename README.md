@@ -156,8 +156,11 @@ only.
    its first partition assignment, roughly one heartbeat interval when other replicas are already
    in the group. A handler subscribed only to `RegExp` patterns does not wait; see
    [Delivery semantics](#delivery-semantics).
-7. `fail` no longer backs off between redeliveries: a failing message is redelivered immediately, in
-   a tight loop, until the handler succeeds or the policy changes.
+7. `fail` still backs off between redeliveries, but no longer through the consumer `retry` options
+   or a consumer restart: `retry` and `restartOnFailure` no longer govern it. It now pauses only the
+   failing partition, with an exponential delay of `300` ms doubling up to `30000` ms by default;
+   tune it with `errorHandling: { type: 'fail', backoff: { ... } }`, or set `backoff: false` for
+   immediate redelivery. See [`{ type: 'fail' }`](#-type-fail-).
 8. `rebalanceTimeout` now maps to `max.poll.interval.ms`: a batch that takes longer than it gets the
    consumer evicted from its group. Raise it rather than lower it if handlers are slow.
 
@@ -569,15 +572,38 @@ also when parsing the record throws.
 
 ### `{ type: 'fail' }`
 
-Rethrows. The client logs the error through its own logger and immediately seeks back to the first
-unresolved offset, so the same message is redelivered — no backoff, no retry budget, no consumer
-restart. A message that always fails — a poison message — is redelivered in a tight loop until the
-handler succeeds or the policy changes. Use `dlq` for poison messages, or `ignore` when one bad
-message must not stall its partition.
+Pauses the failing partition, then rethrows. The client logs the error through its own logger and
+seeks back to the first unresolved offset, so the same message is redelivered once the partition
+resumes — no retry budget, no consumer restart. Only the failing partition pauses: the handler's
+other partitions keep flowing while it waits.
+
+The pause grows exponentially with each consecutive failure of the same offset:
+`min(initialMs * multiplier ^ attempt, maxMs)`, with `attempt` starting at `0`. The count is kept
+per partition and starts over when a different offset fails. Each pause is logged as a warning.
 
 ```ts
 errorHandling: { type: 'fail' }
+errorHandling: { type: 'fail', backoff: { initialMs: 1000, maxMs: 60000, multiplier: 3 } }
+errorHandling: { type: 'fail', backoff: false }
 ```
+
+| `backoff` field | Type | Default | Constraint |
+| --- | --- | --- | --- |
+| `initialMs` | `number` (ms) | `300` | finite, greater than `0` |
+| `maxMs` | `number` (ms) | `30000` | at least `initialMs`, at most `2147483647` |
+| `multiplier` | `number` | `2` | finite, at least `1` |
+
+Omitted fields take their defaults. A value that breaks a constraint fails application bootstrap
+with an error naming the field. `backoff: false` turns the pause off, so the message is redelivered
+immediately, in a tight loop, for as long as it keeps failing. The consumer `retry` options do not
+affect this policy.
+
+Delays are minimums: the client picks up a resumed partition on its next fetch cycle, which rounds
+short delays up — a `200` ms pause was observed as roughly half a second.
+
+A message that always fails — a poison message — still stalls its partition indefinitely, only more
+slowly. Use `dlq` for poison messages, or `ignore` when one bad message must not stall its
+partition.
 
 ### `{ type: 'ignore' }`
 
@@ -696,8 +722,9 @@ can die before its offset is committed, in which case the message is delivered a
   failed bootstrap. Note that Nest's `app.close()` on a context whose `init()` failed rethrows that
   same error without running shutdown hooks (true on both Nest 11 and 12), so a host or test that
   catches the bootstrap error should not rely on `close()` to clean up further.
-- **Shutdown closes consumers before the producer.** `onModuleDestroy` disconnects every consumer
-  and logs any that fail; `beforeApplicationShutdown`, which Nest runs after every destroy hook,
+- **Shutdown closes consumers before the producer.** `onModuleDestroy` cancels every pending `fail`
+  backoff, so no paused partition resumes afterwards, then disconnects every consumer and logs any
+  that fail; `beforeApplicationShutdown`, which Nest runs after every destroy hook,
   then disconnects the producer. DLQ publishes and producer calls made from handlers therefore
   still have a connected producer while the consumers stop. Call `app.enableShutdownHooks()` in the
   host application so these run on `SIGTERM` and `SIGINT`.
