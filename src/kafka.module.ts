@@ -24,6 +24,7 @@ import {
   TRANSPORT_NAMESPACE,
   SCHEMA_REGISTRY_OPTIONS,
   CONSUMER_DEFAULTS,
+  CLIENT_LOGGER,
   CONNECTOR_NAME,
   KAFKA_PRODUCER,
   KAFKA_CONNECTIONS,
@@ -53,6 +54,7 @@ const consumerProxyProvider: Provider<ConsumerProxy> = {
     namespace: string | undefined,
     consumerDefaults: ConsumerConfig | undefined,
     namespacer: TopicNamespacer,
+    clientLogger: KafkaJS.Logger | undefined,
   ) => {
     let schemaRegistry: SchemaRegistry | undefined;
 
@@ -69,9 +71,10 @@ const consumerProxyProvider: Provider<ConsumerProxy> = {
       producer,
       consumerDefaults,
       namespacer,
+      clientLogger,
     });
   },
-  inject: [KafkaJS.Kafka, KAFKA_PRODUCER, SCHEMA_REGISTRY_OPTIONS, TRANSPORT_NAMESPACE, CONSUMER_DEFAULTS, TopicNamespacer],
+  inject: [KafkaJS.Kafka, KAFKA_PRODUCER, SCHEMA_REGISTRY_OPTIONS, TRANSPORT_NAMESPACE, CONSUMER_DEFAULTS, TopicNamespacer, CLIENT_LOGGER],
 };
 
 const topicNamespacerProvider: Provider<TopicNamespacer> = {
@@ -150,6 +153,11 @@ function createDerivedProviders(): Provider[] {
     {
       provide: CONSUMER_DEFAULTS,
       useFactory: (opts: KafkaModuleOptions) => opts.consumerDefaults,
+      inject: [KAFKA_MODULE_OPTIONS],
+    },
+    {
+      provide: CLIENT_LOGGER,
+      useFactory: (opts: KafkaModuleOptions) => opts.clientOptions.kafkaJS?.logger,
       inject: [KAFKA_MODULE_OPTIONS],
     },
   ];

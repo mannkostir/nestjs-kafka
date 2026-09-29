@@ -22,6 +22,7 @@ import { TopicNamespacer } from './topic-namespacer.js';
 import { LibrdkafkaTopicPattern } from './librdkafka-topic-pattern.js';
 import { KafkaTopicProvisioner } from './kafka-topic-provisioner.js';
 import { KafkaGroupMember } from './kafka-group-member.js';
+import { NestKafkaLogger } from './nest-kafka-logger.js';
 
 export interface KafkaConsumerOptions {
   namespace?: string;
@@ -30,6 +31,7 @@ export interface KafkaConsumerOptions {
   consumerDefaults?: ConsumerConfig;
   namespacer?: TopicNamespacer;
   topicProvisioner?: KafkaTopicProvisioner;
+  clientLogger?: KafkaJS.Logger;
 }
 
 type ConsumerSubscription = {
@@ -48,6 +50,7 @@ export class KafkaConsumer<
   private readonly consumerDefaults?: ConsumerConfig;
   private readonly namespacer: TopicNamespacer;
   private readonly topicProvisioner: KafkaTopicProvisioner;
+  private readonly clientLogger: KafkaJS.Logger;
   private readonly strategyCache = new Map<string, KafkaErrorHandleStrategy>();
   private readonly subscriptions: ConsumerSubscription[] = [];
 
@@ -62,6 +65,7 @@ export class KafkaConsumer<
     this.consumerDefaults = options?.consumerDefaults;
     this.namespacer = options?.namespacer ?? new TopicNamespacer();
     this.topicProvisioner = options?.topicProvisioner ?? new KafkaTopicProvisioner(kafka);
+    this.clientLogger = options?.clientLogger ?? new NestKafkaLogger();
   }
 
   private getParseStrategy<Payload extends Record<string, any>>(type: MessageFormat): KafkaMessageParseStrategy<Payload> {
@@ -202,6 +206,7 @@ export class KafkaConsumer<
         retry: { ...defaults.retry, ...overrides.retry },
       }),
       !fromBeginning,
+      this.clientLogger,
     );
     const consumer = member.consumer;
     const consumerSubscription: ConsumerSubscription = { consumer, errorStrategy };
