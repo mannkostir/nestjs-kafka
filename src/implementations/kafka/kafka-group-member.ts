@@ -1,6 +1,7 @@
 import { KafkaJS } from '@confluentinc/kafka-javascript';
 import type { RdKafka } from '@confluentinc/kafka-javascript';
 import { Logger } from '@nestjs/common';
+import { JoinFailureDetector } from './join-failure-detector.js';
 
 type RebalanceEvent = { code: number };
 
@@ -14,6 +15,8 @@ export class KafkaGroupMember {
   });
 
   private readonly groupId: string;
+
+  private readonly joinFailureDetector: JoinFailureDetector;
 
   private readonly onRebalance = async (
     event: RebalanceEvent,
@@ -46,9 +49,14 @@ export class KafkaGroupMember {
     kafka: KafkaJS.Kafka,
     config: KafkaJS.ConsumerConfig,
     private readonly startAtLogEnd: boolean,
+    clientLogger: KafkaJS.Logger,
   ) {
     this.groupId = config.groupId;
-    this.consumer = kafka.consumer({ rebalance_cb: this.onRebalance, kafkaJS: config });
+    this.joinFailureDetector = new JoinFailureDetector(clientLogger);
+    this.consumer = kafka.consumer({
+      rebalance_cb: this.onRebalance,
+      kafkaJS: { ...config, logger: this.joinFailureDetector },
+    });
   }
 
   public async joined(timeoutMs: number): Promise<void> {
@@ -60,16 +68,23 @@ export class KafkaGroupMember {
           reject(
             new Error(
               `Consumer group "${this.groupId}" received no partition assignment within ${timeoutMs} ms. ` +
-                'Check that the brokers are reachable and that this client may join the group, ' +
-                'or raise rebalanceTimeout / sessionTimeout if the group rebalances slowly.',
+                'Check that the brokers are reachable and that every other member of the group is still polling. ' +
+                'Raising rebalanceTimeout extends this wait but also raises max.poll.interval.ms.',
             ),
           ),
         timeoutMs,
       );
     });
 
+    const refusal = this.joinFailureDetector.failure.then((reason): never => {
+      throw new Error(
+        `Consumer group "${this.groupId}" cannot join: ${reason}. ` +
+          'Grant this client Read on the group and Describe and Read on its topics.',
+      );
+    });
+
     try {
-      await Promise.race([this.firstAssignment, expiry]);
+      await Promise.race([this.firstAssignment, refusal, expiry]);
     } finally {
       clearTimeout(timer);
     }

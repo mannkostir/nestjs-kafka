@@ -163,6 +163,12 @@ only.
    immediate redelivery. See [`{ type: 'fail' }`](#-type-fail-).
 8. `rebalanceTimeout` now maps to `max.poll.interval.ms`: a batch that takes longer than it gets the
    consumer evicted from its group. Raise it rather than lower it if handlers are slow.
+9. Handler consumers now log through Nest's `Logger` (context `KafkaClient`) instead of the
+   client's default logger when `clientOptions.kafkaJS.logger` is unset. A logger passed there
+   still receives every consumer log line.
+10. A handler whose principal may not read one of its subscribed topics, or its group, now fails
+    bootstrap immediately with an error naming the group and the broker's reason, instead of
+    waiting for its partition assignment.
 
 ## Quickstart
 
@@ -268,8 +274,10 @@ export class OrderPublisher {
 error saying so. Leave either option `undefined` to opt out of it; this matters most when the value
 comes from an environment variable that may be set but empty.
 
-The client logs through its own default logger. Pass `clientOptions.kafkaJS.logger` to route its
-logs elsewhere.
+Handler consumers, and the admin client each one uses to pin its start offsets, log through Nest's
+`Logger` with the context `KafkaClient`. The producer and the admin client that provisions topics
+log through the client's own default logger. Pass `clientOptions.kafkaJS.logger` to route all of
+them elsewhere.
 
 There is no `moduleName` option. Handlers are discovered application-wide regardless of which
 module declares `KafkaModule` or which module declares the handler provider.
@@ -713,7 +721,9 @@ can die before its offset is committed, in which case the message is delivered a
   commit — starts again at the log end, as `latest` always did. A committed offset, including `0`,
   is always honoured instead. If no assignment arrives within `rebalanceTimeout + sessionTimeout`
   (defaults `300000 + 30000` ms) for a handler that waits, bootstrap fails with an error naming the
-  consumer group. This reserves librdkafka's `rebalance_cb` consumer property; do not set it
+  consumer group. If the client reports a group or topic authorization failure during the wait,
+  bootstrap fails immediately instead, with an error naming the consumer group and the broker's
+  reason. This reserves librdkafka's `rebalance_cb` consumer property; do not set it
   yourself.
 - **A failed bootstrap releases every connection it opened.** If any handler's `subscribe()` call
   ultimately throws, the module disconnects every consumer it had already opened — not only the one

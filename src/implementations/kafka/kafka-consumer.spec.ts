@@ -1,4 +1,5 @@
 import type { KafkaJS } from '@confluentinc/kafka-javascript';
+import { Logger } from '@nestjs/common';
 import { KafkaConsumer } from './kafka-consumer.js';
 import { KafkaTopicProvisioner } from './kafka-topic-provisioner.js';
 import { TopicNamespacer } from './topic-namespacer.js';
@@ -111,6 +112,7 @@ describe('KafkaConsumer configuration precedence', () => {
       'allowAutoTopicCreation',
       'fromBeginning',
       'groupId',
+      'logger',
       'retry',
     ]);
   });
@@ -416,6 +418,46 @@ describe('KafkaConsumer group assignment', () => {
     await assertion;
 
     expect(consumer.disconnect).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('KafkaConsumer client logging', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('hands the client consumer a logger that forwards to the supplied client logger', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+    const clientLogger = {
+      info: jest.fn(),
+      error: jest.fn(),
+      warn: jest.fn(),
+      debug: jest.fn(),
+      namespace: jest.fn(),
+      setLogLevel: jest.fn(),
+    };
+    await new KafkaConsumer(kafka, { clientLogger }).subscribe(
+      subscription(),
+      jest.fn(),
+      'orders-service',
+    );
+
+    consumerConfig(kafka).logger.info('joined group');
+
+    expect(clientLogger.info).toHaveBeenCalledWith('joined group', undefined);
+  });
+
+  it('subscribes with a default client logger when none is supplied', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+
+    const nestLog = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    await new KafkaConsumer(kafka).subscribe(subscription(), jest.fn(), 'orders-service');
+
+    consumerConfig(kafka).logger.info('x');
+
+    expect(nestLog).toHaveBeenCalledWith('x');
   });
 });
 
