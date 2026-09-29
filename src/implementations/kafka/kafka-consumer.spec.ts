@@ -4,6 +4,7 @@ import { KafkaConsumer } from './kafka-consumer.js';
 import { KafkaTopicProvisioner } from './kafka-topic-provisioner.js';
 import { TopicNamespacer } from './topic-namespacer.js';
 import { MessageFormat } from '../../types/message-format.type.js';
+import { KafkaMessageParseStrategyFactory } from './parse-strategies/kafka-message-parse-strategy.factory.js';
 
 const consumerStub = () => ({
   connect: jest.fn().mockResolvedValue(undefined),
@@ -249,28 +250,48 @@ describe('KafkaConsumer topic namespacing', () => {
         ...subscription(),
         errorHandling: { type: 'dlq', topic: 'parking.lot' },
       },
-      jest.fn(),
+      jest.fn().mockRejectedValue(new Error('boom')),
       'orders-service',
     );
 
-    const strategy = (subject as unknown as {
-      strategyCache: Map<string, { handle: Function }>;
-    }).strategyCache.get('dlq:dev.parking.lot');
+    const eachBatch = (consumer.run as jest.Mock).mock.calls[0][0].eachBatch;
 
-    expect(strategy).toBeDefined();
+    await eachBatch({
+      batch: {
+        topic: 'dev.orders.created',
+        messages: [
+          {
+            key: null,
+            value: Buffer.from(JSON.stringify({ payload: {} })),
+            timestamp: '0',
+            size: 0,
+            attributes: 0,
+            offset: '0',
+          },
+        ],
+      },
+      isRunning: () => true,
+      isStale: () => false,
+      resolveOffset: jest.fn(),
+    });
+
+    expect(producer.send).toHaveBeenCalledWith(
+      expect.objectContaining({ topic: 'dev.parking.lot' }),
+    );
   });
 });
 
 describe('KafkaConsumer parse strategy resolution', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it('resolves the parse strategy once per subscription rather than per message', async () => {
     const consumer = consumerStub();
     const kafka = kafkaStub(consumer);
 
     const subject = new KafkaConsumer(kafka);
-    const resolve = jest.spyOn(
-      subject as unknown as { getParseStrategy: (...args: unknown[]) => unknown },
-      'getParseStrategy',
-    );
+    const resolve = jest.spyOn(KafkaMessageParseStrategyFactory.prototype, 'create');
 
     await subject.subscribe(subscription(), jest.fn(), 'orders-service');
 
