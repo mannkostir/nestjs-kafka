@@ -370,6 +370,24 @@ describe('KafkaConsumer configuration errors', () => {
     ).rejects.toThrow(/Topic pattern \/\^orders\/i cannot be subscribed/);
     expect(kafka.consumer).not.toHaveBeenCalled();
   });
+
+  it('rejects a namespaced string topic starting with ^ before provisioning it', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+
+    await expect(
+      new KafkaConsumer(kafka, {
+        namespace: 'dev',
+        namespacer: new TopicNamespacer('dev'),
+      }).subscribe(
+        { ...subscription(), topicPatterns: ['^orders'] },
+        jest.fn(),
+        'orders-service',
+      ),
+    ).rejects.toThrow(/Topic "\^orders" cannot be subscribed/);
+    expect(kafka.admin).not.toHaveBeenCalled();
+    expect(kafka.consumer).not.toHaveBeenCalled();
+  });
 });
 
 describe('KafkaConsumer group assignment', () => {
