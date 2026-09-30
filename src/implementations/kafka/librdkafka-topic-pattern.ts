@@ -1,7 +1,8 @@
 export class LibrdkafkaTopicPattern {
-  public static normalize(pattern: string | RegExp): string | RegExp {
+  public static validate(pattern: string | RegExp): void {
     if (typeof pattern === 'string') {
-      return pattern;
+      LibrdkafkaTopicPattern.validateTopicName(pattern);
+      return;
     }
 
     const problem = LibrdkafkaTopicPattern.findProblem(pattern);
@@ -13,10 +14,23 @@ export class LibrdkafkaTopicPattern {
         'they carry no flags and use only plain (...) groups, |, bracket expressions and greedy quantifiers.',
       );
     }
+  }
 
-    return pattern.source.startsWith('^')
-      ? pattern
-      : new RegExp(`^.*(${pattern.source})`);
+  public static anchor(pattern: string | RegExp): string | RegExp {
+    if (typeof pattern === 'string' || pattern.source.startsWith('^')) {
+      return pattern;
+    }
+
+    return new RegExp(`^.*(${pattern.source})`);
+  }
+
+  private static validateTopicName(topic: string): void {
+    if (topic.startsWith('^')) {
+      throw new Error(
+        `Topic "${topic}" cannot be subscribed: librdkafka matches a topic starting with ^ as a regular expression. ` +
+        `Pass a RegExp instead, for example /${topic}/.`,
+      );
+    }
   }
 
   private static findProblem(pattern: RegExp): string | undefined {

@@ -466,6 +466,9 @@ Only a subset of JavaScript regex syntax survives that translation:
   (e.g. `*?`), and letter or digit escapes such as `\d`, `\w`, `\s`, `\b` — these either mismatch
   silently or differ between macOS and Linux under POSIX ERE, so the library rejects them outright.
   Use a bracket expression instead, for example `[0-9]` or `[[:alnum:]_]`.
+- **A string topic starting with `^`** is rejected at bootstrap too: librdkafka treats any
+  subscribed topic string starting with `^` as a regular expression, while the library would
+  provision it as a literal topic name. Pass a `RegExp` instead — `/^orders/`, not `'^orders'`.
 
 An unanchored pattern is anchored as `^.*(...)` so it still matches anywhere in the topic name.
 Under a namespace, a pattern is rewritten instead to keep the namespace anchored to the start of the

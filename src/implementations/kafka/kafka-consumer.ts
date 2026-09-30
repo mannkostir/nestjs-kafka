@@ -71,12 +71,14 @@ export class KafkaConsumer<
     const parseStrategy = this.parseStrategies.create<TMessage>(subscription.messageFormat);
     const errorStrategy = this.errorStrategies.create(subscription.errorHandling, namespaced);
 
-    const topicPatterns = subscription.topicPatterns
-      .filter(Boolean)
+    const requestedPatterns = subscription.topicPatterns.filter(Boolean);
+    requestedPatterns.forEach((pattern) => LibrdkafkaTopicPattern.validate(pattern));
+
+    const topicPatterns = requestedPatterns
       .map((pattern) =>
         namespaced ? this.namespacer.applyPattern(pattern) : pattern,
       )
-      .map((pattern) => LibrdkafkaTopicPattern.normalize(pattern));
+      .map((pattern) => LibrdkafkaTopicPattern.anchor(pattern));
 
     const config = ResolvedConsumerConfig.resolve(subscription.consumer, this.consumerDefaults);
 
