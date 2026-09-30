@@ -128,48 +128,6 @@ module.exports = {
 A NestJS 12 host needs the flag either way, because NestJS 12 is itself published as ES modules
 only.
 
-## Migrating from 0.2.x
-
-0.3.0 replaces `kafkajs` with `@confluentinc/kafka-javascript`. This is a breaking change:
-
-1. Swap the peer: `npm uninstall kafkajs && npm install @confluentinc/kafka-javascript`.
-2. Wrap your client options in `kafkaJS`:
-
-   ```ts
-   KafkaModule.register({
-     clientOptions: { kafkaJS: { clientId: 'orders', brokers: ['kafka:9092'] } },
-   });
-   ```
-3. Remove `factor`, `multiplier`, and `restartOnFailure` from any `retry` option; the client fixes
-   them and throws if you set them.
-4. Rewrite any `RegExp` topic pattern that used JS-only syntax. Topic patterns are now matched as
-   POSIX extended regular expressions: flags (`/x/i`), `(?` groups (non-capturing, lookaround,
-   inline flags), lazy quantifiers, and letter or digit escapes (`\d`, `\w`, `\s`, `\b`) are
-   rejected at bootstrap with a message saying how to rewrite the pattern. See
-   [Pattern (RegExp) topics](#pattern-regexp-topics).
-5. Grant the application's Kafka principal Create permission on every topic its handlers consume.
-   The library now creates missing plain-string topics itself before subscribing, even when the
-   broker has `auto.create.topics.enable=false`; with `allowAutoTopicCreation: false`, bootstrap
-   instead fails naming the missing topics. See
-   [Topic provisioning](#topic-provisioning).
-6. Expect application bootstrap to wait for each handler's consumer to join its group and receive
-   its first partition assignment, roughly one heartbeat interval when other replicas are already
-   in the group. A handler subscribed only to `RegExp` patterns does not wait; see
-   [Delivery semantics](#delivery-semantics).
-7. `fail` still backs off between redeliveries, but no longer through the consumer `retry` options
-   or a consumer restart: `retry` and `restartOnFailure` no longer govern it. It now pauses only the
-   failing partition, with an exponential delay of `300` ms doubling up to `30000` ms by default;
-   tune it with `errorHandling: { type: 'fail', backoff: { ... } }`, or set `backoff: false` for
-   immediate redelivery. See [`{ type: 'fail' }`](#-type-fail-).
-8. `rebalanceTimeout` now maps to `max.poll.interval.ms`: a batch that takes longer than it gets the
-   consumer evicted from its group. Raise it rather than lower it if handlers are slow.
-9. Handler consumers now log through Nest's `Logger` (context `KafkaClient`) instead of the
-   client's default logger when `clientOptions.kafkaJS.logger` is unset. A logger passed there
-   still receives every consumer log line.
-10. A handler whose principal may not read one of its subscribed topics, or its group, now fails
-    bootstrap immediately with an error naming the group and the broker's reason, instead of
-    waiting for its partition assignment.
-
 ## Quickstart
 
 Register the module anywhere in your application:
