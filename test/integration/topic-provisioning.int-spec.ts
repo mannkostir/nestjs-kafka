@@ -1,11 +1,12 @@
 import { Injectable, Module } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { KafkaModule } from '../../src/kafka.module.js';
 import { Message } from '../../src/decorators/message-handler.decorator.js';
 import { ProducerProxy } from '../../src/base/producer-proxy.js';
 import { MessageType } from '../../src/types/message.type.js';
 import { startBroker, StartedBroker } from './kafka-broker.js';
-import { waitFor } from './wait.js';
+import { eventually, waitFor } from './wait.js';
 
 const shipped: MessageType[] = [];
 
@@ -35,6 +36,15 @@ class StrictTopicHandler {
     groupId: 'strict-topic',
     errorHandling: { type: 'fail' },
     consumer: { allowAutoTopicCreation: false },
+  })
+  async handle(_message: MessageType): Promise<void> {}
+}
+
+@Injectable()
+class HealthyNeighbourHandler {
+  @Message(['payouts.created'], {
+    groupId: 'healthy-neighbour',
+    errorHandling: { type: 'fail' },
   })
   async handle(_message: MessageType): Promise<void> {}
 }
@@ -130,5 +140,44 @@ describe('topic provisioning', () => {
         moduleRef.get(ProducerProxy).send('refunds.created', { key: null, value: { payload: {} } }),
       ).rejects.toThrow(/connect/);
     });
+  });
+
+  describe('a healthy handler next to one that forbids topic creation', () => {
+    it('releases the healthy handler\'s consumer once bootstrap fails', async () => {
+      @Module({
+        imports: [
+          KafkaModule.register({
+            clientOptions: { kafkaJS: { clientId: 'healthy-neighbour', brokers: broker.brokers } },
+          }),
+        ],
+        providers: [HealthyNeighbourHandler, StrictTopicHandler],
+      })
+      class MixedModule {}
+
+      const moduleRef = await Test.createTestingModule({ imports: [MixedModule] }).compile();
+
+      await expect(moduleRef.init()).rejects.toThrow(/refunds\.created/);
+
+      const admin = new KafkaJS.Kafka({
+        kafkaJS: { clientId: 'release-observer', brokers: broker.brokers },
+      }).admin();
+      await admin.connect();
+
+      try {
+        await eventually(async () => {
+          const { groups } = await admin.describeGroups(['healthy-neighbour']);
+
+          expect(groups).toEqual([
+            expect.objectContaining({
+              groupId: 'healthy-neighbour',
+              state: KafkaJS.ConsumerGroupStates.EMPTY,
+              members: [],
+            }),
+          ]);
+        });
+      } finally {
+        await admin.disconnect();
+      }
+    }, 60000);
   });
 });
