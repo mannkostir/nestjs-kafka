@@ -26,6 +26,9 @@ const kafkaStub = (consumer: ReturnType<typeof consumerStub>) => {
       disconnect: jest.fn().mockResolvedValue(undefined),
       listTopics: jest.fn().mockResolvedValue([]),
       createTopics: jest.fn().mockResolvedValue(true),
+      fetchTopicMetadata: jest.fn(async ({ topics }: { topics: string[] }) =>
+        topics.map((name) => ({ name, partitions: [{ partitionId: 0, leader: 1 }] })),
+      ),
     }),
   } as unknown as KafkaJS.Kafka;
 

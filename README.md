@@ -756,6 +756,15 @@ does not create a topic on subscribe, and only notices a topic created after tha
 metadata refresh — so without this step, a handler subscribing to a brand-new topic could sit idle
 indefinitely.
 
+Creating a topic returns before the broker reports it in metadata, and a consumer that subscribes in
+that window sees an unknown topic and does not join its group until the next refresh. So after
+creating topics, the library waits until the broker reports a leader for every partition of each
+one before the handler's consumer subscribes. If that takes longer than 30 seconds, bootstrap fails:
+
+```
+Topic(s) orders.created were created but did not become available within 30000 ms: the broker does not yet report a leader for every partition. Check the cluster's health, or create the topics before the application starts.
+```
+
 With `allowAutoTopicCreation: false`, the library asserts the topics already exist instead of
 creating them, and bootstrap fails if they do not:
 
