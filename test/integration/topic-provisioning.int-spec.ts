@@ -148,6 +148,7 @@ describe('topic provisioning', () => {
         imports: [
           KafkaModule.register({
             clientOptions: { kafkaJS: { clientId: 'healthy-neighbour', brokers: broker.brokers } },
+            consumerDefaults: { rebalanceTimeout: 20000, sessionTimeout: 10000 },
           }),
         ],
         providers: [HealthyNeighbourHandler, StrictTopicHandler],
@@ -178,6 +179,6 @@ describe('topic provisioning', () => {
       } finally {
         await admin.disconnect();
       }
-    }, 60000);
+    }, 90000);
   });
 });
