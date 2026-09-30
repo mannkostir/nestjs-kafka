@@ -67,13 +67,19 @@ const payloadsOf = (messages: MessageType<PaymentCaptured>[]) =>
 describe('resuming from a committed offset', () => {
   let broker: StartedBroker;
   let kafka: KafkaJS.Kafka;
-  let admin: KafkaJS.Admin;
+  let admin: KafkaJS.Admin | undefined;
+
+  const observer = async (): Promise<KafkaJS.Admin> => {
+    if (!admin) {
+      admin = kafka.admin();
+      await admin.connect();
+    }
+    return admin;
+  };
 
   beforeAll(async () => {
     broker = await startBroker();
     kafka = new KafkaJS.Kafka({ kafkaJS: { clientId: 'offset-observer', brokers: broker.brokers } });
-    admin = kafka.admin();
-    await admin.connect();
   });
 
   afterAll(async () => {
@@ -92,7 +98,7 @@ describe('resuming from a committed offset', () => {
       });
       await waitFor(() => captured.length === 1, 20000);
       await eventually(async () => {
-        const [{ partitions }] = await admin.fetchOffsets({
+        const [{ partitions }] = await (await observer()).fetchOffsets({
           groupId: 'payments-resume',
           topics: ['payments.captured'],
         });
@@ -121,7 +127,7 @@ describe('resuming from a committed offset', () => {
 
   describe('a group whose committed offset is 0', () => {
     beforeAll(async () => {
-      await admin.createTopics({ topics: [{ topic: 'payments.refunded' }] });
+      await (await observer()).createTopics({ topics: [{ topic: 'payments.refunded' }] });
 
       const producer = kafka.producer();
       await producer.connect();
