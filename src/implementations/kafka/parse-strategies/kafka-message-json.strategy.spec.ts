@@ -150,4 +150,10 @@ describe('KafkaMessageJsonStrategy', () => {
       expect(parsed.headers).toEqual({});
     });
   });
+
+  it('rejects a record whose value is empty bytes', async () => {
+    await expect(strategy.parse(record(Buffer.alloc(0)))).rejects.toThrow(
+      /Failed to parse message value as JSON/,
+    );
+  });
 });

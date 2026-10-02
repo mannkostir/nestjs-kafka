@@ -7,6 +7,6 @@ export class KafkaMessageAvroStrategy extends KafkaMessageParseStrategy {
     }
 
     protected async parseValue(raw: Buffer): Promise<unknown> {
-        return this.registry.decode(Buffer.from(raw));
+        return this.registry.decode(raw);
     }
 }

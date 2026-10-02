@@ -873,4 +873,43 @@ describe('KafkaConsumer handler context', () => {
       expect.objectContaining({ topic: 'dev.orders.created' }),
     );
   });
+
+  const unparsableRecord = (): KafkaJS.KafkaMessage => ({
+    ...record({}),
+    value: Buffer.from('not-json'),
+  });
+
+  it('does not call the handler for a record whose value cannot be parsed', async () => {
+    const consumer = consumerStub();
+    const handler = jest.fn().mockResolvedValue(undefined);
+
+    await new KafkaConsumer(kafkaStub(consumer)).subscribe(subscription(), handler, 'orders-service');
+    await deliver(consumer, {
+      topic: 'orders.created',
+      partition: 0,
+      messages: [unparsableRecord()],
+    });
+
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('hands a record whose value cannot be parsed to the error strategy', async () => {
+    const consumer = consumerStub();
+    const producer = {
+      send: jest.fn().mockResolvedValue([]),
+    } as unknown as KafkaJS.Producer;
+
+    await new KafkaConsumer(kafkaStub(consumer), { producer }).subscribe(
+      { ...subscription(), errorHandling: { type: 'dlq' as const, topic: 'parking.lot' } },
+      jest.fn().mockResolvedValue(undefined),
+      'orders-service',
+    );
+    await deliver(consumer, {
+      topic: 'orders.created',
+      partition: 0,
+      messages: [unparsableRecord()],
+    });
+
+    expect(producer.send).toHaveBeenCalledWith(expect.objectContaining({ topic: 'parking.lot' }));
+  });
 });
