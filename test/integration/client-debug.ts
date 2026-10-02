@@ -66,36 +66,44 @@ export class DebugTeeLogger implements KafkaJS.Logger {
 }
 
 export const debuggingKafka = (contexts: string, sink: LogSink): typeof KafkaJS.Kafka => {
-  const teeing = <C extends { kafkaJS?: { logger?: KafkaJS.Logger } }>(clientId: string, config: C): C =>
+  const teeing = <C extends { kafkaJS?: { logger?: KafkaJS.Logger } }>(
+    clientId: string,
+    config: C,
+    fallback?: KafkaJS.Logger,
+  ): C =>
     config.kafkaJS === undefined
       ? config
       : {
           ...config,
           kafkaJS: {
             ...config.kafkaJS,
-            logger: new DebugTeeLogger(sink, clientId, config.kafkaJS.logger),
+            logger: new DebugTeeLogger(sink, clientId, config.kafkaJS.logger ?? fallback),
           },
         };
 
   return class DebuggingKafka extends KafkaJS.Kafka {
     private readonly clientId: string;
 
+    private readonly rootLogger?: KafkaJS.Logger;
+
     constructor(config: KafkaJS.CommonConstructorConfig = {}) {
       const clientId = config.kafkaJS?.clientId ?? 'unnamed';
       super({ ...teeing(clientId, config), debug: contexts });
       this.clientId = clientId;
+      this.rootLogger = config.kafkaJS?.logger;
     }
 
     override producer(config: KafkaJS.ProducerConstructorConfig = {}): KafkaJS.Producer {
-      return super.producer(teeing(`${this.clientId}/producer`, config));
+      return super.producer(teeing(`${this.clientId}/producer`, config, this.rootLogger));
     }
 
     override consumer(config: KafkaJS.ConsumerConstructorConfig): KafkaJS.Consumer {
-      return super.consumer(teeing(`${this.clientId}/consumer:${config.kafkaJS?.groupId ?? 'no-group'}`, config));
+      const clientId = `${this.clientId}/consumer:${config.kafkaJS?.groupId ?? 'no-group'}`;
+      return super.consumer(teeing(clientId, config, this.rootLogger));
     }
 
     override admin(config: KafkaJS.AdminConstructorConfig = {}): KafkaJS.Admin {
-      return super.admin(teeing(`${this.clientId}/admin`, config));
+      return super.admin(teeing(`${this.clientId}/admin`, config, this.rootLogger));
     }
   };
 };
