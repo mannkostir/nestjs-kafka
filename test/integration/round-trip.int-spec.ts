@@ -87,13 +87,13 @@ describe('produce and consume round trip', () => {
 
     await producer.send(
       'orders.created',
-      { key: null, value: { payload: { orderId: 'o-1' } } },
+      { key: null, value: { orderId: 'o-1' } },
       { key: 'order-1' },
     );
 
     await waitFor(() => received.length > 0);
 
-    expect(received[0].value?.payload).toEqual({ orderId: 'o-1' });
+    expect(received[0].value).toEqual({ orderId: 'o-1' });
     expect(received[0].key).toBe('order-1');
   });
 

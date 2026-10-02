@@ -5,7 +5,7 @@ export { Message } from "./decorators/message-handler.decorator.js";
 export { ConsumerProxy } from "./base/consumer-proxy.js";
 export { ProducerProxy } from "./base/producer-proxy.js";
 
-export { MessageType, MessageKey, MessageValue } from "./types/message.type.js";
+export { MessageType, MessageKey } from "./types/message.type.js";
 export { MessageOptions } from "./types/message-options.type.js";
 export { MessageFormat } from "./types/message-format.type.js";
 export { MessageErrorHandlingConfig, FailBackoffOptions } from "./types/message-error-handling.type.js";

@@ -65,12 +65,12 @@ describe('fail policy', () => {
   it('redelivers a message whose handler threw', async () => {
     await moduleRef.get(ProducerProxy).send('invoices.created', {
       key: null,
-      value: { payload: { invoiceId: 'i-1' } },
+      value: { invoiceId: 'i-1' },
     });
 
     await waitFor(() => attempts.length >= 2);
 
-    expect(attempts[1].value?.payload).toEqual({ invoiceId: 'i-1' });
+    expect(attempts[1].value).toEqual({ invoiceId: 'i-1' });
   });
 
   it('commits past the message once a delivery succeeds', async () => {

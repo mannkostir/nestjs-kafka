@@ -262,13 +262,13 @@ describe('MessageHandlersDiscoveryService', () => {
     );
   });
 
-  it('defaults the message format to json when the handler omits it', async () => {
+  it('leaves the message format to the connector when the handler omits it', async () => {
     const { subscribe, bootstrap } = harness([OrdersHandler]);
 
     await bootstrap();
 
     expect(subscribe).toHaveBeenCalledWith(
-      expect.objectContaining({ messageFormat: MessageFormat.JSON }),
+      expect.objectContaining({ messageFormat: undefined }),
       expect.any(Function),
       'orders-service',
     );

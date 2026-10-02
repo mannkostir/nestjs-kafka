@@ -17,6 +17,7 @@ import { KafkaTopicProvisioner } from './kafka-topic-provisioner.js';
 import { KafkaGroupMember } from './kafka-group-member.js';
 import { NestKafkaLogger } from './nest-kafka-logger.js';
 import { ResolvedConsumerConfig } from './resolved-consumer-config.js';
+import { MessageFormat } from '../../types/message-format.type.js';
 
 export interface KafkaConsumerOptions {
   namespace?: string;
@@ -26,6 +27,7 @@ export interface KafkaConsumerOptions {
   namespacer?: TopicNamespacer;
   topicProvisioner?: KafkaTopicProvisioner;
   clientLogger?: KafkaJS.Logger;
+  messageFormat?: MessageFormat;
 }
 
 type ConsumerSubscription = {
@@ -43,6 +45,7 @@ export class KafkaConsumer<
   private readonly namespacer: TopicNamespacer;
   private readonly topicProvisioner: KafkaTopicProvisioner;
   private readonly clientLogger: KafkaJS.Logger;
+  private readonly messageFormat: MessageFormat;
   private readonly parseStrategies: KafkaMessageParseStrategyFactory;
   private readonly errorStrategies: KafkaErrorHandleStrategyFactory;
   private readonly subscriptions: ConsumerSubscription[] = [];
@@ -57,6 +60,7 @@ export class KafkaConsumer<
     this.namespacer = options?.namespacer ?? new TopicNamespacer();
     this.topicProvisioner = options?.topicProvisioner ?? new KafkaTopicProvisioner(kafka);
     this.clientLogger = options?.clientLogger ?? new NestKafkaLogger();
+    this.messageFormat = options?.messageFormat ?? MessageFormat.JSON;
     this.parseStrategies = new KafkaMessageParseStrategyFactory(options?.schemaRegistry);
     this.errorStrategies = new KafkaErrorHandleStrategyFactory(this.namespacer, options?.producer);
   }
@@ -68,7 +72,9 @@ export class KafkaConsumer<
   ): Promise<void> {
     const namespaced = subscription.namespaced ?? true;
 
-    const parseStrategy = this.parseStrategies.create<TMessage>(subscription.messageFormat);
+    const parseStrategy = this.parseStrategies.create(
+      subscription.messageFormat ?? this.messageFormat,
+    );
     const errorStrategy = this.errorStrategies.create(subscription.errorHandling, namespaced);
 
     const requestedPatterns = subscription.topicPatterns.filter(Boolean);
@@ -143,7 +149,7 @@ export class KafkaConsumer<
 
   private handleBatchByMessage(
     cb: MessageHandlerCallback<TMessage>,
-    parseStrategy: KafkaMessageParseStrategy<TMessage>,
+    parseStrategy: KafkaMessageParseStrategy,
     errorStrategy: KafkaErrorHandleStrategy,
   ) {
     return async (payload: KafkaJS.EachBatchPayload) => {
@@ -169,7 +175,7 @@ export class KafkaConsumer<
   private async run(
     consumer: KafkaJS.Consumer,
     cb: MessageHandlerCallback<TMessage>,
-    parseStrategy: KafkaMessageParseStrategy<TMessage>,
+    parseStrategy: KafkaMessageParseStrategy,
     errorStrategy: KafkaErrorHandleStrategy,
   ): Promise<void> {
     await consumer.run({
