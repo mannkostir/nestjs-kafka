@@ -59,18 +59,30 @@ describe('KafkaProducer', () => {
     );
   });
 
-  it('passes the key through to the record', async () => {
+  it('sends a string message key unchanged', async () => {
     const producer = producerStub();
 
     await new KafkaProducer(producer, new TopicNamespacer()).send(
       'orders.created',
-      message(),
-      { key: 'order-1' },
+      { ...message(), key: 'order-1' },
     );
 
     const sent = (producer.send as jest.Mock).mock.calls[0][0];
 
     expect(sent.messages[0].key).toBe('order-1');
+  });
+
+  it('sends an object message key as JSON', async () => {
+    const producer = producerStub();
+
+    await new KafkaProducer(producer, new TopicNamespacer()).send(
+      'orders.created',
+      { ...message(), key: { tenant: 'acme' } },
+    );
+
+    const sent = (producer.send as jest.Mock).mock.calls[0][0];
+
+    expect(sent.messages[0].key).toBe('{"tenant":"acme"}');
   });
 
   it('disconnects the injected producer before application shutdown', async () => {

@@ -4,6 +4,7 @@ import { ProducerProxy } from '../../base/producer-proxy.js';
 import { MessageFormat } from '../../types/message-format.type.js';
 import { MessageType } from '../../types/message.type.js';
 import { ProducerSendOptions } from '../../types/producer-send-options.type.js';
+import { encodeKey } from './serialize-strategies/encode-key.js';
 import { KafkaMessageSerializeStrategyFactory } from './serialize-strategies/kafka-message-serialize-strategy.factory.js';
 import { TopicNamespacer } from './topic-namespacer.js';
 
@@ -46,7 +47,7 @@ export class KafkaProducer<TValue = unknown> extends ProducerProxy<TValue> imple
         {
           value: serializeStrategy.serialize(message.value),
           headers: message.headers,
-          key: options?.key,
+          key: encodeKey(message.key),
         },
       ],
     });

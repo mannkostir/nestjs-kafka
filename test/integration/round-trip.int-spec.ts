@@ -55,12 +55,6 @@ describe('produce and consume round trip', () => {
   beforeAll(async () => {
     broker = await startBroker();
 
-    admin = new KafkaJS.Kafka({
-      kafkaJS: { clientId: 'offset-observer', brokers: broker.brokers },
-    }).admin();
-
-    await admin.connect();
-
     @Module({
       imports: [
         KafkaModule.register({
@@ -74,6 +68,12 @@ describe('produce and consume round trip', () => {
     moduleRef = await Test.createTestingModule({ imports: [TestModule] }).compile();
 
     await moduleRef.init();
+
+    admin = new KafkaJS.Kafka({
+      kafkaJS: { clientId: 'offset-observer', brokers: broker.brokers },
+    }).admin();
+
+    await admin.connect();
   });
 
   afterAll(async () => {
@@ -87,8 +87,7 @@ describe('produce and consume round trip', () => {
 
     await producer.send(
       'orders.created',
-      { key: null, value: { orderId: 'o-1' } },
-      { key: 'order-1' },
+      { key: 'order-1', value: { orderId: 'o-1' } },
     );
 
     await waitFor(() => received.length > 0);

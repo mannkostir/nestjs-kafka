@@ -53,16 +53,14 @@ describe('handler context', () => {
     await producer.send(
       'shipments.dispatched',
       {
-        key: null,
+        key: 'shipment-1',
         value: { shipmentId: 's-1' },
         headers: { 'x-correlation-id': 'c-1', 'x-tag': ['fragile', 'express'] },
       },
-      { key: 'shipment-1' },
     );
     await producer.send(
       'shipments.dispatched',
-      { key: null, value: { shipmentId: 's-2' } },
-      { key: 'shipment-2' },
+      { key: 'shipment-2', value: { shipmentId: 's-2' } },
     );
 
     await waitFor(() => deliveries.length >= 2);

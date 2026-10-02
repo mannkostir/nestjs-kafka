@@ -99,6 +99,30 @@ describe('KafkaMessageJsonStrategy', () => {
     expect(parsed.key).toBe('order-1');
   });
 
+  it('keeps a key that reads as a JSON number as a string', async () => {
+    const parsed = await strategy.parse(record(Buffer.from('{}'), Buffer.from('42')));
+
+    expect(parsed.key).toBe('42');
+  });
+
+  it('keeps a key that reads as the JSON literal null as a string', async () => {
+    const parsed = await strategy.parse(record(Buffer.from('{}'), Buffer.from('null')));
+
+    expect(parsed.key).toBe('null');
+  });
+
+  it('keeps a key that reads as a JSON array as a string', async () => {
+    const parsed = await strategy.parse(record(Buffer.from('{}'), Buffer.from('[1]')));
+
+    expect(parsed.key).toBe('[1]');
+  });
+
+  it('keeps an empty key as an empty string rather than null', async () => {
+    const parsed = await strategy.parse(record(Buffer.from('{}'), Buffer.from('')));
+
+    expect(parsed.key).toBe('');
+  });
+
   it('exposes a null key when the record carries no key', async () => {
     const parsed = await strategy.parse(record(Buffer.from('{}')));
 

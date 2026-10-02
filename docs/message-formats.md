@@ -18,9 +18,9 @@ descriptive error instead of silently producing `value: null`. The error is rout
 handler's configured `errorHandling` policy like any other failure, so a handler declaring
 `{ type: 'dlq' }` dead-letters the poison record instead of ever seeing it.
 
-**Keys decode leniently.** The record key is read as UTF-8 and parsed as JSON when that succeeds;
-when it does not, the raw string is used as the key instead of raising. Kafka keys are untyped
-bytes, so both branches yield a usable key.
+**Only object keys decode.** The record key is read as UTF-8 and parsed as JSON. A key that is a
+JSON object gives an object; any other key, including `42`, `true`, `null` and arrays, stays the
+raw UTF-8 string, and a key that is not JSON never raises. A record without a key gives `null`.
 
 ## Enveloped JSON
 
@@ -90,7 +90,7 @@ async handleOrderCreated(message: MessageType<OrderCreated>): Promise<void> {}
 ```
 
 The handler receives the registry-decoded record as `message.value`. The record key decodes the
-same leniently-JSON way as in JSON mode.
+same way as in JSON mode.
 
 Declaring an Avro handler without `schemaRegistry` options throws at bootstrap with a message
 naming both the option and the package to install. Producing Avro is not supported yet: a send
