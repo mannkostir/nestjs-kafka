@@ -27,7 +27,7 @@ await this.producer.send(
 The record key is `message.key`. A string key is sent as its raw UTF-8 bytes, `null` sends a record
 without a key, and an object key is sent as `JSON.stringify(key)`. Because string keys go out
 unchanged, the client's default partitioner (`murmur2_random`) puts a record on the same partition
-as a Java producer or kcat keying by the same string.
+as the Java client's default partitioner does for the same string.
 
 ## Value
 

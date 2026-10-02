@@ -9,10 +9,10 @@ import { eventually } from './wait.js';
 const TOPIC = 'orders.keyed';
 const PARTITIONS = 6;
 
-const sortedHighWatermarks = async (admin: KafkaJS.Admin): Promise<string[]> => {
+const highWatermarks = async (admin: KafkaJS.Admin): Promise<Record<number, string>> => {
   const partitions = await admin.fetchTopicOffsets(TOPIC);
 
-  return partitions.map(({ high }) => high).sort();
+  return Object.fromEntries(partitions.map(({ partition, high }) => [partition, high]));
 };
 
 describe('message key partitioning', () => {
@@ -53,14 +53,22 @@ describe('message key partitioning', () => {
     await broker?.stop();
   });
 
-  it('routes messages with the same key to the same partition', async () => {
+  it('routes each key to the partition the Java client computes for it', async () => {
     const producer = moduleRef.get(ProducerProxy);
 
     await producer.send(TOPIC, { key: 'order-1', value: { orderId: 'o-1' } });
-    await producer.send(TOPIC, { key: 'order-1', value: { orderId: 'o-2' } });
+    await producer.send(TOPIC, { key: 'order-2', value: { orderId: 'o-2' } });
+    await producer.send(TOPIC, { key: 'order-1', value: { orderId: 'o-3' } });
 
     await eventually(async () => {
-      expect(await sortedHighWatermarks(admin)).toEqual(['0', '0', '0', '0', '0', '2']);
+      expect(await highWatermarks(admin)).toEqual({
+        0: '0',
+        1: '0',
+        2: '0',
+        3: '1',
+        4: '2',
+        5: '0',
+      });
     });
   });
 });
