@@ -15,18 +15,27 @@ export abstract class KafkaMessageParseStrategy {
 
     protected abstract parseValue(raw: Buffer): Promise<unknown>;
 
-    private static parseKey(raw: Buffer | string | null): MessageKey | null {
+    private static parseKey(raw: Buffer | string | null): MessageKey {
         if (raw === null || raw === undefined) {
             return null;
         }
 
         const text = KafkaMessageParseStrategy.decodeText(raw);
+        const parsed = KafkaMessageParseStrategy.parseJsonOrUndefined(text);
 
+        return KafkaMessageParseStrategy.isPlainObject(parsed) ? parsed : text;
+    }
+
+    private static parseJsonOrUndefined(text: string): unknown {
         try {
             return JSON.parse(text);
         } catch {
-            return text;
+            return undefined;
         }
+    }
+
+    private static isPlainObject(value: unknown): value is Record<string, unknown> {
+        return typeof value === 'object' && value !== null && !Array.isArray(value);
     }
 
     private static parseHeaders(raw: KafkaJS.IHeaders | undefined): MessageHeaders {
