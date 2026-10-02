@@ -61,6 +61,18 @@ describe('KafkaModule option validation', () => {
     ).rejects.toThrow(/"connectorName" must not be an empty string/);
   });
 
+  it('rejects an unknown message format', async () => {
+    await expect(
+      compileWith({ clientOptions, messageFormat: 'Json' as MessageFormat }),
+    ).rejects.toThrow(/"messageFormat" must be one of json, enveloped-json, avro/);
+  });
+
+  it('rejects an unknown message format supplied asynchronously', async () => {
+    await expect(
+      compileAsyncWith({ clientOptions, messageFormat: 'Json' as MessageFormat }),
+    ).rejects.toThrow(/"messageFormat" must be one of json, enveloped-json, avro/);
+  });
+
   it('accepts an omitted namespace and connector name', async () => {
     const moduleRef = await compileWith({ clientOptions });
 

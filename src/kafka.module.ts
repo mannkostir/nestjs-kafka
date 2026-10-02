@@ -126,6 +126,20 @@ function rejectEmptyString(
   return value;
 }
 
+function rejectUnknownMessageFormat(
+  value: MessageFormat | undefined,
+): MessageFormat | undefined {
+  const formats: string[] = Object.values(MessageFormat);
+
+  if (value !== undefined && !formats.includes(value)) {
+    throw new Error(
+      `KafkaModule "messageFormat" must be one of ${formats.join(', ')}. Use a MessageFormat value.`,
+    );
+  }
+
+  return value;
+}
+
 function createDerivedProviders(): Provider[] {
   return [
     {
@@ -170,7 +184,8 @@ function createDerivedProviders(): Provider[] {
     },
     {
       provide: MESSAGE_FORMAT,
-      useFactory: (opts: KafkaModuleOptions) => opts.messageFormat,
+      useFactory: (opts: KafkaModuleOptions) =>
+        rejectUnknownMessageFormat(opts.messageFormat),
       inject: [KAFKA_MODULE_OPTIONS],
     },
   ];
