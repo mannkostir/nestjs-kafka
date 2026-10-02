@@ -70,6 +70,12 @@ jobs:
   integration:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        attempt: [1, 2, 3, 4, 5]
+        debug: ['cgrp,topic,metadata,admin', '']
+    name: integration (${{ matrix.attempt }}, debug ${{ matrix.debug != '' }})
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -80,11 +86,11 @@ jobs:
       - run: npm run test:integration
         timeout-minutes: 25
         env:
-          KAFKA_CLIENT_DEBUG: cgrp,topic,metadata,admin
+          KAFKA_CLIENT_DEBUG: ${{ matrix.debug }}
           KAFKA_CLIENT_DEBUG_LOG: ${{ runner.temp }}/kafka-client-debug.log
       - if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: kafka-client-debug
+          name: kafka-client-debug-${{ matrix.attempt }}-${{ matrix.debug != '' }}
           path: ${{ runner.temp }}/kafka-client-debug.log
           if-no-files-found: ignore
