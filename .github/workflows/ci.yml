@@ -73,8 +73,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        attempt: [1, 2, 3, 4, 5]
-        debug: ['cgrp,topic,metadata,admin', '']
+        attempt: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+        debug: ['cgrp,topic,metadata,admin']
     name: integration (${{ matrix.attempt }}, debug ${{ matrix.debug != '' }})
     steps:
       - uses: actions/checkout@v7
