@@ -3,6 +3,7 @@ import { Logger, OnModuleDestroy } from '@nestjs/common';
 import { MessageType } from '../../types/message.type.js';
 import { ConsumerProxy } from '../../base/consumer-proxy.js';
 import { ConsumerSubscriptionParameters } from '../../types/consumer-subscription-parameters.type.js';
+import { MessageContext } from '../../types/message-context.type.js';
 import { MessageHandlerCallback } from '../../types/message-handler-callback.type.js';
 import { KafkaMessage } from './kafka-message.js';
 import type { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
@@ -142,6 +143,15 @@ export class KafkaConsumer<
     }
   }
 
+  private static contextOf(batch: KafkaJS.Batch, message: KafkaJS.KafkaMessage): MessageContext {
+    return {
+      topic: batch.topic,
+      partition: batch.partition,
+      offset: message.offset,
+      timestamp: message.timestamp,
+    };
+  }
+
   private static async close({ consumer, errorStrategy }: ConsumerSubscription): Promise<void> {
     errorStrategy.stop();
     await consumer.disconnect();
@@ -161,7 +171,7 @@ export class KafkaConsumer<
         try {
           await cb(
             (await KafkaMessage.from(parseStrategy, message)) as TMessage,
-            payload.batch.topic,
+            KafkaConsumer.contextOf(payload.batch, message),
           );
 
           payload.resolveOffset(message.offset);

@@ -12,6 +12,7 @@ export { MessageErrorHandlingConfig, FailBackoffOptions } from "./types/message-
 export { ConsumerConfig } from "./types/consumer-config.type.js";
 export { ConsumerSubscriptionParameters } from "./types/consumer-subscription-parameters.type.js";
 export { MessageHandlerCallback } from "./types/message-handler-callback.type.js";
+export { MessageContext } from "./types/message-context.type.js";
 export {
   KafkaModuleOptions,
   KafkaModuleAsyncOptions,

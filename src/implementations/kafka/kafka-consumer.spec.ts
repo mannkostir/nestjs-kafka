@@ -797,3 +797,80 @@ describe('KafkaConsumer message format precedence', () => {
     expect(create).toHaveBeenCalledWith(MessageFormat.JSON);
   });
 });
+
+describe('KafkaConsumer handler context', () => {
+  const deliver = async (
+    consumer: ReturnType<typeof consumerStub>,
+    batch: { topic: string; partition: number; messages: KafkaJS.KafkaMessage[] },
+  ) => {
+    const eachBatch = consumer.run.mock.calls[0][0].eachBatch;
+
+    await eachBatch({
+      batch,
+      isRunning: () => true,
+      isStale: () => false,
+      resolveOffset: jest.fn(),
+    });
+  };
+
+  const record = (headers: KafkaJS.IHeaders): KafkaJS.KafkaMessage => ({
+    key: null,
+    value: Buffer.from('{}'),
+    timestamp: '1700000000000',
+    attributes: 0,
+    offset: '42',
+    headers,
+  });
+
+  it('passes where the record was read from as the second argument', async () => {
+    const consumer = consumerStub();
+    const handler = jest.fn().mockResolvedValue(undefined);
+
+    await new KafkaConsumer(kafkaStub(consumer)).subscribe(subscription(), handler, 'orders-service');
+    await deliver(consumer, { topic: 'orders.created', partition: 3, messages: [record({})] });
+
+    expect(handler).toHaveBeenCalledWith(expect.anything(), {
+      topic: 'orders.created',
+      partition: 3,
+      offset: '42',
+      timestamp: '1700000000000',
+    });
+  });
+
+  it('passes the decoded record headers on the message', async () => {
+    const consumer = consumerStub();
+    const handler = jest.fn().mockResolvedValue(undefined);
+
+    await new KafkaConsumer(kafkaStub(consumer)).subscribe(subscription(), handler, 'orders-service');
+    await deliver(consumer, {
+      topic: 'orders.created',
+      partition: 0,
+      messages: [record({ 'x-correlation-id': Buffer.from('c-1') })],
+    });
+
+    expect(handler).toHaveBeenCalledWith(
+      expect.objectContaining({ headers: { 'x-correlation-id': 'c-1' } }),
+      expect.anything(),
+    );
+  });
+
+  it('reports the concrete consumed topic for a pattern subscription', async () => {
+    const consumer = consumerStub();
+    const handler = jest.fn().mockResolvedValue(undefined);
+
+    await new KafkaConsumer(kafkaStub(consumer), {
+      namespace: 'dev',
+      namespacer: new TopicNamespacer('dev'),
+    }).subscribe(
+      { ...subscription(), topicPatterns: [/orders\..*/] },
+      handler,
+      'orders-service',
+    );
+    await deliver(consumer, { topic: 'dev.orders.created', partition: 0, messages: [record({})] });
+
+    expect(handler).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ topic: 'dev.orders.created' }),
+    );
+  });
+});
