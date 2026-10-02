@@ -1,4 +1,5 @@
 import type { KafkaJS } from '@confluentinc/kafka-javascript';
+import { MessageFormat } from '../../types/message-format.type.js';
 import { KafkaProducer } from './kafka-producer.js';
 import { TopicNamespacer } from './topic-namespacer.js';
 
@@ -11,8 +12,11 @@ const producerStub = () =>
 
 const message = () => ({
   key: null,
-  value: { payload: { orderId: 'o-1' } },
+  value: { orderId: 'o-1' },
 });
+
+const sentValue = (producer: KafkaJS.Producer) =>
+  (producer.send as jest.Mock).mock.calls[0][0].messages[0].value;
 
 describe('KafkaProducer', () => {
   it('sends through the injected producer', async () => {
@@ -86,5 +90,55 @@ describe('KafkaProducer', () => {
     await new KafkaProducer(producer, new TopicNamespacer()).disconnect();
 
     expect(producer.disconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('writes the value as JSON without an envelope by default', async () => {
+    const producer = producerStub();
+
+    await new KafkaProducer(producer, new TopicNamespacer()).send('orders.created', message());
+
+    expect(sentValue(producer)).toBe('{"orderId":"o-1"}');
+  });
+
+  it('writes a null value as a record without a value', async () => {
+    const producer = producerStub();
+
+    await new KafkaProducer(producer, new TopicNamespacer()).send('orders.created', {
+      key: null,
+      value: null,
+    });
+
+    expect(sentValue(producer)).toBeNull();
+  });
+
+  it('writes with the producer default format', async () => {
+    const producer = producerStub();
+
+    await new KafkaProducer(producer, new TopicNamespacer(), {
+      messageFormat: MessageFormat.ENVELOPED_JSON,
+    }).send('orders.created', message());
+
+    expect(sentValue(producer)).toBe('{"payload":{"orderId":"o-1"}}');
+  });
+
+  it('lets the send format override the producer default', async () => {
+    const producer = producerStub();
+
+    await new KafkaProducer(producer, new TopicNamespacer(), {
+      messageFormat: MessageFormat.ENVELOPED_JSON,
+    }).send('orders.created', message(), { messageFormat: MessageFormat.JSON });
+
+    expect(sentValue(producer)).toBe('{"orderId":"o-1"}');
+  });
+
+  it('rejects an Avro send without producing anything', async () => {
+    const producer = producerStub();
+
+    await expect(
+      new KafkaProducer(producer, new TopicNamespacer(), {
+        messageFormat: MessageFormat.AVRO,
+      }).send('orders.created', message()),
+    ).rejects.toThrow('Producing Avro messages is not supported yet.');
+    expect(producer.send).not.toHaveBeenCalled();
   });
 });

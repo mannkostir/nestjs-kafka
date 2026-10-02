@@ -1,21 +1,22 @@
 import type { KafkaJS } from '@confluentinc/kafka-javascript';
-import { MessageKey, MessageType, MessageValue } from '../../types/message.type.js';
+import { MessageHeaders, MessageKey, MessageType } from '../../types/message.type.js';
 import { KafkaMessageParseStrategy } from './parse-strategies/kafka-message-parse.strategy.js';
 
-export class KafkaMessage<
-  Payload extends Record<string, any>,
-> implements MessageType<Payload>
+export class KafkaMessage<TValue = unknown> implements MessageType<TValue>
 {
-  readonly value: MessageValue<Payload> | null;
+  readonly value: TValue | null;
 
   readonly key: MessageKey | null;
 
-  public constructor(key: MessageKey | null, value: MessageValue<Payload> | null) {
+  readonly headers: MessageHeaders;
+
+  public constructor(key: MessageKey | null, value: TValue | null, headers: MessageHeaders) {
     this.key = key;
     this.value = value;
+    this.headers = headers;
   }
 
-  public static from<Payload extends Record<string, any>>(strategy: KafkaMessageParseStrategy<Payload>, message: KafkaJS.KafkaMessage): Promise<KafkaMessage<Payload>> {
+  public static from(strategy: KafkaMessageParseStrategy, message: KafkaJS.KafkaMessage): Promise<KafkaMessage> {
     return strategy.parse(message);
   }
 }

@@ -11,6 +11,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConsumerProxy } from '../base/consumer-proxy.js';
 import { Message } from '../decorators/message-handler.decorator.js';
 import { MessageFormat } from '../types/message-format.type.js';
+import { MessageContext } from '../types/message-context.type.js';
 import { MessageType } from '../types/message.type.js';
 import { CONNECTOR_NAME, KAFKA_CONNECTIONS } from '../tokens.js';
 import { MessageHandlersDiscoveryService } from './message-handlers.discovery-service.js';
@@ -25,6 +26,19 @@ class OrdersHandler {
   })
   async onOrderCreated(message: MessageType): Promise<void> {
     this.handled.push(message);
+  }
+}
+
+@Injectable()
+class ContextRecordingHandler {
+  public readonly contexts: MessageContext[] = [];
+
+  @Message(['orders.created'], {
+    groupId: 'context-service',
+    errorHandling: { type: 'fail' },
+  })
+  async handle(_message: MessageType, context: MessageContext): Promise<void> {
+    this.contexts.push(context);
   }
 }
 
@@ -262,13 +276,13 @@ describe('MessageHandlersDiscoveryService', () => {
     );
   });
 
-  it('defaults the message format to json when the handler omits it', async () => {
+  it('leaves the message format to the connector when the handler omits it', async () => {
     const { subscribe, bootstrap } = harness([OrdersHandler]);
 
     await bootstrap();
 
     expect(subscribe).toHaveBeenCalledWith(
-      expect.objectContaining({ messageFormat: MessageFormat.JSON }),
+      expect.objectContaining({ messageFormat: undefined }),
       expect.any(Function),
       'orders-service',
     );
@@ -298,9 +312,25 @@ describe('MessageHandlersDiscoveryService', () => {
 
     const app = await bootstrap();
     const [, callback] = subscribe.mock.calls[0];
-    await callback(message, 'orders.created');
+    await callback(message, { topic: 'orders.created', partition: 0, offset: '0', timestamp: '0' });
 
     expect(app.get(OrdersHandler).handled).toEqual([message]);
+  });
+
+  it('passes the message context through to the handler method', async () => {
+    const { subscribe, bootstrap } = harness([ContextRecordingHandler]);
+    const context: MessageContext = {
+      topic: 'orders.created',
+      partition: 2,
+      offset: '17',
+      timestamp: '1700000000000',
+    };
+
+    const app = await bootstrap();
+    const [, callback] = subscribe.mock.calls[0];
+    await callback({ key: null, value: null }, context);
+
+    expect(app.get(ContextRecordingHandler).contexts).toEqual([context]);
   });
 
   it('ignores providers without message handlers', async () => {

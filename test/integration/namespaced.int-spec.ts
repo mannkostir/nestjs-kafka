@@ -80,12 +80,12 @@ describe('namespaced round trip', () => {
 
     await producer.send('orders.created', {
       key: null,
-      value: { payload: { orderId: 'o-1' } },
+      value: { orderId: 'o-1' },
     });
 
     await waitFor(() => received.length > 0);
 
-    expect(received[0].value?.payload).toEqual({ orderId: 'o-1' });
+    expect(received[0].value).toEqual({ orderId: 'o-1' });
   });
 
   it('delivers to a pattern handler through the namespaced pattern', async () => {
@@ -93,12 +93,12 @@ describe('namespaced round trip', () => {
 
     await producer.send('audit.login', {
       key: null,
-      value: { payload: { userId: 'u-1' } },
+      value: { userId: 'u-1' },
     });
 
     await waitFor(() => audited.length > 0);
 
-    expect(audited[0].value?.payload).toEqual({ userId: 'u-1' });
+    expect(audited[0].value).toEqual({ userId: 'u-1' });
   });
 
   it('writes to the namespaced topic on the broker', async () => {

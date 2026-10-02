@@ -61,8 +61,8 @@ const stopApp = async (moduleRef: TestingModule): Promise<void> => {
   await moduleRef.close();
 };
 
-const payloadsOf = (messages: MessageType<PaymentCaptured>[]) =>
-  messages.map((message) => message.value?.payload);
+const valuesOf = (messages: MessageType<PaymentCaptured>[]) =>
+  messages.map((message) => message.value);
 
 describe('resuming from a committed offset', () => {
   let broker: StartedBroker;
@@ -94,7 +94,7 @@ describe('resuming from a committed offset', () => {
 
       await first.get(ProducerProxy).send('payments.captured', {
         key: null,
-        value: { payload: { paymentId: 'p-1' } },
+        value: { paymentId: 'p-1' },
       });
       await waitFor(() => captured.length === 1, 20000);
       await eventually(async () => {
@@ -111,7 +111,7 @@ describe('resuming from a committed offset', () => {
       await producer.connect();
       await producer.send({
         topic: 'payments.captured',
-        messages: [{ value: JSON.stringify({ payload: { paymentId: 'p-2' } }) }],
+        messages: [{ value: JSON.stringify({ paymentId: 'p-2' }) }],
       });
       await producer.disconnect();
 
@@ -121,7 +121,7 @@ describe('resuming from a committed offset', () => {
     it('is delivered once after restart without redelivering the committed one', async () => {
       await waitFor(() => captured.length === 2, 20000);
 
-      expect(payloadsOf(captured)).toEqual([{ paymentId: 'p-1' }, { paymentId: 'p-2' }]);
+      expect(valuesOf(captured)).toEqual([{ paymentId: 'p-1' }, { paymentId: 'p-2' }]);
     });
   });
 
@@ -133,7 +133,7 @@ describe('resuming from a committed offset', () => {
       await producer.connect();
       await producer.send({
         topic: 'payments.refunded',
-        messages: [{ value: JSON.stringify({ payload: { paymentId: 'r-1' } }) }],
+        messages: [{ value: JSON.stringify({ paymentId: 'r-1' }) }],
       });
       await producer.disconnect();
 
@@ -157,7 +157,7 @@ describe('resuming from a committed offset', () => {
     it('starts from offset 0 instead of the log end', async () => {
       await waitFor(() => refunded.length === 1, 20000);
 
-      expect(payloadsOf(refunded)).toEqual([{ paymentId: 'r-1' }]);
+      expect(valuesOf(refunded)).toEqual([{ paymentId: 'r-1' }]);
     });
   });
 });

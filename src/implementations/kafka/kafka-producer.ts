@@ -1,21 +1,29 @@
 import type { KafkaJS } from '@confluentinc/kafka-javascript';
 import { BeforeApplicationShutdown, Logger } from '@nestjs/common';
 import { ProducerProxy } from '../../base/producer-proxy.js';
+import { MessageFormat } from '../../types/message-format.type.js';
 import { MessageType } from '../../types/message.type.js';
 import { ProducerSendOptions } from '../../types/producer-send-options.type.js';
+import { KafkaMessageSerializeStrategyFactory } from './serialize-strategies/kafka-message-serialize-strategy.factory.js';
 import { TopicNamespacer } from './topic-namespacer.js';
 
-export class KafkaProducer<
-  TPayload extends Record<string, any>,
-> extends ProducerProxy<TPayload> implements BeforeApplicationShutdown {
+export interface KafkaProducerOptions {
+  messageFormat?: MessageFormat;
+}
+
+export class KafkaProducer<TValue = unknown> extends ProducerProxy<TValue> implements BeforeApplicationShutdown {
 
   private readonly logger = new Logger(KafkaProducer.name);
+  private readonly messageFormat: MessageFormat;
+  private readonly serializeStrategies = new KafkaMessageSerializeStrategyFactory();
 
   constructor(
     private readonly producer: KafkaJS.Producer,
     private readonly namespacer: TopicNamespacer,
+    options?: KafkaProducerOptions,
   ) {
     super();
+    this.messageFormat = options?.messageFormat ?? MessageFormat.JSON;
   }
 
   public async connect(): Promise<void> {
@@ -24,16 +32,19 @@ export class KafkaProducer<
 
   public async send(
     topic: string,
-    message: MessageType<TPayload>,
+    message: MessageType<TValue>,
     options?: ProducerSendOptions,
   ): Promise<KafkaJS.RecordMetadata[]> {
     const namespaced = options?.namespaced ?? true;
+    const serializeStrategy = this.serializeStrategies.create(
+      options?.messageFormat ?? this.messageFormat,
+    );
 
     return this.producer.send({
       topic: namespaced ? this.namespacer.apply(topic) : topic,
       messages: [
         {
-          value: JSON.stringify(message.value),
+          value: serializeStrategy.serialize(message.value),
           headers: message.headers,
           key: options?.key,
         },

@@ -2,8 +2,6 @@ import type { KafkaJS } from '@confluentinc/kafka-javascript';
 import type { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
 import { KafkaMessageAvroStrategy } from './kafka-message-avro.strategy.js';
 
-type Payload = { orderId: string };
-
 const record = (
   value: Buffer | null,
   key: Buffer | null = null,
@@ -21,20 +19,18 @@ describe('KafkaMessageAvroStrategy', () => {
     decode: jest.fn(),
   } as unknown as SchemaRegistry;
 
-  const strategy = new KafkaMessageAvroStrategy<Payload>(registry);
+  const strategy = new KafkaMessageAvroStrategy(registry);
 
   beforeEach(() => {
     (registry.decode as jest.Mock).mockReset();
-    (registry.decode as jest.Mock).mockResolvedValue({
-      payload: { orderId: 'o-1' },
-    });
+    (registry.decode as jest.Mock).mockResolvedValue({ orderId: 'o-1' });
   });
 
-  it('decodes the value through the schema registry', async () => {
+  it('passes the registry-decoded record to the message as-is', async () => {
     const parsed = await strategy.parse(record(Buffer.from([0, 1, 2])));
 
     expect(registry.decode).toHaveBeenCalledTimes(1);
-    expect(parsed.value?.payload).toEqual({ orderId: 'o-1' });
+    expect(parsed.value).toEqual({ orderId: 'o-1' });
   });
 
   it('decodes a plain string key that is not valid JSON', async () => {
@@ -50,5 +46,18 @@ describe('KafkaMessageAvroStrategy', () => {
 
     expect(parsed.value).toBeNull();
     expect(registry.decode).not.toHaveBeenCalled();
+  });
+
+  it('carries the decoded record headers', async () => {
+    const parsed = await strategy.parse({
+      key: null,
+      value: Buffer.from([0, 0, 0, 0, 1]),
+      timestamp: '0',
+      attributes: 0,
+      offset: '0',
+      headers: { 'x-correlation-id': Buffer.from('c-1') },
+    });
+
+    expect(parsed.headers).toEqual({ 'x-correlation-id': 'c-1' });
   });
 });

@@ -20,6 +20,20 @@ class ExplodingHandler {
   }
 }
 
+const deadLetters: MessageType[] = [];
+
+@Injectable()
+class DeadLetterReader {
+  @Message(['payments.created.dlq'], {
+    groupId: 'dead-letter-reader',
+    errorHandling: { type: 'ignore' },
+    consumer: { fromBeginning: true },
+  })
+  async handle(message: MessageType): Promise<void> {
+    deadLetters.push(message);
+  }
+}
+
 describe('dead letter routing', () => {
   let broker: StartedBroker;
   let moduleRef: TestingModule;
@@ -45,9 +59,10 @@ describe('dead letter routing', () => {
       imports: [
         KafkaModule.register({
           clientOptions: { kafkaJS: { clientId: 'dead-letter', brokers: broker.brokers } },
+          consumerDefaults: { rebalanceTimeout: 20000, sessionTimeout: 10000 },
         }),
       ],
-      providers: [ExplodingHandler],
+      providers: [ExplodingHandler, DeadLetterReader],
     })
     class TestModule {}
 
@@ -79,7 +94,7 @@ describe('dead letter routing', () => {
 
     await producer.send(
       'payments.created',
-      { key: null, value: { payload: { paymentId: 'p-1' } } },
+      { key: null, value: { paymentId: 'p-1' } },
       { key: 'payment-1' },
     );
 
@@ -97,8 +112,12 @@ describe('dead letter routing', () => {
     await waitFor(() => dlqRecords.length > 0);
 
     expect(dlqRecords[0].key?.toString()).toBe('payment-1');
-    expect(JSON.parse(dlqRecords[0].value?.toString() ?? 'null')).toEqual({
-      payload: { paymentId: 'p-1' },
-    });
+    expect(JSON.parse(dlqRecords[0].value?.toString() ?? 'null')).toEqual({ paymentId: 'p-1' });
+  });
+
+  it('lets a handler subscribed to the dead letter topic read the error headers', async () => {
+    await waitFor(() => deadLetters.length > 0);
+
+    expect(deadLetters[0].headers?.['dlq.error.message']).toBe('handler exploded');
   });
 });

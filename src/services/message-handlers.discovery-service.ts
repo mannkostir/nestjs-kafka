@@ -13,7 +13,6 @@ import {
   Message,
   MessageHandlerKey,
 } from '../decorators/message-handler.decorator.js';
-import { MessageFormat } from '../types/message-format.type.js';
 import { MessageHandlerCallback } from '../types/message-handler-callback.type.js';
 import { MessageType } from '../types/message.type.js';
 import { IReleaseConnections } from '../interfaces/release-connections.interface.js';
@@ -240,7 +239,7 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
     await this.consumerProxy.subscribe(
       {
         topicPatterns,
-        messageFormat: options.messageFormat ?? MessageFormat.JSON,
+        messageFormat: options.messageFormat,
         errorHandling: options.errorHandling,
         consumer: options.consumer,
         namespaced: options.namespaced,
