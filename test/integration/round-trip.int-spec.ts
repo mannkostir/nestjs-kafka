@@ -87,8 +87,7 @@ describe('produce and consume round trip', () => {
 
     await producer.send(
       'orders.created',
-      { key: null, value: { orderId: 'o-1' } },
-      { key: 'order-1' },
+      { key: 'order-1', value: { orderId: 'o-1' } },
     );
 
     await waitFor(() => received.length > 0);

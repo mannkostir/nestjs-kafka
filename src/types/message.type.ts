@@ -1,13 +1,9 @@
-export type MessageKey =
-  | string
-  | {
-      [key: string]: any;
-    } | null;
+export type MessageKey = string | Record<string, unknown> | null;
 
 export type MessageHeaders = Record<string, string | string[]>;
 
 export type MessageType<TValue = unknown> = {
-  key: MessageKey | null;
+  key: MessageKey;
   value: TValue | null;
   headers?: MessageHeaders;
 };
