@@ -4,7 +4,7 @@ import { MessageFormat } from "./message-format.type.js";
 
 export type ConsumerSubscriptionParameters = {
     topicPatterns: (string | RegExp)[];
-    messageFormat: MessageFormat;
+    messageFormat?: MessageFormat;
     errorHandling: MessageErrorHandlingConfig;
     consumer?: ConsumerConfig;
     namespaced?: boolean;

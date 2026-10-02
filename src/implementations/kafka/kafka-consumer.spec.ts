@@ -750,3 +750,50 @@ describe('KafkaConsumer fail error handling', () => {
     expect(batch.pause).not.toHaveBeenCalled();
   });
 });
+
+describe('KafkaConsumer message format precedence', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  const subscriptionWithoutFormat = {
+    topicPatterns: ['orders.created'],
+    errorHandling: { type: 'ignore' as const },
+  };
+
+  it('parses as JSON when neither the subscription nor the consumer sets a format', async () => {
+    const create = jest.spyOn(KafkaMessageParseStrategyFactory.prototype, 'create');
+
+    await new KafkaConsumer(kafkaStub(consumerStub())).subscribe(
+      subscriptionWithoutFormat,
+      jest.fn(),
+      'orders-service',
+    );
+
+    expect(create).toHaveBeenCalledWith(MessageFormat.JSON);
+  });
+
+  it('parses with the consumer default format when the subscription sets none', async () => {
+    const create = jest.spyOn(KafkaMessageParseStrategyFactory.prototype, 'create');
+
+    await new KafkaConsumer(kafkaStub(consumerStub()), {
+      messageFormat: MessageFormat.ENVELOPED_JSON,
+    }).subscribe(subscriptionWithoutFormat, jest.fn(), 'orders-service');
+
+    expect(create).toHaveBeenCalledWith(MessageFormat.ENVELOPED_JSON);
+  });
+
+  it('lets the subscription format override the consumer default', async () => {
+    const create = jest.spyOn(KafkaMessageParseStrategyFactory.prototype, 'create');
+
+    await new KafkaConsumer(kafkaStub(consumerStub()), {
+      messageFormat: MessageFormat.ENVELOPED_JSON,
+    }).subscribe(
+      { ...subscriptionWithoutFormat, messageFormat: MessageFormat.JSON },
+      jest.fn(),
+      'orders-service',
+    );
+
+    expect(create).toHaveBeenCalledWith(MessageFormat.JSON);
+  });
+});
