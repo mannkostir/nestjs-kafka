@@ -16,6 +16,10 @@ export class KafkaMessageEnvelopedJsonStrategy extends KafkaMessageParseStrategy
     private static unwrap(raw: Buffer): unknown {
         const envelope = decodeJson(raw, 'value');
 
+        if (envelope === null) {
+            return null;
+        }
+
         if (!KafkaMessageEnvelopedJsonStrategy.isEnvelope(envelope)) {
             throw new Error(
                 'Expected the message value to be a { payload } envelope. ' +

@@ -68,10 +68,10 @@ describe('KafkaMessageEnvelopedJsonStrategy', () => {
     );
   });
 
-  it('rejects the JSON literal null', async () => {
-    await expect(strategy.parse(record(Buffer.from('null')))).rejects.toThrow(
-      /Expected the message value to be a \{ payload \} envelope/,
-    );
+  it('exposes a null value when the record value is the JSON literal null', async () => {
+    const parsed = await strategy.parse(record(Buffer.from('null')));
+
+    expect(parsed.value).toBeNull();
   });
 
   it('throws when the value is not valid JSON', async () => {
