@@ -68,7 +68,7 @@ export class KafkaConsumer<
   ): Promise<void> {
     const namespaced = subscription.namespaced ?? true;
 
-    const parseStrategy = this.parseStrategies.create<TMessage>(subscription.messageFormat);
+    const parseStrategy = this.parseStrategies.create(subscription.messageFormat);
     const errorStrategy = this.errorStrategies.create(subscription.errorHandling, namespaced);
 
     const requestedPatterns = subscription.topicPatterns.filter(Boolean);
@@ -143,7 +143,7 @@ export class KafkaConsumer<
 
   private handleBatchByMessage(
     cb: MessageHandlerCallback<TMessage>,
-    parseStrategy: KafkaMessageParseStrategy<TMessage>,
+    parseStrategy: KafkaMessageParseStrategy,
     errorStrategy: KafkaErrorHandleStrategy,
   ) {
     return async (payload: KafkaJS.EachBatchPayload) => {
@@ -169,7 +169,7 @@ export class KafkaConsumer<
   private async run(
     consumer: KafkaJS.Consumer,
     cb: MessageHandlerCallback<TMessage>,
-    parseStrategy: KafkaMessageParseStrategy<TMessage>,
+    parseStrategy: KafkaMessageParseStrategy,
     errorStrategy: KafkaErrorHandleStrategy,
   ): Promise<void> {
     await consumer.run({

@@ -7,10 +7,10 @@ import { KafkaMessageAvroStrategy } from './kafka-message-avro.strategy.js';
 export class KafkaMessageParseStrategyFactory {
   constructor(private readonly schemaRegistry?: SchemaRegistry) {}
 
-  public create<Payload extends Record<string, any>>(format: MessageFormat): KafkaMessageParseStrategy<Payload> {
+  public create(format: MessageFormat): KafkaMessageParseStrategy {
     switch (format) {
       case MessageFormat.JSON:
-        return new KafkaMessageJsonStrategy<Payload>();
+        return new KafkaMessageJsonStrategy();
       case MessageFormat.AVRO:
         if (!this.schemaRegistry) {
           throw new Error(
@@ -19,7 +19,7 @@ export class KafkaMessageParseStrategyFactory {
             'and install @kafkajs/confluent-schema-registry.',
           );
         }
-        return new KafkaMessageAvroStrategy<Payload>(this.schemaRegistry);
+        return new KafkaMessageAvroStrategy(this.schemaRegistry);
       default:
         throw new Error(`Message parse strategy not found for type: ${format}`);
     }

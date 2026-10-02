@@ -99,7 +99,7 @@ const kafkaConnectionsProvider: Provider<IReleaseConnections> = {
   provide: KAFKA_CONNECTIONS,
   useFactory: (
     consumer: KafkaConsumer<MessageType>,
-    producer: KafkaProducer<Record<string, unknown>>,
+    producer: KafkaProducer,
   ) => new KafkaConnections(consumer, producer),
   inject: [ConsumerProxy, ProducerProxy],
 };

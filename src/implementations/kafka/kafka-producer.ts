@@ -5,9 +5,7 @@ import { MessageType } from '../../types/message.type.js';
 import { ProducerSendOptions } from '../../types/producer-send-options.type.js';
 import { TopicNamespacer } from './topic-namespacer.js';
 
-export class KafkaProducer<
-  TPayload extends Record<string, any>,
-> extends ProducerProxy<TPayload> implements BeforeApplicationShutdown {
+export class KafkaProducer<TValue = unknown> extends ProducerProxy<TValue> implements BeforeApplicationShutdown {
 
   private readonly logger = new Logger(KafkaProducer.name);
 
@@ -24,7 +22,7 @@ export class KafkaProducer<
 
   public async send(
     topic: string,
-    message: MessageType<TPayload>,
+    message: MessageType<TValue>,
     options?: ProducerSendOptions,
   ): Promise<KafkaJS.RecordMetadata[]> {
     const namespaced = options?.namespaced ?? true;

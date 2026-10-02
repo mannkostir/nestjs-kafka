@@ -11,7 +11,7 @@ const producerStub = () =>
 
 const message = () => ({
   key: null,
-  value: { payload: { orderId: 'o-1' } },
+  value: { orderId: 'o-1' },
 });
 
 describe('KafkaProducer', () => {

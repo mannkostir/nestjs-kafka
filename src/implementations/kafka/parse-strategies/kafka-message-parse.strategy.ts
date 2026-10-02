@@ -2,8 +2,8 @@ import type { KafkaJS } from "@confluentinc/kafka-javascript";
 import { KafkaMessage } from "../kafka-message.js";
 import type { MessageKey } from "../../../types/message.type.js";
 
-export abstract class KafkaMessageParseStrategy<Payload extends Record<string, any>> {
-    abstract parse(message: KafkaJS.KafkaMessage): Promise<KafkaMessage<Payload>>;
+export abstract class KafkaMessageParseStrategy {
+    abstract parse(message: KafkaJS.KafkaMessage): Promise<KafkaMessage>;
 
     protected parseKey(raw: Buffer | string | null): MessageKey | null {
         if (raw === null || raw === undefined) {
