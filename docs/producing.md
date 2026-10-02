@@ -7,7 +7,7 @@ broker that is unreachable at startup fails module construction.
 send(
   topic: string,
   message: MessageType<TValue>,
-  options?: { key?: string; namespaced?: boolean; messageFormat?: MessageFormat },
+  options?: { namespaced?: boolean; messageFormat?: MessageFormat },
 ): Promise<unknown>;
 ```
 
@@ -15,18 +15,19 @@ send(
 await this.producer.send(
   'orders.created',
   {
-    key: null,
+    key: 'ord_1',
     value: { orderId: 'ord_1', total: 4200 },
     headers: { 'x-correlation-id': correlationId },
   },
-  { key: 'ord_1' },
 );
 ```
 
 ## Key
 
-The record key comes from `options.key`, not from `message.key`. The client's default partitioner
-(`murmur2_random`) assigns keyed records to partitions the same way the Java client does.
+The record key is `message.key`. A string key is sent as its raw UTF-8 bytes, `null` sends a record
+without a key, and an object key is sent as `JSON.stringify(key)`. Because string keys go out
+unchanged, the client's default partitioner (`murmur2_random`) puts a record on the same partition
+as a Java producer or kcat keying by the same string.
 
 ## Value
 
