@@ -174,7 +174,7 @@ export class OrderEventsHandler {
     message: MessageType<OrderCreated>,
     topic: string | RegExp,
   ): Promise<void> {
-    const order = message.value?.payload;
+    const order = message.value;
 
     if (!order) {
       return;
@@ -206,7 +206,7 @@ export class OrderPublisher {
   async publishCreated(orderId: string, total: number): Promise<void> {
     await this.producer.send('orders.created', {
       key: null,
-      value: { payload: { orderId, total } },
+      value: { orderId, total },
     });
   }
 }
@@ -227,6 +227,7 @@ export class OrderPublisher {
 | `connectorName` | `string` | no | Scopes handler discovery when `KafkaModule` is registered more than once in the same app. See [Registering more than once](#registering-more-than-once). |
 | `schemaRegistry` | `{ url: string }` | no | Enables Avro. Constructs a `SchemaRegistry` against `url`. |
 | `consumerDefaults` | `ConsumerConfig` | no | Consumer settings applied to every handler unless overridden per handler. |
+| `messageFormat` | `MessageFormat` | no | Default format for every consumer and for the producer. Defaults to `MessageFormat.JSON`. A handler's `@Message({ messageFormat })` and a send's `{ messageFormat }` override it. See [Message formats](#message-formats). |
 
 `namespace` and `connectorName` must not be empty strings: `''` fails module construction with an
 error saying so. Leave either option `undefined` to opt out of it; this matters most when the value
@@ -318,7 +319,7 @@ Passing none of the three throws at module construction.
 | --- | --- | --- | --- |
 | `groupId` | `string` | yes | — |
 | `errorHandling` | `MessageErrorHandlingConfig` | yes | — |
-| `messageFormat` | `MessageFormat` | no | `MessageFormat.JSON` |
+| `messageFormat` | `MessageFormat` | no | the module's `messageFormat`, then `MessageFormat.JSON` |
 | `consumer` | `ConsumerConfig` | no | falls back to `consumerDefaults` |
 | `namespaced` | `boolean` | no | `true` |
 | `connectorName` | `string` | no | `undefined` — matches an unnamed module registration |
@@ -485,10 +486,10 @@ is already namespaced when the source subscription was.
 
 `MessageFormat.JSON` is the default and needs no extra configuration.
 
-The record value is read as UTF-8 and passed through `JSON.parse` into a `{ payload }` envelope,
-which is the shape `ProducerProxy.send` writes. If the parsed envelope's `payload` is itself a
-string, it is parsed a second time, which accommodates producers that stringify the payload
-separately.
+The record value is read as UTF-8 and passed through `JSON.parse`. The handler receives the parsed
+value as-is — an object, array, string, number or boolean — with no envelope. A JSON string value
+stays a string and is not parsed again. A record without a value and the JSON literal `null` both
+give `value: null`.
 
 **A malformed value raises.** If `JSON.parse` fails on the record value, parsing throws a
 descriptive error instead of silently producing `value: null`. The error is routed through the
@@ -502,7 +503,45 @@ bytes, so both branches yield a usable key.
 ```ts
 message.key;
 message.value;
-message.value?.payload;
+```
+
+### Enveloped JSON
+
+`MessageFormat.ENVELOPED_JSON` reads and writes the `{ "payload": … }` wire format of earlier
+releases. The handler receives the unwrapped `payload` as `message.value`, so handler code is the
+same as with `JSON`; sends wrap `message.value` in the envelope. A string `payload` is parsed as
+JSON a second time, which accommodates producers that stringify the payload separately.
+
+A record whose value is not an object with a `payload` property — including `{}`, an array or
+`null` — raises and goes through the handler's `errorHandling`.
+
+Use it module-wide:
+
+```ts
+KafkaModule.register({
+  clientOptions: { kafkaJS: { brokers: ['localhost:9092'] } },
+  messageFormat: MessageFormat.ENVELOPED_JSON,
+});
+```
+
+Override it for one topic on a handler and on a send, so the topic can move to plain JSON once its
+producers and consumers agree:
+
+```ts
+@Message(['orders.created'], {
+  groupId: 'orders-service',
+  messageFormat: MessageFormat.JSON,
+  errorHandling: { type: 'dlq' },
+})
+async handleOrderCreated(message: MessageType<OrderCreated>): Promise<void> {}
+```
+
+```ts
+await this.producer.send(
+  'orders.created',
+  { key: null, value: { orderId: 'ord_1', total: 4200 } },
+  { messageFormat: MessageFormat.JSON },
+);
 ```
 
 ### Avro
@@ -527,12 +566,13 @@ KafkaModule.register({
 async handleOrderCreated(message: MessageType<OrderCreated>): Promise<void> {}
 ```
 
-The record value is decoded by the registry. The record key decodes the same leniently-JSON way as
+The handler receives the registry-decoded record as `message.value`. The record key decodes the same leniently-JSON way as
 in JSON mode.
 
 Declaring an Avro handler without `schemaRegistry` options throws at bootstrap with a message
-naming both the option and the package to install. Producing is JSON-only: `ProducerProxy.send`
-always stringifies the value.
+naming both the option and the package to install. Producing Avro is not supported yet: a send
+whose format resolves to `MessageFormat.AVRO`, including through the module default, rejects with
+an error naming `MessageFormat.JSON` and `MessageFormat.ENVELOPED_JSON`.
 
 ## Error handling
 
@@ -625,12 +665,16 @@ startup fails module construction.
 ```ts
 send(
   topic: string,
-  message: MessageType<TPayload>,
-  options?: { key?: string; namespaced?: boolean },
+  message: MessageType<TValue>,
+  options?: { key?: string; namespaced?: boolean; messageFormat?: MessageFormat },
 ): Promise<unknown>;
 ```
 
-The record's `value` is `JSON.stringify(message.value)` and its `headers` are `message.headers`.
+The record's `headers` are `message.headers`. Its `value` follows the resolved format, which is
+`options.messageFormat`, then the module's `messageFormat`, then `MessageFormat.JSON`. With `JSON`
+the value is `JSON.stringify(message.value)`, and a `null` value is sent as a record without a
+value (a tombstone). With `ENVELOPED_JSON` it is `{"payload":…}`. A value JSON cannot encode, such
+as `undefined` or a function, rejects.
 The record key comes from `options.key`, not from `message.key`. Topics are namespace-prefixed as
 described above unless `options.namespaced` is `false`, and the underlying producer is created with
 `allowAutoTopicCreation: true`. The client's default partitioner (`murmur2_random`) assigns keyed
@@ -641,7 +685,7 @@ await this.producer.send(
   'orders.created',
   {
     key: null,
-    value: { payload: { orderId: 'ord_1', total: 4200 } },
+    value: { orderId: 'ord_1', total: 4200 },
     headers: { 'x-correlation-id': correlationId },
   },
   { key: 'ord_1' },
