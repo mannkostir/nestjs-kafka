@@ -2,6 +2,7 @@ import type { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
 import { MessageFormat } from '../../../types/message-format.type.js';
 import { KafkaMessageParseStrategyFactory } from './kafka-message-parse-strategy.factory.js';
 import { KafkaMessageJsonStrategy } from './kafka-message-json.strategy.js';
+import { KafkaMessageEnvelopedJsonStrategy } from './kafka-message-enveloped-json.strategy.js';
 import { KafkaMessageAvroStrategy } from './kafka-message-avro.strategy.js';
 
 const registryStub = () => ({ decode: jest.fn() }) as unknown as SchemaRegistry;
@@ -13,6 +14,14 @@ describe('KafkaMessageParseStrategyFactory', () => {
     const strategy = factory.create(MessageFormat.JSON);
 
     expect(strategy).toBeInstanceOf(KafkaMessageJsonStrategy);
+  });
+
+  it('creates an enveloped JSON strategy for the enveloped JSON format', () => {
+    const factory = new KafkaMessageParseStrategyFactory();
+
+    const strategy = factory.create(MessageFormat.ENVELOPED_JSON);
+
+    expect(strategy).toBeInstanceOf(KafkaMessageEnvelopedJsonStrategy);
   });
 
   it('creates an Avro strategy for the Avro format when a registry is configured', () => {
