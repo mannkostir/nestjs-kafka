@@ -1,19 +1,10 @@
-import { KafkaMessage } from "../kafka-message.js";
 import { KafkaMessageParseStrategy } from "./kafka-message-parse.strategy.js";
 import { decodeJson } from "./decode-json.js";
-import type { KafkaJS } from "@confluentinc/kafka-javascript";
 
 type Envelope = { payload: unknown };
 
 export class KafkaMessageEnvelopedJsonStrategy extends KafkaMessageParseStrategy {
-    public async parse(message: KafkaJS.KafkaMessage): Promise<KafkaMessage> {
-        return new KafkaMessage(
-            this.parseKey(message.key),
-            message.value ? KafkaMessageEnvelopedJsonStrategy.unwrap(message.value) : null,
-        );
-    }
-
-    private static unwrap(raw: Buffer): unknown {
+    protected async parseValue(raw: Buffer): Promise<unknown> {
         const envelope = decodeJson(raw, 'value');
 
         if (envelope === null) {

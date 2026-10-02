@@ -13,6 +13,15 @@ const record = (
   offset: '0',
 });
 
+const recordWithHeaders = (headers: KafkaJS.IHeaders): KafkaJS.KafkaMessage => ({
+  key: null,
+  value: Buffer.from('{}'),
+  timestamp: '0',
+  attributes: 0,
+  offset: '0',
+  headers,
+});
+
 describe('KafkaMessageJsonStrategy', () => {
   const strategy = new KafkaMessageJsonStrategy();
 
@@ -94,5 +103,57 @@ describe('KafkaMessageJsonStrategy', () => {
     const parsed = await strategy.parse(record(Buffer.from('{}')));
 
     expect(parsed.key).toBeNull();
+  });
+
+  describe('headers', () => {
+    it('decodes a Buffer header value as a UTF-8 string', async () => {
+      const parsed = await strategy.parse(
+        recordWithHeaders({ 'x-correlation-id': Buffer.from('c-1') }),
+      );
+
+      expect(parsed.headers).toEqual({ 'x-correlation-id': 'c-1' });
+    });
+
+    it('keeps a string header value as it is', async () => {
+      const parsed = await strategy.parse(recordWithHeaders({ 'x-source': 'billing' }));
+
+      expect(parsed.headers).toEqual({ 'x-source': 'billing' });
+    });
+
+    it('decodes every value of a repeated header in order', async () => {
+      const parsed = await strategy.parse(
+        recordWithHeaders({ 'x-tag': [Buffer.from('a'), 'b', Buffer.from('c')] }),
+      );
+
+      expect(parsed.headers).toEqual({ 'x-tag': ['a', 'b', 'c'] });
+    });
+
+    it('drops a header whose value is undefined', async () => {
+      const parsed = await strategy.parse(
+        recordWithHeaders({ 'x-present': 'yes', 'x-absent': undefined }),
+      );
+
+      expect(parsed.headers).toEqual({ 'x-present': 'yes' });
+    });
+
+    it('decodes invalid UTF-8 header bytes with replacement characters', async () => {
+      const parsed = await strategy.parse(
+        recordWithHeaders({ 'x-binary': Buffer.from([0x61, 0xff]) }),
+      );
+
+      expect(parsed.headers).toEqual({ 'x-binary': 'a�' });
+    });
+
+    it('carries empty headers when the record has none', async () => {
+      const parsed = await strategy.parse(record(Buffer.from('{}')));
+
+      expect(parsed.headers).toEqual({});
+    });
+  });
+
+  it('rejects a record whose value is empty bytes', async () => {
+    await expect(strategy.parse(record(Buffer.alloc(0)))).rejects.toThrow(
+      /Failed to parse message value as JSON/,
+    );
   });
 });

@@ -47,4 +47,17 @@ describe('KafkaMessageAvroStrategy', () => {
     expect(parsed.value).toBeNull();
     expect(registry.decode).not.toHaveBeenCalled();
   });
+
+  it('carries the decoded record headers', async () => {
+    const parsed = await strategy.parse({
+      key: null,
+      value: Buffer.from([0, 0, 0, 0, 1]),
+      timestamp: '0',
+      attributes: 0,
+      offset: '0',
+      headers: { 'x-correlation-id': Buffer.from('c-1') },
+    });
+
+    expect(parsed.headers).toEqual({ 'x-correlation-id': 'c-1' });
+  });
 });

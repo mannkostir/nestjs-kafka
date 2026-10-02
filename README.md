@@ -158,7 +158,7 @@ handler as a method on any provider anywhere in the app:
 
 ```ts
 import { Injectable, Logger } from '@nestjs/common';
-import { Message, MessageType } from 'nestjs-kafka-connector';
+import { Message, MessageContext, MessageType } from 'nestjs-kafka-connector';
 
 type OrderCreated = { orderId: string; total: number };
 
@@ -172,7 +172,7 @@ export class OrderEventsHandler {
   })
   async handleOrderCreated(
     message: MessageType<OrderCreated>,
-    topic: string | RegExp,
+    context: MessageContext,
   ): Promise<void> {
     const order = message.value;
 
@@ -180,13 +180,33 @@ export class OrderEventsHandler {
       return;
     }
 
-    this.logger.log(`Order ${order.orderId} received from ${String(topic)}`);
+    this.logger.log(
+      `Order ${order.orderId} received from ${context.topic}, partition ${context.partition}, offset ${context.offset}`,
+    );
   }
 }
 ```
 
-The second argument is the topic the batch was read from. It is typed `string | RegExp` to match the
-declared patterns and is always the concrete topic string at runtime.
+The second argument tells the handler where the record was read from:
+
+```ts
+type MessageContext = {
+  topic: string;
+  partition: number;
+  offset: string;
+  timestamp: string;
+};
+```
+
+`topic` is the concrete topic the record was consumed from, including the namespace prefix, also
+when the handler subscribed with a `RegExp`. `offset` and `timestamp` are strings as the client
+reports them: the 64-bit offset, and the record timestamp in epoch milliseconds. A handler that does
+not need the context can leave the parameter out.
+
+`message.headers` holds the record's headers as `MessageHeaders`
+(`Record<string, string | string[]>`). Every value is decoded as UTF-8, so bytes that are not valid
+UTF-8 become U+FFFD. A header that appears more than once on the record is an array of its values in
+record order. A record without headers gives `{}`.
 
 A handler's provider must be a singleton, and so must every provider it injects. A Kafka message has
 no request to scope an instance to, so a `@Message` handler on a request-scoped or transient
@@ -654,10 +674,19 @@ A thrown value that is not an `Error` is recorded as `dlq.error.name: 'Error'` a
 DLQ delivery uses the module's producer. Strategy instances are cached per configuration on the
 consumer, so a strategy is shared across every handler that declares the same policy.
 
-**Known limitation: handlers cannot see headers.** `@Message` handlers receive `key` and `value`
-only — the consumed record's headers are not exposed through `MessageType`. A handler subscribed to
-a DLQ topic through this library therefore cannot read the `dlq.*` headers above. Inspect them with
-a plain client consumer instead.
+A handler subscribed to a dead-letter topic reads these headers from `message.headers`:
+
+```ts
+@Message(['orders.created.dlq'], {
+  groupId: 'orders-dead-letters',
+  errorHandling: { type: 'ignore' },
+})
+async handleDeadLetter(message: MessageType<OrderCreated>): Promise<void> {
+  this.logger.warn(
+    `Order ${message.value?.orderId} failed: ${message.headers?.['dlq.error.message']}`,
+  );
+}
+```
 
 ## Producing
 
@@ -672,7 +701,8 @@ send(
 ): Promise<unknown>;
 ```
 
-The record's `headers` are `message.headers`. Its `value` follows the resolved format, which is
+The record's `headers` are `message.headers`. A header value is a string, or an array of strings to
+send the header once per value. Its `value` follows the resolved format, which is
 `options.messageFormat`, then the module's `messageFormat`, then `MessageFormat.JSON`. With `JSON`
 the value is `JSON.stringify(message.value)`, and a `null` value is sent as a record without a
 value (a tombstone). With `ENVELOPED_JSON` it is `{"payload":…}`, and a `null` value is written as
@@ -816,8 +846,8 @@ backlogged consumers, or when the broker's connection count or group count becom
 have to manage — typically as handlers per service climb into the dozens, multiplied by replicas.
 
 To keep the count down, give one handler every topic it treats the same way: `@Message` takes an
-array of topics and `RegExp` patterns, and the handler's second argument is the topic each message
-came from.
+array of topics and `RegExp` patterns, and the handler's context carries the topic each message came
+from.
 
 ## Development
 

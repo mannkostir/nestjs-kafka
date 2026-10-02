@@ -85,4 +85,17 @@ describe('KafkaMessageEnvelopedJsonStrategy', () => {
 
     expect(parsed.key).toBe('order-1');
   });
+
+  it('carries the decoded record headers', async () => {
+    const parsed = await strategy.parse({
+      key: null,
+      value: Buffer.from(JSON.stringify({ payload: { orderId: 'o-1' } })),
+      timestamp: '0',
+      attributes: 0,
+      offset: '0',
+      headers: { 'x-correlation-id': Buffer.from('c-1') },
+    });
+
+    expect(parsed.headers).toEqual({ 'x-correlation-id': 'c-1' });
+  });
 });
