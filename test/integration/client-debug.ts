@@ -1,5 +1,4 @@
 import { appendFileSync } from 'node:fs';
-import { basename } from 'node:path';
 import { KafkaJS } from '@confluentinc/kafka-javascript';
 
 type LogSink = (line: string) => void;
@@ -15,14 +14,10 @@ export const stdoutSink: LogSink = (line) => {
   process.stdout.write(line);
 };
 
-const currentTestFile = (): string => {
-  const testPath = expect.getState().testPath;
-  return testPath === undefined ? 'unknown' : basename(testPath);
-};
-
 export class DebugTeeLogger implements KafkaJS.Logger {
   constructor(
     private readonly sink: LogSink,
+    private readonly testFile: string,
     private readonly clientId: string,
     private readonly inner?: KafkaJS.Logger,
   ) {}
@@ -55,7 +50,7 @@ export class DebugTeeLogger implements KafkaJS.Logger {
   private record(level: Level, message: string, extra?: object): void {
     const fields = [
       new Date().toISOString(),
-      currentTestFile(),
+      this.testFile,
       this.clientId,
       level,
       message,
@@ -65,7 +60,11 @@ export class DebugTeeLogger implements KafkaJS.Logger {
   }
 }
 
-export const debuggingKafka = (contexts: string, sink: LogSink): typeof KafkaJS.Kafka => {
+export const debuggingKafka = (
+  contexts: string,
+  sink: LogSink,
+  testFile: string,
+): typeof KafkaJS.Kafka => {
   const teeing = <C extends { kafkaJS?: { logger?: KafkaJS.Logger } }>(
     clientId: string,
     config: C,
@@ -77,7 +76,7 @@ export const debuggingKafka = (contexts: string, sink: LogSink): typeof KafkaJS.
           ...config,
           kafkaJS: {
             ...config.kafkaJS,
-            logger: new DebugTeeLogger(sink, clientId, config.kafkaJS.logger ?? fallback),
+            logger: new DebugTeeLogger(sink, testFile, clientId, config.kafkaJS.logger ?? fallback),
           },
         };
 
