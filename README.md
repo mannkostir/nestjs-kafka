@@ -734,6 +734,44 @@ DLQ topics are not provisioned this way. A DLQ topic is created by the producer 
 and only if the broker allows auto-creation (`auto.create.topics.enable=true`) — create it up front
 when the broker does not.
 
+## Cost of one consumer group per handler
+
+Every `@Message` handler is an independent subscription: its own client consumer in its own consumer
+group. That keeps handlers isolated at the Kafka level — one handler's paused partition, lag, or
+rebalance stays inside its own group — but every cost below is paid once per handler, in every
+replica of the service. A service with 40 handlers running as 3 replicas runs 120 consumers in 40
+groups.
+
+- **Connections and threads.** Each handler's consumer is a separate librdkafka client instance,
+  with its own broker connections, background threads, and prefetch queue; the module's producer is
+  the only client they share. When its topics have a backlog, each consumer prefetches about
+  `queued.max.messages.kbytes` (librdkafka default `65536`, 64 MiB) into memory.
+- **Steady-state traffic.** Each consumer heartbeats to its group coordinator every
+  `heartbeatInterval` (client default `3000` ms) and keeps sending fetch requests to the brokers
+  that lead its partitions, whether or not messages are arriving.
+- **Rebalances on every deploy.** A replica that stops leaves each of its groups, and one that
+  starts joins each of them, so a rolling deploy rebalances every group up to twice per replica.
+  The client's default assignor is `roundrobin`, which is eager: while a group rebalances, all of its
+  members stop consuming until the new assignment arrives. With `fromBeginning: false` (the
+  default), every non-empty assignment also costs admin round trips before consumption resumes: the
+  library fetches the group's committed offsets, and the log-end offsets of partitions that have
+  none, through an admin client that shares the consumer's connections.
+- **Bootstrap time.** Handlers subscribe concurrently, so bootstrap takes about as long as the
+  slowest handler rather than the sum of all of them. For each handler with a plain-string topic,
+  that is an admin client connecting to list (and possibly create) topics, the consumer connecting,
+  and the wait for its first assignment (see [Delivery semantics](#delivery-semantics)). All of
+  those happen at once, so the brokers and group coordinators see a burst of connections, metadata
+  requests, and group joins proportional to the number of handlers.
+
+None of this has a fixed threshold. It starts to hurt when deploys spend noticeable time in
+rebalances, when bootstrap stretches as handlers wait on group joins, when memory grows with
+backlogged consumers, or when the broker's connection count or group count becomes something you
+have to manage — typically as handlers per service climb into the dozens, multiplied by replicas.
+
+To keep the count down, give one handler every topic it treats the same way: `@Message` takes an
+array of topics and `RegExp` patterns, and the handler's second argument is the topic each message
+came from.
+
 ## Development
 
 Running the tests needs Node.js 24.9 or newer. NestJS 12 is ESM-only, and Jest can load it only

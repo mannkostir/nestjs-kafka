@@ -1,7 +1,7 @@
 {
   "name": "nestjs-kafka-connector",
   "version": "0.2.1",
-  "description": "NestJS Kafka Connector",
+  "description": "Decorator-driven Kafka consumers and producer for NestJS, built on librdkafka (@confluentinc/kafka-javascript), with dead-letter topics, Avro, and topic namespacing",
   "license": "MIT",
   "type": "commonjs",
   "main": "dist/cjs/index.js",
@@ -32,13 +32,21 @@
   },
   "keywords": [
     "nestjs",
+    "nest",
     "kafka",
+    "kafka-consumer",
+    "kafka-producer",
+    "consumer-group",
+    "decorator",
     "dlq",
     "dead-letter",
+    "dead-letter-queue",
     "avro",
+    "schema-registry",
     "namespace",
     "multi-environment",
     "confluent",
+    "confluent-kafka-javascript",
     "librdkafka"
   ],
   "files": [
