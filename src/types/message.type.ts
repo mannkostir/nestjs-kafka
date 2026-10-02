@@ -4,8 +4,10 @@ export type MessageKey =
       [key: string]: any;
     } | null;
 
+export type MessageHeaders = Record<string, string | string[]>;
+
 export type MessageType<TValue = unknown> = {
   key: MessageKey | null;
   value: TValue | null;
-  headers?: Record<string, any>;
+  headers?: MessageHeaders;
 };

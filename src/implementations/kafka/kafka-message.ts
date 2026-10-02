@@ -1,5 +1,5 @@
 import type { KafkaJS } from '@confluentinc/kafka-javascript';
-import { MessageKey, MessageType } from '../../types/message.type.js';
+import { MessageHeaders, MessageKey, MessageType } from '../../types/message.type.js';
 import { KafkaMessageParseStrategy } from './parse-strategies/kafka-message-parse.strategy.js';
 
 export class KafkaMessage<TValue = unknown> implements MessageType<TValue>
@@ -8,9 +8,12 @@ export class KafkaMessage<TValue = unknown> implements MessageType<TValue>
 
   readonly key: MessageKey | null;
 
-  public constructor(key: MessageKey | null, value: TValue | null) {
+  readonly headers: MessageHeaders;
+
+  public constructor(key: MessageKey | null, value: TValue | null, headers: MessageHeaders) {
     this.key = key;
     this.value = value;
+    this.headers = headers;
   }
 
   public static from(strategy: KafkaMessageParseStrategy, message: KafkaJS.KafkaMessage): Promise<KafkaMessage> {
