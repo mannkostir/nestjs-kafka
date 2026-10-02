@@ -510,10 +510,12 @@ message.value;
 `MessageFormat.ENVELOPED_JSON` reads and writes the `{ "payload": … }` wire format of earlier
 releases. The handler receives the unwrapped `payload` as `message.value`, so handler code is the
 same as with `JSON`; sends wrap `message.value` in the envelope. A string `payload` is parsed as
-JSON a second time, which accommodates producers that stringify the payload separately.
+JSON a second time, which accommodates producers that stringify the payload separately. A string
+value is therefore written JSON-encoded inside the payload, so it reads back as the same string.
 
-A record whose value is not an object with a `payload` property — including `{}`, an array or
-`null` — raises and goes through the handler's `errorHandling`.
+A record without a value gives `value: null`, and so does a value whose bytes are the JSON literal
+`null`. A record whose value is anything else that is not an object with a `payload` property,
+such as `{}` or an array, raises and goes through the handler's `errorHandling`.
 
 Use it module-wide:
 
@@ -566,8 +568,8 @@ KafkaModule.register({
 async handleOrderCreated(message: MessageType<OrderCreated>): Promise<void> {}
 ```
 
-The handler receives the registry-decoded record as `message.value`. The record key decodes the same leniently-JSON way as
-in JSON mode.
+The handler receives the registry-decoded record as `message.value`. The record key decodes the
+same leniently-JSON way as in JSON mode.
 
 Declaring an Avro handler without `schemaRegistry` options throws at bootstrap with a message
 naming both the option and the package to install. Producing Avro is not supported yet: a send
@@ -673,8 +675,9 @@ send(
 The record's `headers` are `message.headers`. Its `value` follows the resolved format, which is
 `options.messageFormat`, then the module's `messageFormat`, then `MessageFormat.JSON`. With `JSON`
 the value is `JSON.stringify(message.value)`, and a `null` value is sent as a record without a
-value (a tombstone). With `ENVELOPED_JSON` it is `{"payload":…}`. A value JSON cannot encode, such
-as `undefined` or a function, rejects.
+value (a tombstone). With `ENVELOPED_JSON` it is `{"payload":…}`, and a `null` value is written as
+`{"payload":null}`, not as a tombstone. A value JSON cannot encode, such as `undefined` or a
+function, rejects.
 The record key comes from `options.key`, not from `message.key`. Topics are namespace-prefixed as
 described above unless `options.namespaced` is `false`, and the underlying producer is created with
 `allowAutoTopicCreation: true`. The client's default partitioner (`murmur2_random`) assigns keyed
