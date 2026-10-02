@@ -117,6 +117,12 @@ describe('KafkaMessageJsonStrategy', () => {
     expect(parsed.key).toBe('[1]');
   });
 
+  it('keeps an empty key as an empty string rather than null', async () => {
+    const parsed = await strategy.parse(record(Buffer.from('{}'), Buffer.from('')));
+
+    expect(parsed.key).toBe('');
+  });
+
   it('exposes a null key when the record carries no key', async () => {
     const parsed = await strategy.parse(record(Buffer.from('{}')));
 

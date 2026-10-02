@@ -29,6 +29,10 @@ without a key, and an object key is sent as `JSON.stringify(key)`. Because strin
 unchanged, the client's default partitioner (`murmur2_random`) puts a record on the same partition
 as the Java client's default partitioner does for the same string.
 
+Consumers decode keys as described in [Message formats](message-formats.md#json), so a key
+round-trips through JSON: a `Date` inside an object key arrives as its ISO string, a string key
+whose text is a JSON object arrives as an object, and a `bigint` rejects the send.
+
 ## Value
 
 The value follows the resolved format, which is `options.messageFormat`, then the module's

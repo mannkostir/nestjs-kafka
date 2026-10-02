@@ -5,6 +5,10 @@ describe('encodeKey', () => {
     expect(encodeKey('order-1')).toBe('order-1');
   });
 
+  it('keeps an empty string key distinct from a missing key', () => {
+    expect(encodeKey('')).toBe('');
+  });
+
   it('keeps a null key as a record without a key', () => {
     expect(encodeKey(null)).toBeNull();
   });
