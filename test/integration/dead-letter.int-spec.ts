@@ -79,7 +79,7 @@ describe('dead letter routing', () => {
 
     await producer.send(
       'payments.created',
-      { key: null, value: { payload: { paymentId: 'p-1' } } },
+      { key: null, value: { paymentId: 'p-1' } },
       { key: 'payment-1' },
     );
 
@@ -97,8 +97,6 @@ describe('dead letter routing', () => {
     await waitFor(() => dlqRecords.length > 0);
 
     expect(dlqRecords[0].key?.toString()).toBe('payment-1');
-    expect(JSON.parse(dlqRecords[0].value?.toString() ?? 'null')).toEqual({
-      payload: { paymentId: 'p-1' },
-    });
+    expect(JSON.parse(dlqRecords[0].value?.toString() ?? 'null')).toEqual({ paymentId: 'p-1' });
   });
 });

@@ -30,6 +30,14 @@ describe('KafkaMessageJsonStrategy', () => {
     expect(parsed.value).toEqual({ payload: { orderId: 'o-1' } });
   });
 
+  it('does not parse a string payload property again', async () => {
+    const parsed = await strategy.parse(
+      record(Buffer.from(JSON.stringify({ payload: JSON.stringify({ orderId: 'o-1' }) }))),
+    );
+
+    expect(parsed.value).toEqual({ payload: '{"orderId":"o-1"}' });
+  });
+
   it('passes a JSON array value as-is', async () => {
     const parsed = await strategy.parse(record(Buffer.from('[1,2,3]')));
 

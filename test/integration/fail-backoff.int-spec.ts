@@ -101,7 +101,7 @@ describe('fail policy backoff', () => {
     it('redelivers a failing message after delays that grow', async () => {
       await moduleRef.get(ProducerProxy).send('shipments.growing-backoff', {
         key: null,
-        value: { payload: { shipmentId: 's-1' } },
+        value: { shipmentId: 's-1' },
       });
 
       await waitFor(() => alwaysFailingDeliveries.length >= 5);
@@ -114,12 +114,12 @@ describe('fail policy backoff', () => {
     it('processes a message that succeeds after failing', async () => {
       await moduleRef.get(ProducerProxy).send('shipments.recovering', {
         key: null,
-        value: { payload: { shipmentId: 's-2' } },
+        value: { shipmentId: 's-2' },
       });
 
       await waitFor(() => recoveringDeliveries.length >= 4);
 
-      expect(recoveringDeliveries[3].value?.payload).toEqual({ shipmentId: 's-2' });
+      expect(recoveringDeliveries[3].value).toEqual({ shipmentId: 's-2' });
     });
 
     it('commits past the message once a delivery succeeds', async () => {
@@ -158,7 +158,7 @@ describe('fail policy backoff', () => {
       await moduleRef.init();
       await moduleRef.get(ProducerProxy).send('shipments.shutdown', {
         key: null,
-        value: { payload: { shipmentId: 's-3' } },
+        value: { shipmentId: 's-3' },
       });
       await waitFor(() => shutdownDeliveries.length >= 1);
     });

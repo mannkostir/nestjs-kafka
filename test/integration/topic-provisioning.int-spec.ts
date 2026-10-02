@@ -86,12 +86,12 @@ describe('topic provisioning', () => {
     it('receives a message produced right after bootstrap without fromBeginning', async () => {
       await moduleRef.get(ProducerProxy).send('shipments.created', {
         key: null,
-        value: { payload: { shipmentId: 's-1' } },
+        value: { shipmentId: 's-1' },
       });
 
       await waitFor(() => shipped.length > 0, 20000);
 
-      expect(shipped[0].value?.payload).toEqual({ shipmentId: 's-1' });
+      expect(shipped[0].value).toEqual({ shipmentId: 's-1' });
     });
   });
 
@@ -137,7 +137,7 @@ describe('topic provisioning', () => {
       );
 
       await expect(
-        moduleRef.get(ProducerProxy).send('refunds.created', { key: null, value: { payload: {} } }),
+        moduleRef.get(ProducerProxy).send('refunds.created', { key: null, value: {} }),
       ).rejects.toThrow(/connect/);
     });
   });
