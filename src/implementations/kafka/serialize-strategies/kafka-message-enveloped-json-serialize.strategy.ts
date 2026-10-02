@@ -3,6 +3,6 @@ import { encodeJson } from './encode-json.js';
 
 export class KafkaMessageEnvelopedJsonSerializeStrategy extends KafkaMessageSerializeStrategy {
   public serialize(value: unknown): string {
-    return `{"payload":${encodeJson(value)}}`;
+    return `{"payload":${encodeJson(typeof value === 'string' ? encodeJson(value) : value)}}`;
   }
 }

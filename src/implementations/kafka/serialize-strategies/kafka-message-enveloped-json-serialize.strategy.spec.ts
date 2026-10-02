@@ -13,6 +13,10 @@ describe('KafkaMessageEnvelopedJsonSerializeStrategy', () => {
     expect(strategy.serialize(value)).toBe(JSON.stringify({ payload: value }));
   });
 
+  it('writes a string value encoded a second time', () => {
+    expect(strategy.serialize('hello')).toBe('{"payload":"\\"hello\\""}');
+  });
+
   it('wraps a null value in an envelope with a null payload', () => {
     expect(strategy.serialize(null)).toBe('{"payload":null}');
   });
