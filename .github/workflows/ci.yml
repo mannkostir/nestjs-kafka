@@ -78,3 +78,13 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:integration
+        timeout-minutes: 25
+        env:
+          KAFKA_CLIENT_DEBUG: ${{ vars.KAFKA_CLIENT_DEBUG }}
+          KAFKA_CLIENT_DEBUG_LOG: ${{ runner.temp }}/kafka-client-debug.log
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: kafka-client-debug
+          path: ${{ runner.temp }}/kafka-client-debug.log
+          if-no-files-found: ignore
