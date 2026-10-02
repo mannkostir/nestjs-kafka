@@ -5,6 +5,10 @@ import { KafkaModule } from './kafka.module.js';
 import { KafkaModuleOptions } from './types/kafka-module-options.type.js';
 import { IReleaseConnections } from './interfaces/release-connections.interface.js';
 import { KAFKA_PRODUCER, KAFKA_CONNECTIONS } from './tokens.js';
+import { ConsumerProxy } from './base/consumer-proxy.js';
+import { ProducerProxy } from './base/producer-proxy.js';
+import { MessageFormat } from './types/message-format.type.js';
+import { KafkaMessageParseStrategyFactory } from './implementations/kafka/parse-strategies/kafka-message-parse-strategy.factory.js';
 
 jest.mock('@kafkajs/confluent-schema-registry', () => ({
   SchemaRegistry: jest.fn(),
@@ -15,6 +19,7 @@ const clientOptions = { kafkaJS: { brokers: ['localhost:9092'] } };
 const producerStub = () => ({
   connect: jest.fn().mockResolvedValue(undefined),
   disconnect: jest.fn().mockResolvedValue(undefined),
+  send: jest.fn().mockResolvedValue([]),
 });
 
 const compileWith = (options: KafkaModuleOptions) =>
@@ -118,5 +123,70 @@ describe('KafkaModule connections', () => {
 
     await moduleRef.close();
     await asyncModuleRef.close();
+  });
+});
+
+describe('KafkaModule message format', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  const producedValue = async (options: KafkaModuleOptions) => {
+    const producer = producerStub();
+    const moduleRef = await Test.createTestingModule({
+      imports: [KafkaModule.registerAsync({ useFactory: () => options })],
+    })
+      .overrideProvider(KAFKA_PRODUCER)
+      .useValue(producer)
+      .compile();
+
+    await moduleRef.get(ProducerProxy).send('orders.created', {
+      key: null,
+      value: { orderId: 'o-1' },
+    });
+    await moduleRef.close();
+
+    return producer.send.mock.calls[0][0].messages[0].value;
+  };
+
+  const consumedFormat = async (options: KafkaModuleOptions) => {
+    const stop = new Error('stop before connecting');
+    const create = jest
+      .spyOn(KafkaMessageParseStrategyFactory.prototype, 'create')
+      .mockImplementation(() => {
+        throw stop;
+      });
+    const moduleRef = await compileWith(options);
+
+    await expect(
+      moduleRef.get(ConsumerProxy).subscribe(
+        { topicPatterns: ['orders.created'], errorHandling: { type: 'ignore' } },
+        jest.fn(),
+        'orders-service',
+      ),
+    ).rejects.toBe(stop);
+    await moduleRef.close();
+
+    return create.mock.calls[0][0];
+  };
+
+  it('produces without an envelope by default', async () => {
+    expect(await producedValue({ clientOptions })).toBe('{"orderId":"o-1"}');
+  });
+
+  it('produces with the module message format', async () => {
+    expect(
+      await producedValue({ clientOptions, messageFormat: MessageFormat.ENVELOPED_JSON }),
+    ).toBe('{"payload":{"orderId":"o-1"}}');
+  });
+
+  it('consumes as JSON by default', async () => {
+    expect(await consumedFormat({ clientOptions })).toBe(MessageFormat.JSON);
+  });
+
+  it('consumes with the module message format', async () => {
+    expect(
+      await consumedFormat({ clientOptions, messageFormat: MessageFormat.ENVELOPED_JSON }),
+    ).toBe(MessageFormat.ENVELOPED_JSON);
   });
 });

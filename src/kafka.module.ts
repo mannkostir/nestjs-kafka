@@ -9,6 +9,7 @@ import {
 } from './types/kafka-module-options.type.js';
 import { ConsumerConfig } from './types/consumer-config.type.js';
 import { MessageType } from './types/message.type.js';
+import { MessageFormat } from './types/message-format.type.js';
 import { ConsumerProxy } from './base/consumer-proxy.js';
 import { KafkaConsumer } from './implementations/kafka/kafka-consumer.js';
 import { KafkaProducer } from './implementations/kafka/kafka-producer.js';
@@ -28,6 +29,7 @@ import {
   CONNECTOR_NAME,
   KAFKA_PRODUCER,
   KAFKA_CONNECTIONS,
+  MESSAGE_FORMAT,
 } from './tokens.js';
 
 const kafkaProvider: Provider<KafkaJS.Kafka> = {
@@ -55,6 +57,7 @@ const consumerProxyProvider: Provider<ConsumerProxy> = {
     consumerDefaults: ConsumerConfig | undefined,
     namespacer: TopicNamespacer,
     clientLogger: KafkaJS.Logger | undefined,
+    messageFormat: MessageFormat | undefined,
   ) => {
     let schemaRegistry: SchemaRegistry | undefined;
 
@@ -72,9 +75,10 @@ const consumerProxyProvider: Provider<ConsumerProxy> = {
       consumerDefaults,
       namespacer,
       clientLogger,
+      messageFormat,
     });
   },
-  inject: [KafkaJS.Kafka, KAFKA_PRODUCER, SCHEMA_REGISTRY_OPTIONS, TRANSPORT_NAMESPACE, CONSUMER_DEFAULTS, TopicNamespacer, CLIENT_LOGGER],
+  inject: [KafkaJS.Kafka, KAFKA_PRODUCER, SCHEMA_REGISTRY_OPTIONS, TRANSPORT_NAMESPACE, CONSUMER_DEFAULTS, TopicNamespacer, CLIENT_LOGGER, MESSAGE_FORMAT],
 };
 
 const topicNamespacerProvider: Provider<TopicNamespacer> = {
@@ -85,14 +89,18 @@ const topicNamespacerProvider: Provider<TopicNamespacer> = {
 
 const producerProxyProvider: Provider<ProducerProxy> = {
   provide: ProducerProxy,
-  useFactory: async (producer: KafkaJS.Producer, namespacer: TopicNamespacer) => {
-    const proxy = new KafkaProducer(producer, namespacer);
+  useFactory: async (
+    producer: KafkaJS.Producer,
+    namespacer: TopicNamespacer,
+    messageFormat: MessageFormat | undefined,
+  ) => {
+    const proxy = new KafkaProducer(producer, namespacer, { messageFormat });
 
     await proxy.connect();
 
     return proxy;
   },
-  inject: [KAFKA_PRODUCER, TopicNamespacer],
+  inject: [KAFKA_PRODUCER, TopicNamespacer, MESSAGE_FORMAT],
 };
 
 const kafkaConnectionsProvider: Provider<IReleaseConnections> = {
@@ -158,6 +166,11 @@ function createDerivedProviders(): Provider[] {
     {
       provide: CLIENT_LOGGER,
       useFactory: (opts: KafkaModuleOptions) => opts.clientOptions.kafkaJS?.logger,
+      inject: [KAFKA_MODULE_OPTIONS],
+    },
+    {
+      provide: MESSAGE_FORMAT,
+      useFactory: (opts: KafkaModuleOptions) => opts.messageFormat,
       inject: [KAFKA_MODULE_OPTIONS],
     },
   ];
