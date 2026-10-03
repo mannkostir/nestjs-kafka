@@ -1,6 +1,6 @@
 {
   "name": "nestjs-kafka-connector",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Decorator-driven Kafka consumers and producer for NestJS, built on librdkafka (@confluentinc/kafka-javascript), with dead-letter topics, Avro, and topic namespacing",
   "license": "MIT",
   "type": "commonjs",
