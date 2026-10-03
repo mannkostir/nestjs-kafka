@@ -54,6 +54,7 @@ describe('produce and consume round trip', () => {
 
   beforeAll(async () => {
     broker = await startBroker();
+    await broker.createTopics(['orders.created']);
 
     @Module({
       imports: [

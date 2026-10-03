@@ -20,7 +20,7 @@ export class ResolvedConsumerConfig {
 
     return new ResolvedConsumerConfig(
       overrides.fromBeginning ?? defaults.fromBeginning ?? false,
-      overrides.allowAutoTopicCreation ?? defaults.allowAutoTopicCreation ?? true,
+      overrides.allowAutoTopicCreation ?? defaults.allowAutoTopicCreation ?? false,
       overrides.heartbeatInterval ?? defaults.heartbeatInterval,
       overrides.sessionTimeout ?? defaults.sessionTimeout,
       overrides.rebalanceTimeout ?? defaults.rebalanceTimeout,

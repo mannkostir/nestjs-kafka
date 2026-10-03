@@ -35,6 +35,7 @@ describe('fail policy', () => {
 
   beforeAll(async () => {
     broker = await startBroker();
+    await broker.createTopics(['invoices.created']);
 
     admin = new KafkaJS.Kafka({
       kafkaJS: { clientId: 'fail-observer', brokers: broker.brokers },

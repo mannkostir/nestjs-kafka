@@ -32,6 +32,7 @@ describe('handler context', () => {
 
   beforeAll(async () => {
     broker = await startBroker();
+    await broker.createTopics(['shipments.dispatched']);
 
     @Module({
       imports: [

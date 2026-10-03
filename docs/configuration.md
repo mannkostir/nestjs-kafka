@@ -11,6 +11,7 @@
 | `connectorName` | `string` | no | Scopes handler discovery when `KafkaModule` is registered more than once in the same app. See [Registering more than once](#registering-more-than-once). |
 | `schemaRegistry` | `{ url: string }` | no | Enables Avro. Constructs a `SchemaRegistry` against `url`. |
 | `consumerDefaults` | `ConsumerConfig` | no | Consumer settings applied to every handler unless overridden per handler. |
+| `producer` | `ProducerConfig` | no | Settings for the module's producer. See [`ProducerConfig`](#producerconfig). |
 | `messageFormat` | `MessageFormat` | no | Default format for every consumer and for the producer. Defaults to `MessageFormat.JSON`. A handler's `@Message({ messageFormat })` and a send's `{ messageFormat }` override it. See [Message formats](message-formats.md). |
 
 `namespace` and `connectorName` must not be empty strings: `''` fails module construction with an
@@ -120,7 +121,7 @@ The same shape is used for module-wide `consumerDefaults` and per-handler `consu
 | Field | Type | Default |
 | --- | --- | --- |
 | `fromBeginning` | `boolean` | `false` |
-| `allowAutoTopicCreation` | `boolean` | `true` |
+| `allowAutoTopicCreation` | `boolean` | `false` |
 | `heartbeatInterval` | `number` (ms) | unset — the client applies its own (currently `3000`) |
 | `sessionTimeout` | `number` (ms) | unset — the client applies its own (currently `30000`) |
 | `rebalanceTimeout` | `number` (ms) | unset — the client applies its own (currently `300000`) |
@@ -139,7 +140,9 @@ are not configurable — the client fixes them (`0.2`, `2`, and always-restart r
 throws if you set them. `retries` is read only for produce requests; setting it in a handler's or
 module's consumer `retry` has no effect on that consumer.
 
-`allowAutoTopicCreation` controls [topic provisioning](topics-and-namespacing.md#topic-provisioning).
+`allowAutoTopicCreation` controls [topic provisioning](topics-and-namespacing.md#topic-provisioning):
+with `false`, bootstrap fails when a handler's topics, or its DLQ topic, do not exist; with `true`,
+the library creates them.
 
 ## Precedence
 
@@ -174,4 +177,15 @@ KafkaModule.register({
 ```
 
 That handler runs with `fromBeginning: true`, `heartbeatInterval: 10000`,
-`maxRetryTime: 20000`, `initialRetryTime: 300`, and `allowAutoTopicCreation: true`.
+`maxRetryTime: 20000`, `initialRetryTime: 300`, and `allowAutoTopicCreation: false`.
+
+## `ProducerConfig`
+
+The module's `producer` option.
+
+| Field | Type | Default |
+| --- | --- | --- |
+| `allowAutoTopicCreation` | `boolean` | `false` |
+
+`allowAutoTopicCreation` maps to librdkafka's `allow.auto.create.topics` on the producer. See
+[Producing](producing.md#topic) for what a send to a missing topic does.

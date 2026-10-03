@@ -79,6 +79,7 @@ describe('resuming from a committed offset', () => {
 
   beforeAll(async () => {
     broker = await startBroker();
+    await broker.createTopics(['payments.captured']);
     kafka = new KafkaJS.Kafka({ kafkaJS: { clientId: 'offset-observer', brokers: broker.brokers } });
   });
 

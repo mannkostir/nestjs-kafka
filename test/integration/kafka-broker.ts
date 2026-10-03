@@ -8,18 +8,32 @@ const READINESS_TIMEOUT_MS = 60000;
 
 export type StartedBroker = {
   brokers: string[];
+  createTopics(topics: string[]): Promise<void>;
+  listTopics(): Promise<string[]>;
   stop(): Promise<void>;
 };
 
-const untilServingMetadata = async (brokers: string[]): Promise<void> => {
+const withAdmin = async <T>(
+  brokers: string[],
+  work: (admin: KafkaJS.Admin) => Promise<T>,
+): Promise<T> => {
   const admin = new KafkaJS.Kafka({
-    kafkaJS: { clientId: 'broker-readiness', brokers, logLevel: KafkaJS.logLevel.NOTHING },
+    kafkaJS: { clientId: 'broker-admin', brokers, logLevel: KafkaJS.logLevel.NOTHING },
   }).admin();
-  const deadline = Date.now() + READINESS_TIMEOUT_MS;
 
   await admin.connect();
 
   try {
+    return await work(admin);
+  } finally {
+    await admin.disconnect();
+  }
+};
+
+const untilServingMetadata = (brokers: string[]): Promise<void> =>
+  withAdmin(brokers, async (admin) => {
+    const deadline = Date.now() + READINESS_TIMEOUT_MS;
+
     while (true) {
       try {
         await admin.listTopics();
@@ -31,10 +45,7 @@ const untilServingMetadata = async (brokers: string[]): Promise<void> => {
         await pause(250);
       }
     }
-  } finally {
-    await admin.disconnect();
-  }
-};
+  });
 
 export async function startBroker(): Promise<StartedBroker> {
   const container: StartedKafkaContainer = await new KafkaContainer(KAFKA_IMAGE)
@@ -49,6 +60,11 @@ export async function startBroker(): Promise<StartedBroker> {
 
   return {
     brokers,
+    createTopics: (topics) =>
+      withAdmin(brokers, async (admin) => {
+        await admin.createTopics({ topics: topics.map((topic) => ({ topic })), timeout: 30000 });
+      }),
+    listTopics: () => withAdmin(brokers, (admin) => admin.listTopics()),
     stop: () => container.stop().then(() => undefined),
   };
 }

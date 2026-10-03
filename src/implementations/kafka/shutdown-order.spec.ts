@@ -28,7 +28,7 @@ describe('Kafka connector shutdown order', () => {
       admin: () => ({
         connect: jest.fn().mockResolvedValue(undefined),
         disconnect: jest.fn().mockResolvedValue(undefined),
-        listTopics: jest.fn().mockResolvedValue([]),
+        listTopics: jest.fn().mockResolvedValue(['orders.created']),
         createTopics: jest.fn().mockResolvedValue(true),
         fetchTopicMetadata: jest.fn(async ({ topics }: { topics: string[] }) =>
           topics.map((name) => ({ name, partitions: [{ partitionId: 0, leader: 1 }] })),

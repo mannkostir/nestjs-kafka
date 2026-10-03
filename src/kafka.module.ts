@@ -8,6 +8,7 @@ import {
   KafkaModuleOptionsFactory,
 } from './types/kafka-module-options.type.js';
 import { ConsumerConfig } from './types/consumer-config.type.js';
+import { ProducerConfig } from './types/producer-config.type.js';
 import { MessageType } from './types/message.type.js';
 import { MessageFormat } from './types/message-format.type.js';
 import { ConsumerProxy } from './base/consumer-proxy.js';
@@ -25,6 +26,7 @@ import {
   TRANSPORT_NAMESPACE,
   SCHEMA_REGISTRY_OPTIONS,
   CONSUMER_DEFAULTS,
+  PRODUCER_CONFIG,
   CLIENT_LOGGER,
   CONNECTOR_NAME,
   KAFKA_PRODUCER,
@@ -40,11 +42,21 @@ const kafkaProvider: Provider<KafkaJS.Kafka> = {
   inject: [TRANSPORT_CONFIG],
 };
 
+const DEFAULT_PRODUCER_ALLOW_AUTO_TOPIC_CREATION = false;
+
 const kafkaProducerProvider: Provider<KafkaJS.Producer> = {
   provide: KAFKA_PRODUCER,
-  useFactory: (kafka: KafkaJS.Kafka) =>
-    kafka.producer({ kafkaJS: { allowAutoTopicCreation: true } }),
-  inject: [KafkaJS.Kafka],
+  useFactory: (
+    kafka: KafkaJS.Kafka,
+    producerConfig: ProducerConfig | undefined,
+  ) =>
+    kafka.producer({
+      kafkaJS: {
+        allowAutoTopicCreation:
+          producerConfig?.allowAutoTopicCreation ?? DEFAULT_PRODUCER_ALLOW_AUTO_TOPIC_CREATION,
+      },
+    }),
+  inject: [KafkaJS.Kafka, PRODUCER_CONFIG],
 };
 
 const consumerProxyProvider: Provider<ConsumerProxy> = {
@@ -175,6 +187,11 @@ function createDerivedProviders(): Provider[] {
     {
       provide: CONSUMER_DEFAULTS,
       useFactory: (opts: KafkaModuleOptions) => opts.consumerDefaults,
+      inject: [KAFKA_MODULE_OPTIONS],
+    },
+    {
+      provide: PRODUCER_CONFIG,
+      useFactory: (opts: KafkaModuleOptions) => opts.producer,
       inject: [KAFKA_MODULE_OPTIONS],
     },
     {

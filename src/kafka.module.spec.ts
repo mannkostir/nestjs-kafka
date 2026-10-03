@@ -1,3 +1,4 @@
+import { DynamicModule } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
@@ -81,20 +82,54 @@ describe('KafkaModule option validation', () => {
 });
 
 describe('KafkaModule producer', () => {
-  it('creates the producer with auto topic creation and the client default partitioner', async () => {
+  const producerConfigOf = async (imports: DynamicModule) => {
     const kafka = { producer: jest.fn().mockReturnValue(producerStub()) };
 
-    const moduleRef = await Test.createTestingModule({
-      imports: [KafkaModule.register({ clientOptions })],
-    })
+    const moduleRef = await Test.createTestingModule({ imports: [imports] })
       .overrideProvider(KafkaJS.Kafka)
       .useValue(kafka)
       .compile();
     await moduleRef.close();
 
-    expect(kafka.producer).toHaveBeenCalledWith({
-      kafkaJS: { allowAutoTopicCreation: true },
-    });
+    return kafka.producer.mock.calls[0][0];
+  };
+
+  it('creates the producer without auto topic creation by default', async () => {
+    expect(
+      await producerConfigOf(KafkaModule.register({ clientOptions })),
+    ).toEqual({ kafkaJS: { allowAutoTopicCreation: false } });
+  });
+
+  it('creates the producer with auto topic creation when enabled', async () => {
+    expect(
+      await producerConfigOf(
+        KafkaModule.register({
+          clientOptions,
+          producer: { allowAutoTopicCreation: true },
+        }),
+      ),
+    ).toEqual({ kafkaJS: { allowAutoTopicCreation: true } });
+  });
+
+  it('creates the producer without auto topic creation by default when configured asynchronously', async () => {
+    expect(
+      await producerConfigOf(
+        KafkaModule.registerAsync({ useFactory: () => ({ clientOptions }) }),
+      ),
+    ).toEqual({ kafkaJS: { allowAutoTopicCreation: false } });
+  });
+
+  it('creates the producer with auto topic creation when enabled asynchronously', async () => {
+    expect(
+      await producerConfigOf(
+        KafkaModule.registerAsync({
+          useFactory: () => ({
+            clientOptions,
+            producer: { allowAutoTopicCreation: true },
+          }),
+        }),
+      ),
+    ).toEqual({ kafkaJS: { allowAutoTopicCreation: true } });
   });
 });
 
