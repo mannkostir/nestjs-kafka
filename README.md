@@ -124,7 +124,7 @@ export class OrderPublisher {
 
   async publishCreated(orderId: string, total: number): Promise<void> {
     await this.producer.send('orders.created', {
-      key: null,
+      key: orderId,
       value: { orderId, total },
     });
   }

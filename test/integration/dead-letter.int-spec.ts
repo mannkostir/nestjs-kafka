@@ -94,8 +94,7 @@ describe('dead letter routing', () => {
 
     await producer.send(
       'payments.created',
-      { key: null, value: { paymentId: 'p-1' } },
-      { key: 'payment-1' },
+      { key: 'payment-1', value: { paymentId: 'p-1' } },
     );
 
     await waitFor(() => dlqRecords.length > 0);

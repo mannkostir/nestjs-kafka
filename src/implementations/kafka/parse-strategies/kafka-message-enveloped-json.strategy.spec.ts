@@ -80,7 +80,7 @@ describe('KafkaMessageEnvelopedJsonStrategy', () => {
     );
   });
 
-  it('decodes the key the same lenient way as plain JSON', async () => {
+  it('decodes the key the same way as plain JSON', async () => {
     const parsed = await strategy.parse(record(json({ payload: 1 }), Buffer.from('order-1')));
 
     expect(parsed.key).toBe('order-1');

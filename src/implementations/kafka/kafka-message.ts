@@ -6,11 +6,11 @@ export class KafkaMessage<TValue = unknown> implements MessageType<TValue>
 {
   readonly value: TValue | null;
 
-  readonly key: MessageKey | null;
+  readonly key: MessageKey;
 
   readonly headers: MessageHeaders;
 
-  public constructor(key: MessageKey | null, value: TValue | null, headers: MessageHeaders) {
+  public constructor(key: MessageKey, value: TValue | null, headers: MessageHeaders) {
     this.key = key;
     this.value = value;
     this.headers = headers;

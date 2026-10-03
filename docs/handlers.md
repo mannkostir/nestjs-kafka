@@ -20,7 +20,8 @@ The full option list is in [Configuration](configuration.md#message-options).
 ## The message
 
 `message.value` is the decoded record value, as described in [Message formats](message-formats.md).
-`message.key` is the record key, decoded leniently as JSON.
+`message.key` is an object when the record key is a JSON object, otherwise the raw UTF-8 string, or
+`null` when the record has no key; see [Message formats](message-formats.md#json).
 
 `message.headers` holds the record's headers as `MessageHeaders`
 (`Record<string, string | string[]>`). Every value is decoded as UTF-8, so bytes that are not valid
