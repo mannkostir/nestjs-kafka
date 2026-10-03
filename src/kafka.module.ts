@@ -42,7 +42,7 @@ const kafkaProvider: Provider<KafkaJS.Kafka> = {
   inject: [TRANSPORT_CONFIG],
 };
 
-const DEFAULT_ALLOW_AUTO_TOPIC_CREATION = false;
+const DEFAULT_PRODUCER_ALLOW_AUTO_TOPIC_CREATION = false;
 
 const kafkaProducerProvider: Provider<KafkaJS.Producer> = {
   provide: KAFKA_PRODUCER,
@@ -53,7 +53,7 @@ const kafkaProducerProvider: Provider<KafkaJS.Producer> = {
     kafka.producer({
       kafkaJS: {
         allowAutoTopicCreation:
-          producerConfig?.allowAutoTopicCreation ?? DEFAULT_ALLOW_AUTO_TOPIC_CREATION,
+          producerConfig?.allowAutoTopicCreation ?? DEFAULT_PRODUCER_ALLOW_AUTO_TOPIC_CREATION,
       },
     }),
   inject: [KafkaJS.Kafka, PRODUCER_CONFIG],

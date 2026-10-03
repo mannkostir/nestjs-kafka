@@ -646,6 +646,32 @@ describe('KafkaConsumer topic provisioning', () => {
     ]);
   });
 
+  it('checks an un-namespaced explicit dead letter topic as configured', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+    const topicProvisioner = provisionerStub();
+
+    await new KafkaConsumer(kafka, {
+      namespace: 'dev',
+      namespacer: new TopicNamespacer('dev'),
+      topicProvisioner: topicProvisioner as unknown as KafkaTopicProvisioner,
+      producer: producerStub(),
+    }).subscribe(
+      {
+        ...subscription(),
+        namespaced: false,
+        errorHandling: { type: 'dlq' as const, topic: 'parking.lot' },
+      },
+      jest.fn(),
+      'orders-service',
+    );
+
+    expect(topicProvisioner.assertExisting).toHaveBeenCalledWith([
+      'orders.created',
+      'parking.lot',
+    ]);
+  });
+
   it('derives no dead letter topic from a pattern subscription', async () => {
     const consumer = consumerStub();
     const kafka = kafkaStub(consumer);

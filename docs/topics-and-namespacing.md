@@ -131,4 +131,6 @@ Topic(s) orders.created.dlq do not exist and allowAutoTopicCreation is false. Cr
 ```
 
 A `RegExp` source has no topic name to derive a destination from at bootstrap, so its default
-`.dlq` destinations are neither checked nor created. Create them before the application starts.
+`.dlq` destinations are neither checked nor created. Create them before the application starts, or
+set `producer: { allowAutoTopicCreation: true }` on a broker that auto-creates topics (see
+[Producing](producing.md#topic)).
