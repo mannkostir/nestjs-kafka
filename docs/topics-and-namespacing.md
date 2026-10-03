@@ -42,6 +42,9 @@ default DLQ topic (no `topic` given, derived as `${originalTopic}.dlq`) inherits
 naturally, because it is derived from the topic the broker actually reported the record on, which
 is already namespaced when the source subscription was.
 
+DLQ topics are checked or created at bootstrap together with the handler's source topics; see
+[Topic provisioning](#topic-provisioning).
+
 ## Pattern (RegExp) topics
 
 A `RegExp` topic pattern given to `@Message` is matched by librdkafka, which compiles it as a
@@ -88,15 +91,25 @@ KafkaModule.register({
 
 ## Topic provisioning
 
-Before each handler's consumer is created, the library lists the broker's topics and creates any
-missing plain-string topics itself through the admin API, using the broker's default partition
-count and replication factor, with a 30 second create timeout. `RegExp` subscriptions are never
-provisioned this way — a pattern matches whatever topics already exist, or come to exist later.
+Before each handler's consumer is created, the library lists the broker's topics and checks that
+the handler's plain-string topics exist, along with its DLQ topic when it uses
+`errorHandling: { type: 'dlq' }`. What happens to a missing topic is governed by the handler's
+resolved `allowAutoTopicCreation` (see [Configuration](configuration.md#consumerconfig)). `RegExp`
+subscriptions are never provisioned — a pattern matches whatever topics already exist, or come to
+exist later.
 
-This happens even when the broker has `auto.create.topics.enable=false`, and needs Create
-permission on those topics for the application's Kafka principal. The reason: the client's consumer
-does not create a topic on subscribe, and only notices a topic created after that point at its next
-metadata refresh — so without this step, a handler subscribing to a brand-new topic could sit idle
+With the default `allowAutoTopicCreation: false`, bootstrap fails if any of them is missing:
+
+```
+Topic(s) orders.created do not exist and allowAutoTopicCreation is false. Create them before the application starts, or enable allowAutoTopicCreation.
+```
+
+With `allowAutoTopicCreation: true`, the library creates the missing topics itself through the
+admin API, using the broker's default partition count and replication factor, with a 30 second
+create timeout. This happens even when the broker has `auto.create.topics.enable=false`, and needs
+Create permission on those topics for the application's Kafka principal. The client's consumer does
+not create a topic on subscribe, and only notices a topic created after that point at its next
+metadata refresh — so a handler subscribing to a brand-new topic would otherwise sit idle
 indefinitely.
 
 Creating a topic returns before the broker reports it in metadata, and a consumer that subscribes in
@@ -108,13 +121,14 @@ one before the handler's consumer subscribes. If that takes longer than 30 secon
 Topic(s) orders.created were created but did not become available within 30000 ms: the broker does not yet report a leader for every partition. Check the cluster's health, or create the topics before the application starts.
 ```
 
-With `allowAutoTopicCreation: false`, the library asserts the topics already exist instead of
-creating them, and bootstrap fails if they do not:
+A `dlq` handler's destination is checked or created in the same step as its source topics: the
+explicit `topic` when one is given, namespaced as described in [DLQ topics](#dlq-topics), or
+otherwise `<source topic>.dlq` for each plain-string source topic. A handler on `orders.created`
+with the default destination therefore needs `orders.created.dlq` as well:
 
 ```
-Topic(s) orders.created do not exist and allowAutoTopicCreation is false. Create them before the application starts, or enable allowAutoTopicCreation.
+Topic(s) orders.created.dlq do not exist and allowAutoTopicCreation is false. Create them before the application starts, or enable allowAutoTopicCreation.
 ```
 
-DLQ topics are not provisioned this way. A DLQ topic is created by the producer on its first send,
-and only if the broker allows auto-creation (`auto.create.topics.enable=true`) — create it up front
-when the broker does not.
+A `RegExp` source has no topic name to derive a destination from at bootstrap, so its default
+`.dlq` destinations are neither checked nor created. Create them before the application starts.

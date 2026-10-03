@@ -22,7 +22,8 @@ Integration-tested against `confluentinc/cp-kafka:7.6.1` in KRaft mode.
 - **Namespacing** — one `namespace` option prefixes topics and group ids, so several environments
   can share a cluster.
 - **Explicit offsets** — resolved only after the handler succeeds; at-least-once delivery.
-- **Topic provisioning** — missing topics are created before a handler subscribes.
+- **Topic provisioning** — a handler's topics, DLQ included, are checked or created before it
+  subscribes.
 - **NestJS 11 and 12**, ES module and CommonJS hosts, zero runtime dependencies.
 
 ## Compared with `@nestjs/microservices`
