@@ -73,6 +73,7 @@ import { OrderEventsHandler } from './order-events.handler';
           brokers: ['localhost:9092'],
         },
       },
+      consumerDefaults: { allowAutoTopicCreation: true },
     }),
   ],
   providers: [OrderEventsHandler],
