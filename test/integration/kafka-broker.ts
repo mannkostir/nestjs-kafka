@@ -1,8 +1,10 @@
 import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { KafkaContainer, StartedKafkaContainer } from '@testcontainers/kafka';
+import { pause } from './wait.js';
 
 const KAFKA_IMAGE = 'confluentinc/cp-kafka:7.6.1';
 const KAFKA_CLIENT_PORT = 9093;
+const READINESS_TIMEOUT_MS = 60000;
 
 export type StartedBroker = {
   brokers: string[];
@@ -28,6 +30,23 @@ const withAdmin = async <T>(
   }
 };
 
+const untilServingMetadata = (brokers: string[]): Promise<void> =>
+  withAdmin(brokers, async (admin) => {
+    const deadline = Date.now() + READINESS_TIMEOUT_MS;
+
+    while (true) {
+      try {
+        await admin.listTopics();
+        return;
+      } catch (error) {
+        if (Date.now() > deadline) {
+          throw error;
+        }
+        await pause(250);
+      }
+    }
+  });
+
 export async function startBroker(): Promise<StartedBroker> {
   const container: StartedKafkaContainer = await new KafkaContainer(KAFKA_IMAGE)
     .withKraft()
@@ -36,6 +55,8 @@ export async function startBroker(): Promise<StartedBroker> {
   const brokers = [
     `${container.getHost()}:${container.getMappedPort(KAFKA_CLIENT_PORT)}`,
   ];
+
+  await untilServingMetadata(brokers);
 
   return {
     brokers,

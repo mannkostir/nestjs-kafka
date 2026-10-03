@@ -10,13 +10,17 @@ const adminStub = () => ({
   fetchTopicOffsets: jest.fn().mockResolvedValue([]),
 });
 
-const consumerStub = (admin: ReturnType<typeof adminStub>) => ({
-  dependentAdmin: jest.fn().mockReturnValue(admin),
+const consumerStub = () => ({
+  dependentAdmin: jest.fn().mockReturnValue(adminStub()),
 });
 
-const kafkaStub = (consumer: ReturnType<typeof consumerStub>) =>
+const kafkaStub = (
+  admin: ReturnType<typeof adminStub>,
+  consumer: ReturnType<typeof consumerStub> = consumerStub(),
+) =>
   ({
     consumer: jest.fn().mockReturnValue(consumer),
+    admin: jest.fn().mockReturnValue(admin),
   }) as unknown as KafkaJS.Kafka;
 
 const config = (): KafkaJS.ConsumerConfig => ({ groupId: 'g' });
@@ -41,7 +45,7 @@ const rebalanceCallback = (kafka: KafkaJS.Kafka) =>
 
 describe('KafkaGroupMember construction', () => {
   it('installs the rebalance callback outside the kafkaJS block', () => {
-    const kafka = kafkaStub(consumerStub(adminStub()));
+    const kafka = kafkaStub(adminStub());
     const passedConfig = config();
 
     new KafkaGroupMember(kafka, passedConfig, false, clientLoggerStub());
@@ -52,7 +56,7 @@ describe('KafkaGroupMember construction', () => {
   });
 
   it('hands the consumer a logger that forwards to the client logger', () => {
-    const kafka = kafkaStub(consumerStub(adminStub()));
+    const kafka = kafkaStub(adminStub());
     const clientLogger = clientLoggerStub();
     new KafkaGroupMember(kafka, config(), false, clientLogger);
 
@@ -68,7 +72,7 @@ describe('KafkaGroupMember.joined', () => {
   });
 
   it('resolves joined on the first assignment', async () => {
-    const kafka = kafkaStub(consumerStub(adminStub()));
+    const kafka = kafkaStub(adminStub());
     const member = new KafkaGroupMember(kafka, config(), false, clientLoggerStub());
 
     await rebalanceCallback(kafka)({ code: -175 }, [{ topic: 't', partition: 0 }]);
@@ -77,7 +81,7 @@ describe('KafkaGroupMember.joined', () => {
   });
 
   it('resolves joined on an empty first assignment', async () => {
-    const kafka = kafkaStub(consumerStub(adminStub()));
+    const kafka = kafkaStub(adminStub());
     const member = new KafkaGroupMember(kafka, config(), false, clientLoggerStub());
 
     await rebalanceCallback(kafka)({ code: -175 }, []);
@@ -86,7 +90,7 @@ describe('KafkaGroupMember.joined', () => {
   });
 
   it('rejects naming the group and the reason as soon as group authorization fails', async () => {
-    const kafka = kafkaStub(consumerStub(adminStub()));
+    const kafka = kafkaStub(adminStub());
     const member = new KafkaGroupMember(kafka, config(), false, clientLoggerStub());
     const joining = member.joined(60000);
 
@@ -99,7 +103,7 @@ describe('KafkaGroupMember.joined', () => {
   });
 
   it('still resolves joined when the assignment arrives before any authorization failure', async () => {
-    const kafka = kafkaStub(consumerStub(adminStub()));
+    const kafka = kafkaStub(adminStub());
     const member = new KafkaGroupMember(kafka, config(), false, clientLoggerStub());
 
     await rebalanceCallback(kafka)({ code: -175 }, [{ topic: 't', partition: 0 }]);
@@ -110,7 +114,7 @@ describe('KafkaGroupMember.joined', () => {
 
   it('explains the timeout without blaming authorization', async () => {
     jest.useFakeTimers();
-    const kafka = kafkaStub(consumerStub(adminStub()));
+    const kafka = kafkaStub(adminStub());
     const member = new KafkaGroupMember(kafka, config(), false, clientLoggerStub());
 
     const assertion = expect(member.joined(1000)).rejects.toThrow(
@@ -124,7 +128,7 @@ describe('KafkaGroupMember.joined', () => {
 
   it('ignores a revocation', async () => {
     jest.useFakeTimers();
-    const kafka = kafkaStub(consumerStub(adminStub()));
+    const kafka = kafkaStub(adminStub());
     const member = new KafkaGroupMember(kafka, config(), false, clientLoggerStub());
 
     await rebalanceCallback(kafka)({ code: -174 }, [{ topic: 't', partition: 0 }]);
@@ -138,7 +142,7 @@ describe('KafkaGroupMember.joined', () => {
 
   it('rejects naming the group when no assignment arrives in time', async () => {
     jest.useFakeTimers();
-    const kafka = kafkaStub(consumerStub(adminStub()));
+    const kafka = kafkaStub(adminStub());
     const member = new KafkaGroupMember(kafka, config(), false, clientLoggerStub());
 
     const assertion = expect(member.joined(1000)).rejects.toThrow(
@@ -158,8 +162,7 @@ describe('KafkaGroupMember start offset pinning', () => {
     admin.fetchTopicOffsets.mockResolvedValue([
       { partition: 0, high: '42', low: '0', offset: '42' },
     ]);
-    const consumer = consumerStub(admin);
-    const kafka = kafkaStub(consumer);
+    const kafka = kafkaStub(admin);
     const member = new KafkaGroupMember(kafka, config(), true, clientLoggerStub());
 
     const result = await rebalanceCallback(kafka)({ code: -175 }, [{ topic: 't', partition: 0 }]);
@@ -173,8 +176,7 @@ describe('KafkaGroupMember start offset pinning', () => {
     admin.fetchOffsets.mockResolvedValue([
       { topic: 't', partitions: [{ partition: 0, offset: '7' }] },
     ]);
-    const consumer = consumerStub(admin);
-    const kafka = kafkaStub(consumer);
+    const kafka = kafkaStub(admin);
     const member = new KafkaGroupMember(kafka, config(), true, clientLoggerStub());
 
     const result = await rebalanceCallback(kafka)({ code: -175 }, [{ topic: 't', partition: 0 }]);
@@ -188,8 +190,7 @@ describe('KafkaGroupMember start offset pinning', () => {
     admin.fetchOffsets.mockResolvedValue([
       { topic: 't', partitions: [{ partition: 0, offset: '0' }] },
     ]);
-    const consumer = consumerStub(admin);
-    const kafka = kafkaStub(consumer);
+    const kafka = kafkaStub(admin);
     const member = new KafkaGroupMember(kafka, config(), true, clientLoggerStub());
 
     const result = await rebalanceCallback(kafka)({ code: -175 }, [{ topic: 't', partition: 0 }]);
@@ -200,14 +201,27 @@ describe('KafkaGroupMember start offset pinning', () => {
 
   it('leaves start offsets to the client when not startAtLogEnd', async () => {
     const admin = adminStub();
-    const consumer = consumerStub(admin);
-    const kafka = kafkaStub(consumer);
+    const kafka = kafkaStub(admin);
     const member = new KafkaGroupMember(kafka, config(), false, clientLoggerStub());
 
     const result = await rebalanceCallback(kafka)({ code: -175 }, [{ topic: 't', partition: 0 }]);
 
     expect(result).toBeUndefined();
     expect(admin.fetchOffsets).not.toHaveBeenCalled();
+  });
+
+  it('reads start offsets through its own admin client, never through the consumer', async () => {
+    const admin = adminStub();
+    admin.fetchOffsets.mockResolvedValue([
+      { topic: 't', partitions: [{ partition: 0, offset: '7' }] },
+    ]);
+    const consumer = consumerStub();
+    const kafka = kafkaStub(admin, consumer);
+    new KafkaGroupMember(kafka, config(), true, clientLoggerStub());
+
+    await rebalanceCallback(kafka)({ code: -175 }, [{ topic: 't', partition: 0 }]);
+
+    expect(consumer.dependentAdmin).not.toHaveBeenCalled();
   });
 
   it('disconnects the admin after reading log ends', async () => {
@@ -218,8 +232,7 @@ describe('KafkaGroupMember start offset pinning', () => {
     admin.fetchTopicOffsets.mockResolvedValue([
       { partition: 0, high: '42', low: '0', offset: '42' },
     ]);
-    const consumer = consumerStub(admin);
-    const kafka = kafkaStub(consumer);
+    const kafka = kafkaStub(admin);
     const member = new KafkaGroupMember(kafka, config(), true, clientLoggerStub());
 
     await rebalanceCallback(kafka)({ code: -175 }, [{ topic: 't', partition: 0 }]);
@@ -242,8 +255,7 @@ describe('KafkaGroupMember pin failure fallback', () => {
   it('still resolves joined when pinning fails', async () => {
     const admin = adminStub();
     admin.fetchOffsets.mockRejectedValue(new Error('broker unreachable'));
-    const consumer = consumerStub(admin);
-    const kafka = kafkaStub(consumer);
+    const kafka = kafkaStub(admin);
     const member = new KafkaGroupMember(kafka, config(), true, clientLoggerStub());
 
     await rebalanceCallback(kafka)({ code: -175 }, [{ topic: 't', partition: 0 }]);
@@ -255,8 +267,7 @@ describe('KafkaGroupMember pin failure fallback', () => {
   it('disconnects the admin when connect fails', async () => {
     const admin = adminStub();
     admin.connect.mockRejectedValue(new Error('connection refused'));
-    const consumer = consumerStub(admin);
-    const kafka = kafkaStub(consumer);
+    const kafka = kafkaStub(admin);
     const member = new KafkaGroupMember(kafka, config(), true, clientLoggerStub());
 
     await rebalanceCallback(kafka)({ code: -175 }, [{ topic: 't', partition: 0 }]);
@@ -271,8 +282,7 @@ describe('KafkaGroupMember pin failure fallback', () => {
       { topic: 't', partitions: [{ partition: 0, offset: '-1' }] },
     ]);
     admin.fetchTopicOffsets.mockResolvedValue([]);
-    const consumer = consumerStub(admin);
-    const kafka = kafkaStub(consumer);
+    const kafka = kafkaStub(admin);
     const member = new KafkaGroupMember(kafka, config(), true, clientLoggerStub());
 
     const result = await rebalanceCallback(kafka)({ code: -175 }, [{ topic: 't', partition: 0 }]);
@@ -280,5 +290,44 @@ describe('KafkaGroupMember pin failure fallback', () => {
     expect(result).toBeUndefined();
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('t:0'));
     await expect(member.joined(1000)).resolves.toBeUndefined();
+  });
+
+  it('falls back to the client default when pinning outlasts the pin timeout', async () => {
+    const admin = adminStub();
+    admin.connect.mockReturnValue(new Promise(() => undefined));
+    const kafka = kafkaStub(admin);
+    const member = new KafkaGroupMember(kafka, config(), true, clientLoggerStub(), 20);
+
+    const result = await rebalanceCallback(kafka)({ code: -175 }, [{ topic: 't', partition: 0 }]);
+
+    expect(result).toBeUndefined();
+    await expect(member.joined(1000)).resolves.toBeUndefined();
+  });
+
+  it('warns naming the group and the pin timeout when pinning outlasts it', async () => {
+    const admin = adminStub();
+    admin.connect.mockReturnValue(new Promise(() => undefined));
+    const kafka = kafkaStub(admin);
+    new KafkaGroupMember(kafka, config(), true, clientLoggerStub(), 20);
+
+    await rebalanceCallback(kafka)({ code: -175 }, [{ topic: 't', partition: 0 }]);
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringMatching(/Consumer group "g".*timed out after 20 ms/),
+    );
+  });
+
+  it('returns the pinned offsets when pinning finishes within the pin timeout', async () => {
+    const admin = adminStub();
+    admin.fetchOffsets.mockResolvedValue([
+      { topic: 't', partitions: [{ partition: 0, offset: '7' }] },
+    ]);
+    const kafka = kafkaStub(admin);
+    new KafkaGroupMember(kafka, config(), true, clientLoggerStub(), 1000);
+
+    const result = await rebalanceCallback(kafka)({ code: -175 }, [{ topic: 't', partition: 0 }]);
+
+    expect(result).toEqual([{ topic: 't', partition: 0, offset: 7 }]);
+    expect(warn).not.toHaveBeenCalled();
   });
 });

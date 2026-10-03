@@ -16,6 +16,7 @@ module.exports = {
       preset: 'ts-jest',
       testEnvironment: 'node',
       testMatch: ['<rootDir>/test/integration/**/*.int-spec.ts'],
+      setupFilesAfterEnv: ['<rootDir>/test/integration/client-debug.setup.ts'],
       moduleNameMapper,
     },
   ],
