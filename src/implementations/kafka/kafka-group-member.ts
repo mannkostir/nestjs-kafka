@@ -48,7 +48,7 @@ export class KafkaGroupMember {
   public readonly consumer: KafkaJS.Consumer;
 
   constructor(
-    kafka: KafkaJS.Kafka,
+    private readonly kafka: KafkaJS.Kafka,
     config: KafkaJS.ConsumerConfig,
     private readonly startAtLogEnd: boolean,
     clientLogger: KafkaJS.Logger,
@@ -113,7 +113,7 @@ export class KafkaGroupMember {
   private async pinnedToStartOffsets(
     assignment: KafkaJS.TopicPartition[],
   ): Promise<RdKafka.TopicPartitionOffset[]> {
-    const admin = this.consumer.dependentAdmin();
+    const admin = this.kafka.admin();
 
     try {
       await admin.connect();
