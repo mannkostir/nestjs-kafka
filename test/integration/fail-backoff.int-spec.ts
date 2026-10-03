@@ -68,6 +68,11 @@ describe('fail policy backoff', () => {
 
   beforeAll(async () => {
     broker = await startBroker();
+    await broker.createTopics([
+      'shipments.growing-backoff',
+      'shipments.recovering',
+      'shipments.shutdown',
+    ]);
   });
 
   afterAll(async () => {

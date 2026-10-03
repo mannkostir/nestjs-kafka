@@ -50,7 +50,7 @@ describe('dead letter routing', () => {
     const admin = kafka.admin();
     await admin.connect();
     await admin.createTopics({
-      topics: [{ topic: 'payments.created.dlq' }],
+      topics: [{ topic: 'payments.created' }, { topic: 'payments.created.dlq' }],
       timeout: 30000,
     });
     await admin.disconnect();
