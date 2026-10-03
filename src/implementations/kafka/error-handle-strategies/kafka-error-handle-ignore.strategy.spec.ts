@@ -17,6 +17,12 @@ const batchPayload = () =>
   }) as unknown as KafkaJS.EachBatchPayload;
 
 describe('KafkaErrorHandleIgnoreStrategy', () => {
+  it('publishes failed records nowhere', () => {
+    const strategy = new KafkaErrorHandleIgnoreStrategy();
+
+    expect(strategy.destinationTopics(['orders.created'])).toEqual([]);
+  });
+
   it('resolves the offset so the failed record is not redelivered', async () => {
     const strategy = new KafkaErrorHandleIgnoreStrategy();
     const payload = batchPayload();

@@ -67,6 +67,10 @@ Without `topic`, the destination is the source topic plus a `.dlq` suffix — `o
 `orders.created.dlq`. How DLQ topics are namespaced and created is described in
 [Topics and namespacing](topics-and-namespacing.md#dlq-topics).
 
+If the DLQ publish fails, the offset is not resolved and the record is redelivered. A publish to a
+missing DLQ topic fails only after about 30 seconds (see [Producing](producing.md#topic)), so each
+redelivery stalls the partition for that long.
+
 The original headers are preserved, and these are added:
 
 | Header | Value |

@@ -54,6 +54,19 @@ send the header once per value.
 ## Topic
 
 Topics are namespace-prefixed as described in [Topics and namespacing](topics-and-namespacing.md)
-unless `options.namespaced` is `false`. The underlying producer is created with
-`allowAutoTopicCreation: true`, so a missing topic is created on first send when the broker allows
-auto-creation.
+unless `options.namespaced` is `false`.
+
+The producer does not create topics by default. A send to a missing topic rejects with a
+`KafkaJSProtocolError` whose `code` is `ERR_UNKNOWN_TOPIC_OR_PART` (`Broker: Unknown topic or
+partition`), and only after about 30 seconds, while librdkafka waits for the topic to appear in
+metadata (`topic.metadata.propagation.max.ms`).
+
+```ts
+KafkaModule.register({
+  clientOptions: { kafkaJS: { brokers: ['localhost:9092'] } },
+  producer: { allowAutoTopicCreation: true },
+});
+```
+
+With `producer: { allowAutoTopicCreation: true }`, the producer asks the broker to create a missing
+topic on its first send, which works only when the broker has `auto.create.topics.enable=true`.

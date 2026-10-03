@@ -1,3 +1,4 @@
+import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { KafkaContainer, StartedKafkaContainer } from '@testcontainers/kafka';
 
 const KAFKA_IMAGE = 'confluentinc/cp-kafka:7.6.1';
@@ -5,7 +6,26 @@ const KAFKA_CLIENT_PORT = 9093;
 
 export type StartedBroker = {
   brokers: string[];
+  createTopics(topics: string[]): Promise<void>;
+  listTopics(): Promise<string[]>;
   stop(): Promise<void>;
+};
+
+const withAdmin = async <T>(
+  brokers: string[],
+  work: (admin: KafkaJS.Admin) => Promise<T>,
+): Promise<T> => {
+  const admin = new KafkaJS.Kafka({
+    kafkaJS: { clientId: 'broker-admin', brokers, logLevel: KafkaJS.logLevel.NOTHING },
+  }).admin();
+
+  await admin.connect();
+
+  try {
+    return await work(admin);
+  } finally {
+    await admin.disconnect();
+  }
 };
 
 export async function startBroker(): Promise<StartedBroker> {
@@ -13,10 +33,17 @@ export async function startBroker(): Promise<StartedBroker> {
     .withKraft()
     .start();
 
+  const brokers = [
+    `${container.getHost()}:${container.getMappedPort(KAFKA_CLIENT_PORT)}`,
+  ];
+
   return {
-    brokers: [
-      `${container.getHost()}:${container.getMappedPort(KAFKA_CLIENT_PORT)}`,
-    ],
+    brokers,
+    createTopics: (topics) =>
+      withAdmin(brokers, async (admin) => {
+        await admin.createTopics({ topics: topics.map((topic) => ({ topic })), timeout: 30000 });
+      }),
+    listTopics: () => withAdmin(brokers, (admin) => admin.listTopics()),
     stop: () => container.stop().then(() => undefined),
   };
 }

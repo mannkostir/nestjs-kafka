@@ -89,6 +89,7 @@ describe('message formats', () => {
 
   beforeAll(async () => {
     broker = await startBroker();
+    await broker.createTopics(['inventory.adjusted', 'invoices.issued']);
     kafka = new KafkaJS.Kafka({ kafkaJS: { clientId: 'formats-producer', brokers: broker.brokers } });
 
     await startApp('formats-raw', broker.brokers, [InventoryHandler, InvoiceWireObserver]);

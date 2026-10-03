@@ -20,6 +20,27 @@ const producerStub = () =>
   ({ send: jest.fn().mockResolvedValue([]) }) as unknown as KafkaJS.Producer;
 
 describe('KafkaErrorHandleDlqStrategy', () => {
+  it('names the suffixed dead letter topic of every source topic as a destination', () => {
+    const strategy = new KafkaErrorHandleDlqStrategy(producerStub());
+
+    expect(strategy.destinationTopics(['orders.created', 'orders.updated'])).toEqual([
+      'orders.created.dlq',
+      'orders.updated.dlq',
+    ]);
+  });
+
+  it('names only the explicitly configured dead letter topic as a destination', () => {
+    const strategy = new KafkaErrorHandleDlqStrategy(producerStub(), 'parking.lot');
+
+    expect(strategy.destinationTopics(['orders.created', 'orders.updated'])).toEqual(['parking.lot']);
+  });
+
+  it('names the explicitly configured dead letter topic even without source topics', () => {
+    const strategy = new KafkaErrorHandleDlqStrategy(producerStub(), 'parking.lot');
+
+    expect(strategy.destinationTopics([])).toEqual(['parking.lot']);
+  });
+
   it('publishes to the suffixed dead letter topic by default', async () => {
     const producer = producerStub();
     const strategy = new KafkaErrorHandleDlqStrategy(producer);

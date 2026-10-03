@@ -15,6 +15,7 @@ class LateTopicHandler {
   @Message(['shipments.created'], {
     groupId: 'late-topic',
     errorHandling: { type: 'fail' },
+    consumer: { allowAutoTopicCreation: true },
   })
   async handle(message: MessageType): Promise<void> {
     shipped.push(message);
@@ -45,6 +46,34 @@ class HealthyNeighbourHandler {
   @Message(['payouts.created'], {
     groupId: 'healthy-neighbour',
     errorHandling: { type: 'fail' },
+  })
+  async handle(_message: MessageType): Promise<void> {}
+}
+
+@Injectable()
+class DefaultTopicHandler {
+  @Message(['returns.created'], {
+    groupId: 'default-topic',
+    errorHandling: { type: 'fail' },
+  })
+  async handle(_message: MessageType): Promise<void> {}
+}
+
+@Injectable()
+class MissingDeadLetterHandler {
+  @Message(['chargebacks.created'], {
+    groupId: 'missing-dead-letter',
+    errorHandling: { type: 'dlq' },
+  })
+  async handle(_message: MessageType): Promise<void> {}
+}
+
+@Injectable()
+class CreatedDeadLetterHandler {
+  @Message(['disputes.created'], {
+    groupId: 'created-dead-letter',
+    errorHandling: { type: 'dlq' },
+    consumer: { allowAutoTopicCreation: true },
   })
   async handle(_message: MessageType): Promise<void> {}
 }
@@ -142,8 +171,84 @@ describe('topic provisioning', () => {
     });
   });
 
+  describe('a handler on a missing topic without opting in to creation', () => {
+    it('fails bootstrap and leaves the topic uncreated', async () => {
+      @Module({
+        imports: [
+          KafkaModule.register({
+            clientOptions: { kafkaJS: { clientId: 'default-topic', brokers: broker.brokers } },
+          }),
+        ],
+        providers: [DefaultTopicHandler],
+      })
+      class DefaultTopicModule {}
+
+      const moduleRef = await Test.createTestingModule({
+        imports: [DefaultTopicModule],
+      }).compile();
+
+      await expect(moduleRef.init()).rejects.toThrow(
+        /Topic\(s\) returns\.created do not exist and allowAutoTopicCreation is false/,
+      );
+      expect(await broker.listTopics()).not.toContain('returns.created');
+    });
+  });
+
+  describe('a dead letter handler whose dead letter topic does not exist', () => {
+    it('fails bootstrap naming the dead letter topic', async () => {
+      await broker.createTopics(['chargebacks.created']);
+
+      @Module({
+        imports: [
+          KafkaModule.register({
+            clientOptions: { kafkaJS: { clientId: 'missing-dead-letter', brokers: broker.brokers } },
+          }),
+        ],
+        providers: [MissingDeadLetterHandler],
+      })
+      class MissingDeadLetterModule {}
+
+      const moduleRef = await Test.createTestingModule({
+        imports: [MissingDeadLetterModule],
+      }).compile();
+
+      await expect(moduleRef.init()).rejects.toThrow(
+        /Topic\(s\) chargebacks\.created\.dlq do not exist and allowAutoTopicCreation is false/,
+      );
+      expect(await broker.listTopics()).not.toContain('chargebacks.created.dlq');
+    });
+  });
+
+  describe('a dead letter handler that opts in to topic creation', () => {
+    it('creates the dead letter topic at bootstrap', async () => {
+      @Module({
+        imports: [
+          KafkaModule.register({
+            clientOptions: { kafkaJS: { clientId: 'created-dead-letter', brokers: broker.brokers } },
+          }),
+        ],
+        providers: [CreatedDeadLetterHandler],
+      })
+      class CreatedDeadLetterModule {}
+
+      const moduleRef = await Test.createTestingModule({
+        imports: [CreatedDeadLetterModule],
+      }).compile();
+
+      await moduleRef.init();
+
+      try {
+        expect(await broker.listTopics()).toContain('disputes.created.dlq');
+      } finally {
+        await moduleRef.close();
+      }
+    }, 60000);
+  });
+
   describe('a healthy handler next to one that forbids topic creation', () => {
     it('releases the healthy handler\'s consumer once bootstrap fails', async () => {
+      await broker.createTopics(['payouts.created']);
+
       @Module({
         imports: [
           KafkaModule.register({

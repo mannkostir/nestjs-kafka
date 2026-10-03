@@ -17,6 +17,14 @@ export class KafkaErrorHandleDlqStrategy extends KafkaErrorHandleStrategy {
         super();
     }
 
+    public destinationTopics(sourceTopics: string[]): string[] {
+        if (this.dlqTopic) {
+            return [this.dlqTopic];
+        }
+
+        return sourceTopics.map((topic) => this.resolveDlqTopic(topic));
+    }
+
     private resolveDlqTopic(originalTopic: string): string {
         return this.dlqTopic || `${originalTopic}${KafkaErrorHandleDlqStrategy.DEFAULT_DLQ_SUFFIX}`;
     }
