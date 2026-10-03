@@ -7,9 +7,15 @@ describe('ResolvedConsumerConfig', () => {
     expect(config.clientConfig('group')).toEqual({
       groupId: 'group',
       fromBeginning: false,
-      allowAutoTopicCreation: true,
+      allowAutoTopicCreation: false,
       retry: {},
     });
+  });
+
+  it('does not allow automatic topic creation unless opted in', () => {
+    const config = ResolvedConsumerConfig.resolve({ fromBeginning: true }, { sessionTimeout: 45000 });
+
+    expect(config.allowAutoTopicCreation).toBe(false);
   });
 
   it('omits unset fields from the client config', () => {

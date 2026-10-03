@@ -18,13 +18,23 @@ const provisionerStub = () => ({
   assertExisting: jest.fn().mockResolvedValue(undefined),
 });
 
+const producerStub = () =>
+  ({ send: jest.fn().mockResolvedValue([]) }) as unknown as KafkaJS.Producer;
+
+const existingTopics = [
+  'orders.created',
+  'dev.orders.created',
+  'parking.lot',
+  'dev.parking.lot',
+];
+
 const kafkaStub = (consumer: ReturnType<typeof consumerStub>) => {
   const kafka = {
     consumer: jest.fn().mockReturnValue(consumer),
     admin: jest.fn().mockReturnValue({
       connect: jest.fn().mockResolvedValue(undefined),
       disconnect: jest.fn().mockResolvedValue(undefined),
-      listTopics: jest.fn().mockResolvedValue([]),
+      listTopics: jest.fn().mockResolvedValue(existingTopics),
       createTopics: jest.fn().mockResolvedValue(true),
       fetchTopicMetadata: jest.fn(async ({ topics }: { topics: string[] }) =>
         topics.map((name) => ({ name, partitions: [{ partitionId: 0, leader: 1 }] })),
@@ -96,7 +106,7 @@ describe('KafkaConsumer configuration precedence', () => {
 
     expect(consumerConfig(kafka)).toEqual(
       expect.objectContaining({
-        allowAutoTopicCreation: true,
+        allowAutoTopicCreation: false,
         fromBeginning: false,
       }),
     );
@@ -562,12 +572,112 @@ describe('KafkaConsumer topic provisioning', () => {
       namespacer: new TopicNamespacer('dev'),
       topicProvisioner: topicProvisioner as unknown as KafkaTopicProvisioner,
     }).subscribe(
-      { ...subscription(), topicPatterns: ['orders.created', /^audit\..+/] },
+      {
+        ...subscription(),
+        topicPatterns: ['orders.created', /^audit\..+/],
+        consumer: { allowAutoTopicCreation: true },
+      },
       jest.fn(),
       'orders-service',
     );
 
     expect(topicProvisioner.createMissing).toHaveBeenCalledWith(['dev.orders.created']);
+  });
+
+  it('only checks existence by default', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+    const topicProvisioner = provisionerStub();
+
+    await new KafkaConsumer(kafka, {
+      topicProvisioner: topicProvisioner as unknown as KafkaTopicProvisioner,
+    }).subscribe(subscription(), jest.fn(), 'orders-service');
+
+    expect(topicProvisioner.assertExisting).toHaveBeenCalledWith(['orders.created']);
+    expect(topicProvisioner.createMissing).not.toHaveBeenCalled();
+  });
+
+  it('creates the derived dead letter topics of the string topics alongside them', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+    const topicProvisioner = provisionerStub();
+
+    await new KafkaConsumer(kafka, {
+      namespace: 'dev',
+      namespacer: new TopicNamespacer('dev'),
+      topicProvisioner: topicProvisioner as unknown as KafkaTopicProvisioner,
+      producer: producerStub(),
+    }).subscribe(
+      {
+        ...subscription(),
+        topicPatterns: ['orders.created', /^audit\..+/],
+        errorHandling: { type: 'dlq' as const },
+        consumer: { allowAutoTopicCreation: true },
+      },
+      jest.fn(),
+      'orders-service',
+    );
+
+    expect(topicProvisioner.createMissing).toHaveBeenCalledWith([
+      'dev.orders.created',
+      'dev.orders.created.dlq',
+    ]);
+  });
+
+  it('checks the explicitly configured dead letter topic exists alongside the string topics', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+    const topicProvisioner = provisionerStub();
+
+    await new KafkaConsumer(kafka, {
+      namespace: 'dev',
+      namespacer: new TopicNamespacer('dev'),
+      topicProvisioner: topicProvisioner as unknown as KafkaTopicProvisioner,
+      producer: producerStub(),
+    }).subscribe(
+      { ...subscription(), errorHandling: { type: 'dlq' as const, topic: 'parking.lot' } },
+      jest.fn(),
+      'orders-service',
+    );
+
+    expect(topicProvisioner.assertExisting).toHaveBeenCalledWith([
+      'dev.orders.created',
+      'dev.parking.lot',
+    ]);
+  });
+
+  it('derives no dead letter topic from a pattern subscription', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+    const topicProvisioner = provisionerStub();
+
+    await new KafkaConsumer(kafka, {
+      topicProvisioner: topicProvisioner as unknown as KafkaTopicProvisioner,
+      producer: producerStub(),
+    }).subscribe(
+      { ...subscription(), topicPatterns: [/^audit\..+/], errorHandling: { type: 'dlq' as const } },
+      jest.fn(),
+      'orders-service',
+    );
+
+    expect(topicProvisioner.assertExisting).toHaveBeenCalledWith([]);
+  });
+
+  it('provisions a dead letter topic that is also a source topic once', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+    const topicProvisioner = provisionerStub();
+
+    await new KafkaConsumer(kafka, {
+      topicProvisioner: topicProvisioner as unknown as KafkaTopicProvisioner,
+      producer: producerStub(),
+    }).subscribe(
+      { ...subscription(), errorHandling: { type: 'dlq' as const, topic: 'orders.created' } },
+      jest.fn(),
+      'orders-service',
+    );
+
+    expect(topicProvisioner.assertExisting).toHaveBeenCalledWith(['orders.created']);
   });
 
   it('only checks existence when auto topic creation is disabled', async () => {

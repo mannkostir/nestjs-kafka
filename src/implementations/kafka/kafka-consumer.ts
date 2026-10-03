@@ -93,10 +93,12 @@ export class KafkaConsumer<
       (pattern): pattern is string => typeof pattern === 'string',
     );
 
+    const requiredTopics = [...new Set([...topicNames, ...errorStrategy.destinationTopics(topicNames)])];
+
     if (config.allowAutoTopicCreation) {
-      await this.topicProvisioner.createMissing(topicNames);
+      await this.topicProvisioner.createMissing(requiredTopics);
     } else {
-      await this.topicProvisioner.assertExisting(topicNames);
+      await this.topicProvisioner.assertExisting(requiredTopics);
     }
 
     const groupId = [this.namespace, consumerGroupId].filter(Boolean).join('-');

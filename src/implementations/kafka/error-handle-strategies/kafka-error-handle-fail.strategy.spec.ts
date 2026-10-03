@@ -24,6 +24,12 @@ const redeliveryStub = () =>
   };
 
 describe('KafkaErrorHandleFailStrategy', () => {
+  it('publishes failed records nowhere', () => {
+    const strategy = new KafkaErrorHandleFailStrategy();
+
+    expect(strategy.destinationTopics(['orders.created'])).toEqual([]);
+  });
+
   it('rethrows the error so the client stops the batch', async () => {
     const strategy = new KafkaErrorHandleFailStrategy();
     const payload = batchPayload();
