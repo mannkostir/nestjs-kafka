@@ -6,6 +6,7 @@ import type {
 } from '@nestjs/common';
 import type { KafkaJS } from '@confluentinc/kafka-javascript';
 import { ConsumerConfig } from './consumer-config.type.js';
+import { ProducerConfig } from './producer-config.type.js';
 import { MessageFormat } from './message-format.type.js';
 
 export type SchemaRegistryOptions = {
@@ -20,6 +21,7 @@ export type KafkaModuleOptions = {
     url: string;
   };
   consumerDefaults?: ConsumerConfig;
+  producer?: ProducerConfig;
   messageFormat?: MessageFormat;
 };
 
