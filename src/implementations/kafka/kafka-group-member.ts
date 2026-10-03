@@ -5,6 +5,8 @@ import { JoinFailureDetector } from './join-failure-detector.js';
 
 type RebalanceEvent = { code: number };
 
+const DEFAULT_PIN_TIMEOUT_MS = 10000;
+
 export class KafkaGroupMember {
   private readonly logger = new Logger(KafkaGroupMember.name);
 
@@ -31,7 +33,7 @@ export class KafkaGroupMember {
         return undefined;
       }
 
-      return await this.pinnedToStartOffsets(assignment);
+      return await this.withinPinTimeout(this.pinnedToStartOffsets(assignment));
     } catch (error) {
       this.logger.warn(
         `Consumer group "${this.groupId}" failed to pin start offsets for its new assignment; ` +
@@ -50,6 +52,7 @@ export class KafkaGroupMember {
     config: KafkaJS.ConsumerConfig,
     private readonly startAtLogEnd: boolean,
     clientLogger: KafkaJS.Logger,
+    private readonly pinTimeoutMs: number = DEFAULT_PIN_TIMEOUT_MS,
   ) {
     this.groupId = config.groupId;
     this.joinFailureDetector = new JoinFailureDetector(clientLogger);
@@ -85,6 +88,23 @@ export class KafkaGroupMember {
 
     try {
       await Promise.race([this.firstAssignment, refusal, expiry]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  private async withinPinTimeout<T>(pinning: Promise<T>): Promise<T> {
+    let timer: NodeJS.Timeout | undefined;
+
+    const expiry = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`Pinning start offsets timed out after ${this.pinTimeoutMs} ms.`)),
+        this.pinTimeoutMs,
+      );
+    });
+
+    try {
+      return await Promise.race([pinning, expiry]);
     } finally {
       clearTimeout(timer);
     }

@@ -281,4 +281,46 @@ describe('KafkaGroupMember pin failure fallback', () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('t:0'));
     await expect(member.joined(1000)).resolves.toBeUndefined();
   });
+
+  it('falls back to the client default when pinning outlasts the pin timeout', async () => {
+    const admin = adminStub();
+    admin.connect.mockReturnValue(new Promise(() => undefined));
+    const consumer = consumerStub(admin);
+    const kafka = kafkaStub(consumer);
+    const member = new KafkaGroupMember(kafka, config(), true, clientLoggerStub(), 20);
+
+    const result = await rebalanceCallback(kafka)({ code: -175 }, [{ topic: 't', partition: 0 }]);
+
+    expect(result).toBeUndefined();
+    await expect(member.joined(1000)).resolves.toBeUndefined();
+  });
+
+  it('warns naming the group and the pin timeout when pinning outlasts it', async () => {
+    const admin = adminStub();
+    admin.connect.mockReturnValue(new Promise(() => undefined));
+    const consumer = consumerStub(admin);
+    const kafka = kafkaStub(consumer);
+    new KafkaGroupMember(kafka, config(), true, clientLoggerStub(), 20);
+
+    await rebalanceCallback(kafka)({ code: -175 }, [{ topic: 't', partition: 0 }]);
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringMatching(/Consumer group "g".*timed out after 20 ms/),
+    );
+  });
+
+  it('returns the pinned offsets when pinning finishes within the pin timeout', async () => {
+    const admin = adminStub();
+    admin.fetchOffsets.mockResolvedValue([
+      { topic: 't', partitions: [{ partition: 0, offset: '7' }] },
+    ]);
+    const consumer = consumerStub(admin);
+    const kafka = kafkaStub(consumer);
+    new KafkaGroupMember(kafka, config(), true, clientLoggerStub(), 1000);
+
+    const result = await rebalanceCallback(kafka)({ code: -175 }, [{ topic: 't', partition: 0 }]);
+
+    expect(result).toEqual([{ topic: 't', partition: 0, offset: 7 }]);
+    expect(warn).not.toHaveBeenCalled();
+  });
 });
