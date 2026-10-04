@@ -36,7 +36,7 @@ export function assertValidMessageArguments(
 function assertGroupId(handler: string, groupId: unknown): void {
   if (typeof groupId !== 'string' || groupId.length === 0) {
     throw new Error(
-      `${handler} has no "groupId" option. Set groupId to a non-empty string naming the consumer group.`,
+      `${handler} needs a "groupId" option that is a non-empty string. Set groupId to the name of the handler's consumer group.`,
     );
   }
 }
