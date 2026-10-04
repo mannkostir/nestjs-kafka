@@ -197,4 +197,4 @@ The module's `producer` option.
 `compression.codec` and `acks`. An unset field is not passed, so the client default applies. An
 unknown `compression` fails module construction. They apply to the whole producer; there is no
 per-send `acks` or `compression`. `idempotent: true` requires `acks` to be unset or `-1`; any other
-`acks` fails module initialisation when the producer connects.
+`acks` fails module construction.
