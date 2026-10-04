@@ -9,7 +9,7 @@ Decorator-driven Kafka consumers and producer for NestJS, built on
 (librdkafka). Mark any provider method with `@Message(...)`; the module discovers it on bootstrap
 and subscribes it to its own Kafka consumer.
 
-**Status: pre-1.0 (`0.3.0`).** The public API may still change between versions.
+**Status: pre-1.0 (`0.4.0`).** The public API may still change between versions.
 Integration-tested against `confluentinc/cp-kafka:7.6.1` in KRaft mode.
 
 ## Features
