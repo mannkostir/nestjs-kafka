@@ -37,15 +37,17 @@ export class KafkaProducer<TValue = unknown> extends ProducerProxy<TValue> imple
     options?: ProducerSendOptions,
   ): Promise<KafkaJS.RecordMetadata[]> {
     const namespaced = options?.namespaced ?? true;
+    const finalTopic = namespaced ? this.namespacer.apply(topic) : topic;
     const serializeStrategy = this.serializeStrategies.create(
       options?.messageFormat ?? this.messageFormat,
+      { topic: finalTopic },
     );
 
     return this.producer.send({
-      topic: namespaced ? this.namespacer.apply(topic) : topic,
+      topic: finalTopic,
       messages: [
         {
-          value: serializeStrategy.serialize(message.value),
+          value: await serializeStrategy.serialize(message.value),
           headers: message.headers,
           key: encodeKey(message.key),
         },

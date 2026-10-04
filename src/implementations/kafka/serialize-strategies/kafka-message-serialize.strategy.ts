@@ -1,3 +1,3 @@
 export abstract class KafkaMessageSerializeStrategy {
-  public abstract serialize(value: unknown): string | null;
+  public abstract serialize(value: unknown): Promise<string | Buffer | null>;
 }

@@ -143,14 +143,14 @@ describe('KafkaProducer', () => {
     expect(sentValue(producer)).toBe('{"orderId":"o-1"}');
   });
 
-  it('rejects an Avro send without producing anything', async () => {
+  it('rejects an Avro send without a schema registry and produces nothing', async () => {
     const producer = producerStub();
 
     await expect(
       new KafkaProducer(producer, new TopicNamespacer(), {
         messageFormat: MessageFormat.AVRO,
       }).send('orders.created', message()),
-    ).rejects.toThrow('Producing Avro messages is not supported yet.');
+    ).rejects.toThrow('Avro message format requires a Schema Registry.');
     expect(producer.send).not.toHaveBeenCalled();
   });
 });
