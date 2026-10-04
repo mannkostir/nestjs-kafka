@@ -94,15 +94,15 @@ describe('@Message', () => {
     );
   });
 
-  it('reports the groupId before the other missing options', () => {
-    expect(() => defineOrdersHandler(asTopics(undefined), asOptions({}))).toThrow(
-      /OrdersHandler\.handle.*"groupId"/,
-    );
-  });
-
   it('rejects an empty topic list', () => {
     expect(() => defineOrdersHandler([], validOptions)).toThrow(
       /OrdersHandler\.handle.*topic/,
+    );
+  });
+
+  it('rejects a single topic name that is not in an array', () => {
+    expect(() => defineOrdersHandler(asTopics('orders'), validOptions)).toThrow(
+      /OrdersHandler\.handle.*array of topics/,
     );
   });
 

@@ -65,8 +65,12 @@ function assertErrorHandling(handler: string, errorHandling: unknown): void {
 }
 
 function assertTopicPatterns(handler: string, topicPatterns: unknown): void {
-  const entries = Array.isArray(topicPatterns) ? topicPatterns : [topicPatterns];
-  if (!entries.some(isTopicPattern)) {
+  if (!Array.isArray(topicPatterns)) {
+    throw new Error(
+      `${handler} needs an array of topics. Pass the topic names and RegExp patterns as an array, for example @Message(['orders'], options).`,
+    );
+  }
+  if (!topicPatterns.some(isTopicPattern)) {
     throw new Error(
       `${handler} has no topic. Pass at least one non-empty topic name or RegExp pattern as the first argument of @Message.`,
     );
