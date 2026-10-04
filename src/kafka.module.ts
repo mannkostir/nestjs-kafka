@@ -26,6 +26,7 @@ import {
   TRANSPORT_CONFIG,
   TRANSPORT_NAMESPACE,
   SCHEMA_REGISTRY_OPTIONS,
+  SCHEMA_REGISTRY,
   CONSUMER_DEFAULTS,
   PRODUCER_CONFIG,
   CLIENT_LOGGER,
@@ -52,28 +53,35 @@ const kafkaProducerProvider: Provider<KafkaJS.Producer> = {
   inject: [KafkaJS.Kafka, PRODUCER_CONFIG],
 };
 
+const schemaRegistryProvider: Provider<SchemaRegistry | undefined> = {
+  provide: SCHEMA_REGISTRY,
+  useFactory: async (
+    options: SchemaRegistryOptions | undefined,
+  ): Promise<SchemaRegistry | undefined> => {
+    if (!options) {
+      return undefined;
+    }
+
+    const { SchemaRegistry } = await import('@kafkajs/confluent-schema-registry');
+
+    return new SchemaRegistry({ host: options.url });
+  },
+  inject: [SCHEMA_REGISTRY_OPTIONS],
+};
+
 const consumerProxyProvider: Provider<ConsumerProxy> = {
   provide: ConsumerProxy,
-  useFactory: async (
+  useFactory: (
     kafka: KafkaJS.Kafka,
     producer: KafkaJS.Producer,
-    schemaRegistryOptions: SchemaRegistryOptions | undefined,
+    schemaRegistry: SchemaRegistry | undefined,
     namespace: string | undefined,
     consumerDefaults: ConsumerConfig | undefined,
     namespacer: TopicNamespacer,
     clientLogger: KafkaJS.Logger | undefined,
     messageFormat: MessageFormat | undefined,
-  ) => {
-    let schemaRegistry: SchemaRegistry | undefined;
-
-    if (schemaRegistryOptions) {
-      const { SchemaRegistry } = await import('@kafkajs/confluent-schema-registry');
-      schemaRegistry = new SchemaRegistry({
-        host: schemaRegistryOptions.url,
-      });
-    }
-
-    return new KafkaConsumer(kafka, {
+  ) =>
+    new KafkaConsumer(kafka, {
       schemaRegistry,
       namespace,
       producer,
@@ -81,9 +89,8 @@ const consumerProxyProvider: Provider<ConsumerProxy> = {
       namespacer,
       clientLogger,
       messageFormat,
-    });
-  },
-  inject: [KafkaJS.Kafka, KAFKA_PRODUCER, SCHEMA_REGISTRY_OPTIONS, TRANSPORT_NAMESPACE, CONSUMER_DEFAULTS, TopicNamespacer, CLIENT_LOGGER, MESSAGE_FORMAT],
+    }),
+  inject: [KafkaJS.Kafka, KAFKA_PRODUCER, SCHEMA_REGISTRY, TRANSPORT_NAMESPACE, CONSUMER_DEFAULTS, TopicNamespacer, CLIENT_LOGGER, MESSAGE_FORMAT],
 };
 
 const topicNamespacerProvider: Provider<TopicNamespacer> = {
@@ -98,14 +105,15 @@ const producerProxyProvider: Provider<ProducerProxy> = {
     producer: KafkaJS.Producer,
     namespacer: TopicNamespacer,
     messageFormat: MessageFormat | undefined,
+    schemaRegistry: SchemaRegistry | undefined,
   ) => {
-    const proxy = new KafkaProducer(producer, namespacer, { messageFormat });
+    const proxy = new KafkaProducer(producer, namespacer, { messageFormat, schemaRegistry });
 
     await proxy.connect();
 
     return proxy;
   },
-  inject: [KAFKA_PRODUCER, TopicNamespacer, MESSAGE_FORMAT],
+  inject: [KAFKA_PRODUCER, TopicNamespacer, MESSAGE_FORMAT, SCHEMA_REGISTRY],
 };
 
 const kafkaConnectionsProvider: Provider<IReleaseConnections> = {
@@ -217,6 +225,7 @@ export class KafkaModule {
         ...createDerivedProviders(),
         kafkaProvider,
         kafkaProducerProvider,
+        schemaRegistryProvider,
         consumerProxyProvider,
         topicNamespacerProvider,
         producerProxyProvider,
@@ -238,6 +247,7 @@ export class KafkaModule {
         ...createDerivedProviders(),
         kafkaProvider,
         kafkaProducerProvider,
+        schemaRegistryProvider,
         consumerProxyProvider,
         topicNamespacerProvider,
         producerProxyProvider,

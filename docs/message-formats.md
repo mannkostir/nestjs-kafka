@@ -93,6 +93,39 @@ The handler receives the registry-decoded record as `message.value`. The record 
 same way as in JSON mode.
 
 Declaring an Avro handler without `schemaRegistry` options throws at bootstrap with a message
-naming both the option and the package to install. Producing Avro is not supported yet: a send
-whose format resolves to `MessageFormat.AVRO`, including through the module default, rejects with
-an error naming `MessageFormat.JSON` and `MessageFormat.ENVELOPED_JSON`.
+naming both the option and the package to install.
+
+### Producing Avro
+
+A send whose format resolves to `MessageFormat.AVRO`, per send or through the module default, is
+encoded through the same registry client the consumers use:
+
+```ts
+await this.producer.send(
+  'orders.created',
+  { key: 'ord_1', value: { orderId: 'ord_1', total: 4200 } },
+  { messageFormat: MessageFormat.AVRO },
+);
+```
+
+The record value is the Confluent wire format of `message.value` itself, with no `{ payload }`
+envelope; the key is encoded as in JSON mode. A `null` value is sent as a record without a value
+(a tombstone) and never touches the registry.
+
+The schema is chosen per send:
+
+- By default, the latest registered version of the subject `<topic>-value`, where `<topic>` is
+  the topic actually written to, after namespacing. With namespace `dev`, a send to
+  `orders.created` uses the subject `dev.orders.created-value`.
+- `{ subject: 'orders-value' }` uses the latest version of that subject instead.
+- `{ schemaId: 42 }` encodes with exactly that registry id.
+
+The latest version is looked up in the registry on every send that does not pass `schemaId`;
+`schemaId` skips that request. The schema must already be registered as an Avro schema: the producer
+never registers schemas.
+
+A send rejects without producing anything when the value does not match the schema, when the
+subject has no registered version, when both `schemaId` and `subject` are passed, when `schemaId`
+is not a positive integer, or when `subject` is blank. Without `schemaRegistry` options
+an Avro send rejects with a message naming both the option and the package to install.
+`schemaId` and `subject` apply only to Avro and are ignored by the JSON formats.

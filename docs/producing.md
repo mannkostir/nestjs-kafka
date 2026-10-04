@@ -10,7 +10,12 @@ Idempotence, compression and acks are producer-wide; see
 send(
   topic: string,
   message: MessageType<TValue>,
-  options?: { namespaced?: boolean; messageFormat?: MessageFormat },
+  options?: {
+    namespaced?: boolean;
+    messageFormat?: MessageFormat;
+    schemaId?: number;
+    subject?: string;
+  },
 ): Promise<unknown>;
 ```
 
@@ -45,9 +50,10 @@ The value follows the resolved format, which is `options.messageFormat`, then th
   without a value (a tombstone).
 - With `ENVELOPED_JSON` it is `{"payload":…}`, and a `null` value is written as `{"payload":null}`,
   not as a tombstone.
-- `AVRO` is not supported for producing and rejects.
+- With `AVRO` it is encoded through the schema registry, chosen by `options.schemaId`,
+  `options.subject`, or the topic name; see [Producing Avro](message-formats.md#producing-avro).
 
-A value JSON cannot encode, such as `undefined` or a function, rejects.
+With the JSON formats, a value JSON cannot encode, such as `undefined` or a function, rejects.
 
 ## Headers
 

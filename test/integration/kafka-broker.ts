@@ -47,11 +47,9 @@ const untilServingMetadata = (brokers: string[]): Promise<void> =>
     }
   });
 
-export async function startBroker(): Promise<StartedBroker> {
-  const container: StartedKafkaContainer = await new KafkaContainer(KAFKA_IMAGE)
-    .withKraft()
-    .start();
+export const kafkaContainer = (): KafkaContainer => new KafkaContainer(KAFKA_IMAGE).withKraft();
 
+export async function brokerOn(container: StartedKafkaContainer): Promise<StartedBroker> {
   const brokers = [
     `${container.getHost()}:${container.getMappedPort(KAFKA_CLIENT_PORT)}`,
   ];
@@ -70,4 +68,8 @@ export async function startBroker(): Promise<StartedBroker> {
     listTopics: () => withAdmin(brokers, (admin) => admin.listTopics()),
     stop: () => container.stop().then(() => undefined),
   };
+}
+
+export async function startBroker(): Promise<StartedBroker> {
+  return brokerOn(await kafkaContainer().start());
 }

@@ -1,4 +1,5 @@
 import type { KafkaJS } from '@confluentinc/kafka-javascript';
+import type { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
 import { MessageFormat } from '../../types/message-format.type.js';
 import { KafkaProducer } from './kafka-producer.js';
 import { TopicNamespacer } from './topic-namespacer.js';
@@ -17,6 +18,24 @@ const message = () => ({
 
 const sentValue = (producer: KafkaJS.Producer) =>
   (producer.send as jest.Mock).mock.calls[0][0].messages[0].value;
+
+const encodedAvro = Buffer.from([0, 0, 0, 0, 7, 1]);
+
+const registryStub = () =>
+  ({
+    getLatestSchemaId: jest.fn().mockResolvedValue(7),
+    encode: jest.fn().mockResolvedValue(encodedAvro),
+  }) as unknown as SchemaRegistry;
+
+const avroProducer = (
+  producer: KafkaJS.Producer,
+  schemaRegistry: SchemaRegistry,
+  namespace?: string,
+) =>
+  new KafkaProducer(producer, new TopicNamespacer(namespace), {
+    messageFormat: MessageFormat.AVRO,
+    schemaRegistry,
+  });
 
 describe('KafkaProducer', () => {
   it('sends through the injected producer', async () => {
@@ -143,14 +162,105 @@ describe('KafkaProducer', () => {
     expect(sentValue(producer)).toBe('{"orderId":"o-1"}');
   });
 
-  it('rejects an Avro send without producing anything', async () => {
+  it('rejects an Avro send without a schema registry and produces nothing', async () => {
     const producer = producerStub();
 
     await expect(
       new KafkaProducer(producer, new TopicNamespacer(), {
         messageFormat: MessageFormat.AVRO,
       }).send('orders.created', message()),
-    ).rejects.toThrow('Producing Avro messages is not supported yet.');
+    ).rejects.toThrow('Avro message format requires a Schema Registry.');
     expect(producer.send).not.toHaveBeenCalled();
+  });
+
+  it('writes the registry encoding as the value of an Avro send', async () => {
+    const producer = producerStub();
+
+    await avroProducer(producer, registryStub()).send('orders.created', message());
+
+    expect(sentValue(producer)).toBe(encodedAvro);
+  });
+
+  it('looks up the latest schema of the namespaced topic value subject by default', async () => {
+    const registry = registryStub();
+
+    await avroProducer(producerStub(), registry, 'dev').send('orders.created', message());
+
+    expect(registry.getLatestSchemaId).toHaveBeenCalledWith('dev.orders.created-value');
+  });
+
+  it('looks up the latest schema of the raw topic value subject when namespacing is opted out', async () => {
+    const registry = registryStub();
+
+    await avroProducer(producerStub(), registry, 'dev').send('partner.orders', message(), {
+      namespaced: false,
+    });
+
+    expect(registry.getLatestSchemaId).toHaveBeenCalledWith('partner.orders-value');
+  });
+
+  it('writes Avro when only the send selects the format', async () => {
+    const producer = producerStub();
+
+    await new KafkaProducer(producer, new TopicNamespacer(), {
+      schemaRegistry: registryStub(),
+    }).send('orders.created', message(), { messageFormat: MessageFormat.AVRO });
+
+    expect(sentValue(producer)).toBe(encodedAvro);
+  });
+
+  it('encodes with an explicit schema id', async () => {
+    const registry = registryStub();
+
+    await avroProducer(producerStub(), registry).send('orders.created', message(), {
+      schemaId: 42,
+    });
+
+    expect(registry.encode).toHaveBeenCalledWith(42, { orderId: 'o-1' });
+  });
+
+  it('makes no registry lookup with an explicit schema id', async () => {
+    const registry = registryStub();
+
+    await avroProducer(producerStub(), registry).send('orders.created', message(), {
+      schemaId: 42,
+    });
+
+    expect(registry.getLatestSchemaId).not.toHaveBeenCalled();
+  });
+
+  it('looks up the latest schema of an explicit subject', async () => {
+    const registry = registryStub();
+
+    await avroProducer(producerStub(), registry).send('orders.created', message(), {
+      subject: 'orders-v2',
+    });
+
+    expect(registry.getLatestSchemaId).toHaveBeenCalledWith('orders-v2');
+  });
+
+  it('rejects an Avro send with both a schema id and a subject and produces nothing', async () => {
+    const producer = producerStub();
+
+    await expect(
+      avroProducer(producer, registryStub()).send('orders.created', message(), {
+        schemaId: 42,
+        subject: 'orders-v2',
+      }),
+    ).rejects.toThrow('Avro send options "schemaId" and "subject" are mutually exclusive.');
+    expect(producer.send).not.toHaveBeenCalled();
+  });
+
+  it('sends a string key unchanged with an Avro value', async () => {
+    const producer = producerStub();
+
+    await avroProducer(producer, registryStub()).send('orders.created', {
+      ...message(),
+      key: 'order-1',
+    });
+
+    const sent = (producer.send as jest.Mock).mock.calls[0][0];
+
+    expect(sent.messages[0].key).toBe('order-1');
   });
 });

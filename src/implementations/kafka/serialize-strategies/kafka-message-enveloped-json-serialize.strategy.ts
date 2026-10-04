@@ -2,7 +2,7 @@ import { KafkaMessageSerializeStrategy } from './kafka-message-serialize.strateg
 import { encodeJson } from './encode-json.js';
 
 export class KafkaMessageEnvelopedJsonSerializeStrategy extends KafkaMessageSerializeStrategy {
-  public serialize(value: unknown): string {
+  public async serialize(value: unknown): Promise<string> {
     return `{"payload":${encodeJson(typeof value === 'string' ? encodeJson(value) : value)}}`;
   }
 }

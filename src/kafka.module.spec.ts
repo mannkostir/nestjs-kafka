@@ -219,6 +219,84 @@ describe('KafkaModule schema registry', () => {
 
     expect(SchemaRegistry).not.toHaveBeenCalled();
   });
+
+  it('constructs one schema registry for the producer and the consumer', async () => {
+    const moduleRef = await compileWith({
+      clientOptions,
+      schemaRegistry: { url: 'http://registry:8081' },
+    });
+    await moduleRef.close();
+
+    expect(SchemaRegistry).toHaveBeenCalledTimes(1);
+  });
+
+  it('constructs one schema registry when configured asynchronously', async () => {
+    const moduleRef = await compileAsyncWith({
+      clientOptions,
+      schemaRegistry: { url: 'http://registry:8081' },
+    });
+    await moduleRef.close();
+
+    expect(SchemaRegistry).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('KafkaModule avro', () => {
+  const encodedAvro = Buffer.from([0, 0, 0, 0, 7, 1]);
+
+  const registryStub = () => ({
+    getLatestSchemaId: jest.fn().mockResolvedValue(7),
+    encode: jest.fn().mockResolvedValue(encodedAvro),
+  });
+
+  const useRegistry = (registry: ReturnType<typeof registryStub>) =>
+    jest
+      .mocked(SchemaRegistry)
+      .mockImplementation(() => registry as unknown as SchemaRegistry);
+
+  const avroOptions: KafkaModuleOptions = {
+    clientOptions,
+    messageFormat: MessageFormat.AVRO,
+    schemaRegistry: { url: 'http://registry:8081' },
+  };
+
+  afterEach(() => {
+    jest.mocked(SchemaRegistry).mockReset();
+    jest.restoreAllMocks();
+  });
+
+  const produce = async (options: KafkaModuleOptions) => {
+    const producer = producerStub();
+    const moduleRef = await Test.createTestingModule({
+      imports: [KafkaModule.registerAsync({ useFactory: () => options })],
+    })
+      .overrideProvider(KAFKA_PRODUCER)
+      .useValue(producer)
+      .compile();
+
+    try {
+      await moduleRef.get(ProducerProxy).send('orders.created', {
+        key: null,
+        value: { orderId: 'o-1' },
+      });
+    } finally {
+      await moduleRef.close();
+    }
+
+    return producer.send.mock.calls[0][0].messages[0].value;
+  };
+
+  it('produces Avro through the configured schema registry', async () => {
+    useRegistry(registryStub());
+
+    expect(await produce(avroOptions)).toBe(encodedAvro);
+  });
+
+  it('rejects an Avro send when no schema registry is configured', async () => {
+    await expect(
+      produce({ clientOptions, messageFormat: MessageFormat.AVRO }),
+    ).rejects.toThrow('Avro message format requires a Schema Registry.');
+  });
 });
 
 describe('KafkaModule connections', () => {

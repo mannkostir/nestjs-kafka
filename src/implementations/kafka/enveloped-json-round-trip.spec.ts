@@ -16,7 +16,7 @@ describe('enveloped JSON round trip', () => {
   const parser = new KafkaMessageEnvelopedJsonStrategy();
 
   const roundTrip = async (value: unknown) =>
-    (await parser.parse(record(Buffer.from(serializer.serialize(value))))).value;
+    (await parser.parse(record(Buffer.from(await serializer.serialize(value))))).value;
 
   it('returns a plain string unchanged', async () => {
     expect(await roundTrip('hello')).toBe('hello');
