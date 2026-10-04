@@ -114,4 +114,37 @@ describe('ResolvedConsumerConfig', () => {
 
     expect(config.joinTimeoutMs()).toBe(65000);
   });
+
+  it('consumes one partition at a time by default', () => {
+    const config = ResolvedConsumerConfig.resolve();
+
+    expect(config.partitionsConsumedConcurrently).toBe(1);
+  });
+
+  it('applies the module default for partitions consumed concurrently', () => {
+    const config = ResolvedConsumerConfig.resolve(undefined, { partitionsConsumedConcurrently: 4 });
+
+    expect(config.partitionsConsumedConcurrently).toBe(4);
+  });
+
+  it('lets the handler value beat the module default for partitions consumed concurrently', () => {
+    const config = ResolvedConsumerConfig.resolve(
+      { partitionsConsumedConcurrently: 2 },
+      { partitionsConsumedConcurrently: 4 },
+    );
+
+    expect(config.partitionsConsumedConcurrently).toBe(2);
+  });
+
+  it('keeps partitions consumed concurrently out of the client config', () => {
+    const config = ResolvedConsumerConfig.resolve({ partitionsConsumedConcurrently: 3 });
+
+    expect(config.clientConfig('group')).not.toHaveProperty('partitionsConsumedConcurrently');
+  });
+
+  it.each([0, -1, 1.5, NaN])('rejects %p as partitions consumed concurrently', (value) => {
+    expect(() => ResolvedConsumerConfig.resolve({ partitionsConsumedConcurrently: value })).toThrow(
+      /partitionsConsumedConcurrently must be a positive integer/,
+    );
+  });
 });

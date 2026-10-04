@@ -196,4 +196,74 @@ describe('RedeliveryBackoff', () => {
 
     expect(jest.getTimerCount()).toBe(0);
   });
+
+  describe('with failures interleaved across two partitions', () => {
+    const interleave = () => {
+      const logger = stubLogger();
+      const redelivery = new RedeliveryBackoff(defaultBackoff(), logger);
+      const first = batchPayload(0, jest.fn());
+      const second = batchPayload(1, jest.fn());
+      redelivery.postpone(first, record('5'));
+      redelivery.postpone(second, record('9'));
+      redelivery.postpone(first, record('5'));
+      redelivery.postpone(second, record('9'));
+      return { logger, redelivery, first, second };
+    };
+
+    it('advances the attempt count of each partition independently', () => {
+      const { logger } = interleave();
+
+      expect(logger.warn).toHaveBeenNthCalledWith(
+        1,
+        'Pausing topic "orders.created" partition 0 for 300 ms before redelivering offset 5.',
+      );
+      expect(logger.warn).toHaveBeenNthCalledWith(
+        2,
+        'Pausing topic "orders.created" partition 1 for 300 ms before redelivering offset 9.',
+      );
+      expect(logger.warn).toHaveBeenNthCalledWith(
+        3,
+        'Pausing topic "orders.created" partition 0 for 600 ms before redelivering offset 5.',
+      );
+      expect(logger.warn).toHaveBeenNthCalledWith(
+        4,
+        'Pausing topic "orders.created" partition 1 for 600 ms before redelivering offset 9.',
+      );
+    });
+
+    it('pauses each payload only for its own failures', () => {
+      const { first, second } = interleave();
+
+      expect(first.pause).toHaveBeenCalledTimes(2);
+      expect(second.pause).toHaveBeenCalledTimes(2);
+    });
+
+    it('resumes only the partition whose delay elapsed', () => {
+      const redelivery = new RedeliveryBackoff(defaultBackoff(), stubLogger());
+      const resumeFirst = jest.fn();
+      const resumeSecond = jest.fn();
+      redelivery.postpone(batchPayload(0, resumeFirst), record('5'));
+      jest.advanceTimersByTime(100);
+      redelivery.postpone(batchPayload(1, resumeSecond), record('9'));
+
+      jest.advanceTimersByTime(200);
+
+      expect(resumeFirst).toHaveBeenCalledTimes(1);
+      expect(resumeSecond).not.toHaveBeenCalled();
+    });
+
+    it('cancels the pending resumes of both partitions when stopped', () => {
+      const redelivery = new RedeliveryBackoff(defaultBackoff(), stubLogger());
+      const resumeFirst = jest.fn();
+      const resumeSecond = jest.fn();
+      redelivery.postpone(batchPayload(0, resumeFirst), record('5'));
+      redelivery.postpone(batchPayload(1, resumeSecond), record('9'));
+
+      redelivery.stop();
+      jest.advanceTimersByTime(30000);
+
+      expect(resumeFirst).not.toHaveBeenCalled();
+      expect(resumeSecond).not.toHaveBeenCalled();
+    });
+  });
 });
