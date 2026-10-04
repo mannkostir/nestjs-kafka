@@ -11,6 +11,12 @@ describe('toClientProducerConfig', () => {
     expect(Object.keys(toClientProducerConfig({}))).toEqual(['allowAutoTopicCreation']);
   });
 
+  it('omits fields explicitly set to undefined from the client config', () => {
+    expect(
+      Object.keys(toClientProducerConfig({ idempotent: undefined, acks: undefined, compression: undefined })),
+    ).toEqual(['allowAutoTopicCreation']);
+  });
+
   it('passes auto topic creation through', () => {
     expect(toClientProducerConfig({ allowAutoTopicCreation: true })).toEqual({ allowAutoTopicCreation: true });
   });
