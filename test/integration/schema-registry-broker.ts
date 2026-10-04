@@ -2,7 +2,7 @@ import { GenericContainer, Network, Wait } from 'testcontainers';
 import { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
 import { brokerOn, kafkaContainer, StartedBroker } from './kafka-broker.js';
 
-const SCHEMA_REGISTRY_IMAGE = 'confluentinc/cp-schema-registry:7.4.0';
+const SCHEMA_REGISTRY_IMAGE = 'confluentinc/cp-schema-registry:7.6.1';
 const SCHEMA_REGISTRY_PORT = 8081;
 const KAFKA_ALIAS = 'kafka';
 const KAFKA_INTERNAL_LISTENER = `PLAINTEXT://${KAFKA_ALIAS}:9092`;

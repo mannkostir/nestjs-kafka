@@ -81,8 +81,8 @@ const refundIssuedSchema = {
   fields: [{ name: 'refundId', type: 'string' }],
 };
 
-const readFirstRawValue = async (brokers: string[], topic: string): Promise<Buffer> => {
-  const values: Buffer[] = [];
+const readFirstRawValue = async (brokers: string[], topic: string): Promise<Buffer | null> => {
+  const values: (Buffer | null)[] = [];
   const consumer = new KafkaJS.Kafka({
     kafkaJS: { clientId: 'avro-raw-reader', brokers, logLevel: KafkaJS.logLevel.NOTHING },
   }).consumer({ kafkaJS: { groupId: 'avro-raw-reader', fromBeginning: true } });
@@ -93,9 +93,7 @@ const readFirstRawValue = async (brokers: string[], topic: string): Promise<Buff
     await consumer.subscribe({ topics: [topic] });
     await consumer.run({
       eachMessage: async ({ message }) => {
-        if (message.value) {
-          values.push(message.value);
-        }
+        values.push(message.value);
       },
     });
     await waitFor(() => values.length > 0, 30000);
@@ -109,15 +107,19 @@ const readFirstRawValue = async (brokers: string[], topic: string): Promise<Buff
 describe('avro producer', () => {
   let broker: StartedSchemaRegistryBroker;
   let moduleRef: TestingModule;
-  let orderPlacedSchemaId: number;
+  let orderWireSchemaId: number;
   let paymentCapturedSchemaId: number;
 
   beforeAll(async () => {
     broker = await startSchemaRegistryBroker();
 
-    ({ id: orderPlacedSchemaId } = await broker.registry.register(
+    await broker.registry.register(
       { type: SchemaType.AVRO, schema: JSON.stringify(orderPlacedSchema) },
       { subject: `${NAMESPACE}.orders.placed-value` },
+    );
+    ({ id: orderWireSchemaId } = await broker.registry.register(
+      { type: SchemaType.AVRO, schema: JSON.stringify(orderPlacedSchema) },
+      { subject: `${NAMESPACE}.orders.wire-value` },
     ));
     ({ id: paymentCapturedSchemaId } = await broker.registry.register(
       { type: SchemaType.AVRO, schema: JSON.stringify(paymentCapturedSchema) },
@@ -130,6 +132,7 @@ describe('avro producer', () => {
 
     await broker.createTopics([
       `${NAMESPACE}.orders.placed`,
+      `${NAMESPACE}.orders.wire`,
       `${NAMESPACE}.payments.captured`,
       `${NAMESPACE}.refunds.issued`,
     ]);
@@ -172,18 +175,18 @@ describe('avro producer', () => {
   });
 
   it('writes the Confluent wire format with the registered schema id', async () => {
+    const wireHeader = Buffer.alloc(5);
+    wireHeader.writeInt32BE(orderWireSchemaId, 1);
+
     await moduleRef.get(ProducerProxy).send(
-      'orders.placed',
+      'orders.wire',
       { key: 'order-2', value: { orderId: 'order-2', total: 100 } },
       { messageFormat: MessageFormat.AVRO },
     );
 
-    const raw = await readFirstRawValue(broker.brokers, `${NAMESPACE}.orders.placed`);
+    const raw = await readFirstRawValue(broker.brokers, `${NAMESPACE}.orders.wire`);
 
-    expect({ magicByte: raw.readUInt8(0), schemaId: raw.readInt32BE(1) }).toEqual({
-      magicByte: 0,
-      schemaId: orderPlacedSchemaId,
-    });
+    expect(raw?.subarray(0, 5)).toEqual(wireHeader);
   });
 
   it('round-trips a record encoded with an explicit schema id', async () => {
