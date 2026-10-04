@@ -88,6 +88,18 @@ describe('@Message', () => {
     ).toThrow(/OrdersHandler\.handle.*topic/);
   });
 
+  it('rejects null topics', () => {
+    expect(() => defineOrdersHandler(asTopics(null), validOptions)).toThrow(
+      /OrdersHandler\.handle.*topic/,
+    );
+  });
+
+  it('reports the groupId before the other missing options', () => {
+    expect(() => defineOrdersHandler(asTopics(undefined), asOptions({}))).toThrow(
+      /OrdersHandler\.handle.*"groupId"/,
+    );
+  });
+
   it('rejects an empty topic list', () => {
     expect(() => defineOrdersHandler([], validOptions)).toThrow(
       /OrdersHandler\.handle.*topic/,

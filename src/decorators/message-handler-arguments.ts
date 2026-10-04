@@ -1,4 +1,14 @@
-const errorHandlingTypes: readonly unknown[] = ['fail', 'ignore', 'dlq'];
+import { MessageErrorHandlingConfig } from '../types/message-error-handling.type.js';
+
+const knownErrorHandlingTypes: Record<MessageErrorHandlingConfig['type'], true> = {
+  fail: true,
+  ignore: true,
+  dlq: true,
+};
+
+const errorHandlingTypes: readonly unknown[] = Object.keys(
+  knownErrorHandlingTypes,
+);
 
 const errorHandlingFix =
   "Set errorHandling to { type: 'fail' }, { type: 'ignore' } or { type: 'dlq' }.";
