@@ -125,6 +125,7 @@ The same shape is used for module-wide `consumerDefaults` and per-handler `consu
 | `heartbeatInterval` | `number` (ms) | unset — the client applies its own (currently `3000`) |
 | `sessionTimeout` | `number` (ms) | unset — the client applies its own (currently `30000`) |
 | `rebalanceTimeout` | `number` (ms) | unset — the client applies its own (currently `300000`) |
+| `partitionsConsumedConcurrently` | `number` | `1` |
 | `retry` | `KafkaJS.RetryOptions` (`@confluentinc/kafka-javascript`) | see below |
 
 `heartbeatInterval`, `sessionTimeout`, and `rebalanceTimeout` are left unset unless you set them,
@@ -133,6 +134,11 @@ so the client's own defaults apply. Keep `heartbeatInterval` well below the effe
 `max.poll.interval.ms`; bootstrap's wait for group assignment (see
 [Delivery semantics](delivery-semantics.md#bootstrap-waits-for-group-assignment)) is bounded by
 `rebalanceTimeout + sessionTimeout`.
+
+`partitionsConsumedConcurrently` is how many of a handler's assigned partitions its consumer
+processes at the same time. It must be a positive integer; anything else fails bootstrap with an
+error saying so. The effective concurrency is capped by the number of partitions assigned to that
+consumer. See [Ordering and concurrency](delivery-semantics.md#ordering-and-concurrency).
 
 `retry` is `KafkaJS.RetryOptions`: `maxRetryTime`, `initialRetryTime`, `retries`. Defaults are
 `maxRetryTime: 30000` and `initialRetryTime: 300`. `factor`, `multiplier`, and `restartOnFailure`

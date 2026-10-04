@@ -8,7 +8,7 @@ const READINESS_TIMEOUT_MS = 60000;
 
 export type StartedBroker = {
   brokers: string[];
-  createTopics(topics: string[]): Promise<void>;
+  createTopics(topics: string[], partitions?: number): Promise<void>;
   listTopics(): Promise<string[]>;
   stop(): Promise<void>;
 };
@@ -60,9 +60,12 @@ export async function startBroker(): Promise<StartedBroker> {
 
   return {
     brokers,
-    createTopics: (topics) =>
+    createTopics: (topics, partitions) =>
       withAdmin(brokers, async (admin) => {
-        await admin.createTopics({ topics: topics.map((topic) => ({ topic })), timeout: 30000 });
+        await admin.createTopics({
+          topics: topics.map((topic) => ({ topic, numPartitions: partitions })),
+          timeout: 30000,
+        });
       }),
     listTopics: () => withAdmin(brokers, (admin) => admin.listTopics()),
     stop: () => container.stop().then(() => undefined),

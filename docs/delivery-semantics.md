@@ -19,6 +19,20 @@ by the framework — that decision belongs to the
 When the consumer is stopping or its assignment has been revoked, the batch stops early and the
 remaining messages are left unresolved for redelivery.
 
+## Ordering and concurrency
+
+Ordering is guaranteed per partition only. By default a handler's consumer processes one partition
+at a time.
+
+With `partitionsConsumedConcurrently` above `1` (see [`ConsumerConfig`](configuration.md#consumerconfig)),
+batches from different partitions run concurrently, up to the number of partitions assigned to the
+consumer. Messages within one partition still reach the handler one at a time and in order, and
+nothing is ordered across partitions. The `fail` policy's backoff pauses only the failing
+partition; the others keep being processed.
+
+The value is an upper bound. Only partitions whose messages the client fetched together run
+concurrently, so right after startup or under light traffic batches can still run one at a time.
+
 ## Start offsets
 
 With `fromBeginning: false` (the default), a partition with no committed offset starts at the log
