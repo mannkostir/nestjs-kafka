@@ -17,6 +17,15 @@ async handleOrderCreated(
 
 The full option list is in [Configuration](configuration.md#message-options).
 
+## Required options
+
+Every handler needs an array of topics holding at least one non-empty topic name or `RegExp`, a
+`groupId` that is a non-empty string, and `errorHandling` whose `type` is `fail`, `ignore` or
+`dlq`; see [Error handling](error-handling.md). TypeScript checks the types. `@Message` also checks
+the values, empty ones included, when the class is defined. A JavaScript host or a cast options
+object therefore fails early, with an error naming the handler as `ClassName.methodName` and the
+option to fix.
+
 ## The message
 
 `message.value` is the decoded record value, as described in [Message formats](message-formats.md).
