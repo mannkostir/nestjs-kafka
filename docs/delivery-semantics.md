@@ -28,7 +28,8 @@ With `partitionsConsumedConcurrently` above `1` (see [`ConsumerConfig`](configur
 batches from different partitions run concurrently, up to the number of partitions assigned to the
 consumer. Messages within one partition still reach the handler one at a time and in order, and
 nothing is ordered across partitions. The `fail` policy's backoff pauses only the failing
-partition; the others keep being processed.
+partition; the others keep being processed. Because one provider instance serves every partition,
+its handler method must be safe to call concurrently.
 
 The value is an upper bound. Only partitions whose messages the client fetched together run
 concurrently, so right after startup or under light traffic batches can still run one at a time.
