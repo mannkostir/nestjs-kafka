@@ -16,6 +16,7 @@ import { KafkaConsumer } from './implementations/kafka/kafka-consumer.js';
 import { KafkaProducer } from './implementations/kafka/kafka-producer.js';
 import { ProducerProxy } from './base/producer-proxy.js';
 import { TopicNamespacer } from './implementations/kafka/topic-namespacer.js';
+import { toClientProducerConfig } from './implementations/kafka/kafka-producer-config.js';
 import type { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
 import { MessageHandlersDiscoveryService } from './services/message-handlers.discovery-service.js';
 import { KafkaConnections } from './implementations/kafka/kafka-connections.js';
@@ -42,20 +43,12 @@ const kafkaProvider: Provider<KafkaJS.Kafka> = {
   inject: [TRANSPORT_CONFIG],
 };
 
-const DEFAULT_PRODUCER_ALLOW_AUTO_TOPIC_CREATION = false;
-
 const kafkaProducerProvider: Provider<KafkaJS.Producer> = {
   provide: KAFKA_PRODUCER,
   useFactory: (
     kafka: KafkaJS.Kafka,
     producerConfig: ProducerConfig | undefined,
-  ) =>
-    kafka.producer({
-      kafkaJS: {
-        allowAutoTopicCreation:
-          producerConfig?.allowAutoTopicCreation ?? DEFAULT_PRODUCER_ALLOW_AUTO_TOPIC_CREATION,
-      },
-    }),
+  ) => kafka.producer({ kafkaJS: toClientProducerConfig(producerConfig) }),
   inject: [KafkaJS.Kafka, PRODUCER_CONFIG],
 };
 
