@@ -1,4 +1,5 @@
 import type { KafkaJS } from '@confluentinc/kafka-javascript';
+import type { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
 import { BeforeApplicationShutdown, Logger } from '@nestjs/common';
 import { ProducerProxy } from '../../base/producer-proxy.js';
 import { MessageFormat } from '../../types/message-format.type.js';
@@ -10,13 +11,14 @@ import { TopicNamespacer } from './topic-namespacer.js';
 
 export interface KafkaProducerOptions {
   messageFormat?: MessageFormat;
+  schemaRegistry?: SchemaRegistry;
 }
 
 export class KafkaProducer<TValue = unknown> extends ProducerProxy<TValue> implements BeforeApplicationShutdown {
 
   private readonly logger = new Logger(KafkaProducer.name);
   private readonly messageFormat: MessageFormat;
-  private readonly serializeStrategies = new KafkaMessageSerializeStrategyFactory();
+  private readonly serializeStrategies: KafkaMessageSerializeStrategyFactory;
 
   constructor(
     private readonly producer: KafkaJS.Producer,
@@ -25,6 +27,7 @@ export class KafkaProducer<TValue = unknown> extends ProducerProxy<TValue> imple
   ) {
     super();
     this.messageFormat = options?.messageFormat ?? MessageFormat.JSON;
+    this.serializeStrategies = new KafkaMessageSerializeStrategyFactory(options?.schemaRegistry);
   }
 
   public async connect(): Promise<void> {
@@ -40,7 +43,7 @@ export class KafkaProducer<TValue = unknown> extends ProducerProxy<TValue> imple
     const finalTopic = namespaced ? this.namespacer.apply(topic) : topic;
     const serializeStrategy = this.serializeStrategies.create(
       options?.messageFormat ?? this.messageFormat,
-      { topic: finalTopic },
+      { topic: finalTopic, schemaId: options?.schemaId, subject: options?.subject },
     );
 
     return this.producer.send({

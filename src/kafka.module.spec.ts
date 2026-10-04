@@ -11,6 +11,7 @@ import { ProducerProxy } from './base/producer-proxy.js';
 import { MessageFormat } from './types/message-format.type.js';
 import { ProducerCompression } from './types/producer-config.type.js';
 import { KafkaMessageParseStrategyFactory } from './implementations/kafka/parse-strategies/kafka-message-parse-strategy.factory.js';
+import { KafkaMessageParseStrategy } from './implementations/kafka/parse-strategies/kafka-message-parse.strategy.js';
 
 jest.mock('@kafkajs/confluent-schema-registry', () => ({
   SchemaRegistry: jest.fn(),
@@ -218,6 +219,127 @@ describe('KafkaModule schema registry', () => {
     await moduleRef.close();
 
     expect(SchemaRegistry).not.toHaveBeenCalled();
+  });
+
+  it('constructs one schema registry for the producer and the consumer', async () => {
+    const moduleRef = await compileWith({
+      clientOptions,
+      schemaRegistry: { url: 'http://registry:8081' },
+    });
+    await moduleRef.close();
+
+    expect(SchemaRegistry).toHaveBeenCalledTimes(1);
+  });
+
+  it('constructs one schema registry when configured asynchronously', async () => {
+    const moduleRef = await compileAsyncWith({
+      clientOptions,
+      schemaRegistry: { url: 'http://registry:8081' },
+    });
+    await moduleRef.close();
+
+    expect(SchemaRegistry).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('KafkaModule avro', () => {
+  const encodedAvro = Buffer.from([0, 0, 0, 0, 7, 1]);
+
+  const registryStub = () => ({
+    getLatestSchemaId: jest.fn().mockResolvedValue(7),
+    encode: jest.fn().mockResolvedValue(encodedAvro),
+    decode: jest.fn().mockResolvedValue({ orderId: 'o-1' }),
+  });
+
+  const useRegistry = (registry: ReturnType<typeof registryStub>) =>
+    jest
+      .mocked(SchemaRegistry)
+      .mockImplementation(() => registry as unknown as SchemaRegistry);
+
+  const avroOptions: KafkaModuleOptions = {
+    clientOptions,
+    messageFormat: MessageFormat.AVRO,
+    schemaRegistry: { url: 'http://registry:8081' },
+  };
+
+  afterEach(() => {
+    jest.mocked(SchemaRegistry).mockReset();
+    jest.restoreAllMocks();
+  });
+
+  const produce = async (options: KafkaModuleOptions) => {
+    const producer = producerStub();
+    const moduleRef = await Test.createTestingModule({
+      imports: [KafkaModule.registerAsync({ useFactory: () => options })],
+    })
+      .overrideProvider(KAFKA_PRODUCER)
+      .useValue(producer)
+      .compile();
+
+    try {
+      await moduleRef.get(ProducerProxy).send('orders.created', {
+        key: null,
+        value: { orderId: 'o-1' },
+      });
+    } finally {
+      await moduleRef.close();
+    }
+
+    return producer.send.mock.calls[0][0].messages[0].value;
+  };
+
+  const consumerParseStrategy = async (options: KafkaModuleOptions) => {
+    const stop = new Error('stop before connecting');
+    const create = KafkaMessageParseStrategyFactory.prototype.create;
+    const created: KafkaMessageParseStrategy[] = [];
+    jest
+      .spyOn(KafkaMessageParseStrategyFactory.prototype, 'create')
+      .mockImplementation(function (this: KafkaMessageParseStrategyFactory, format) {
+        created.push(create.call(this, format));
+        throw stop;
+      });
+    const moduleRef = await compileWith(options);
+
+    await expect(
+      moduleRef.get(ConsumerProxy).subscribe(
+        { topicPatterns: ['orders.created'], errorHandling: { type: 'ignore' } },
+        jest.fn(),
+        'orders-service',
+      ),
+    ).rejects.toBe(stop);
+    await moduleRef.close();
+
+    return created[0];
+  };
+
+  it('produces Avro through the configured schema registry', async () => {
+    useRegistry(registryStub());
+
+    expect(await produce(avroOptions)).toBe(encodedAvro);
+  });
+
+  it('consumes Avro through the configured schema registry', async () => {
+    const registry = registryStub();
+    useRegistry(registry);
+    const strategy = await consumerParseStrategy(avroOptions);
+
+    await strategy.parse({
+      key: null,
+      value: encodedAvro,
+      headers: {},
+      timestamp: '0',
+      offset: '0',
+      size: encodedAvro.length,
+      attributes: 0,
+    } as unknown as KafkaJS.KafkaMessage);
+
+    expect(registry.decode).toHaveBeenCalledWith(encodedAvro);
+  });
+
+  it('rejects an Avro send when no schema registry is configured', async () => {
+    await expect(
+      produce({ clientOptions, messageFormat: MessageFormat.AVRO }),
+    ).rejects.toThrow('Avro message format requires a Schema Registry.');
   });
 });
 
