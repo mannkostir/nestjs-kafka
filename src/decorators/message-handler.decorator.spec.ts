@@ -85,12 +85,12 @@ describe('@Message', () => {
   it('rejects undefined topics', () => {
     expect(() =>
       defineOrdersHandler(asTopics(undefined), validOptions),
-    ).toThrow(/OrdersHandler\.handle.*topic/);
+    ).toThrow(/OrdersHandler\.handle.*array of topics/);
   });
 
   it('rejects null topics', () => {
     expect(() => defineOrdersHandler(asTopics(null), validOptions)).toThrow(
-      /OrdersHandler\.handle.*topic/,
+      /OrdersHandler\.handle.*array of topics/,
     );
   });
 
@@ -107,8 +107,8 @@ describe('@Message', () => {
   });
 
   it('rejects an empty topic string', () => {
-    expect(() => defineOrdersHandler(asTopics(''), validOptions)).toThrow(
-      /OrdersHandler\.handle.*topic/,
+    expect(() => defineOrdersHandler([''], validOptions)).toThrow(
+      /OrdersHandler\.handle has no topic/,
     );
   });
 
