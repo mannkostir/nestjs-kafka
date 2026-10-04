@@ -3,6 +3,8 @@ import { ProducerCompression, ProducerConfig } from '../../types/producer-config
 
 const DEFAULT_ALLOW_AUTO_TOPIC_CREATION = false;
 
+const IDEMPOTENT_ACKS = -1;
+
 const CLIENT_COMPRESSION: Record<ProducerCompression, KafkaJS.CompressionTypes> = {
   none: KafkaJS.CompressionTypes.None,
   gzip: KafkaJS.CompressionTypes.GZIP,
@@ -25,9 +27,21 @@ const toClientCompression = (compression: string): KafkaJS.CompressionTypes => {
   return CLIENT_COMPRESSION[compression];
 };
 
-export const toClientProducerConfig = (config: ProducerConfig | undefined): KafkaJS.ProducerConfig => ({
-  allowAutoTopicCreation: config?.allowAutoTopicCreation ?? DEFAULT_ALLOW_AUTO_TOPIC_CREATION,
-  ...(config?.idempotent !== undefined && { idempotent: config.idempotent }),
-  ...(config?.acks !== undefined && { acks: config.acks }),
-  ...(config?.compression !== undefined && { compression: toClientCompression(config.compression) }),
-});
+const rejectIdempotentAcksConflict = (config: ProducerConfig | undefined): void => {
+  if (config?.idempotent === true && config.acks !== undefined && config.acks !== IDEMPOTENT_ACKS) {
+    throw new Error(
+      `KafkaModule "producer.acks" must be ${IDEMPOTENT_ACKS} when "producer.idempotent" is true. Set acks to ${IDEMPOTENT_ACKS}, leave it unset, or turn idempotence off.`,
+    );
+  }
+};
+
+export const toClientProducerConfig = (config: ProducerConfig | undefined): KafkaJS.ProducerConfig => {
+  rejectIdempotentAcksConflict(config);
+
+  return {
+    allowAutoTopicCreation: config?.allowAutoTopicCreation ?? DEFAULT_ALLOW_AUTO_TOPIC_CREATION,
+    ...(config?.idempotent !== undefined && { idempotent: config.idempotent }),
+    ...(config?.acks !== undefined && { acks: config.acks }),
+    ...(config?.compression !== undefined && { compression: toClientCompression(config.compression) }),
+  };
+};

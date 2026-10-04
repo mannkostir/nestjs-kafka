@@ -62,20 +62,4 @@ describe('configured producer', () => {
 
     expect(received[0]).toMatchObject({ key: 'invoice-1', value: { invoiceId: 'i-1' } });
   });
-
-  it('fails module construction when an idempotent producer is not set to all acks', async () => {
-    @Module({
-      imports: [
-        KafkaModule.register({
-          clientOptions: { kafkaJS: { clientId: 'conflicting-producer', brokers: broker.brokers } },
-          producer: { idempotent: true, acks: 1 },
-        }),
-      ],
-    })
-    class ConflictingProducerModule {}
-
-    await expect(
-      Test.createTestingModule({ imports: [ConflictingProducerModule] }).compile(),
-    ).rejects.toThrow(/acks/);
-  });
 });

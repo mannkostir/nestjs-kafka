@@ -55,6 +55,35 @@ describe('toClientProducerConfig', () => {
     });
   });
 
+  it('rejects an idempotent producer with acks other than -1', () => {
+    expect(() => toClientProducerConfig({ idempotent: true, acks: 1 })).toThrow(
+      'KafkaModule "producer.acks" must be -1 when "producer.idempotent" is true. Set acks to -1, leave it unset, or turn idempotence off.',
+    );
+  });
+
+  it('accepts an idempotent producer with acks -1', () => {
+    expect(toClientProducerConfig({ idempotent: true, acks: -1 })).toEqual({
+      allowAutoTopicCreation: false,
+      idempotent: true,
+      acks: -1,
+    });
+  });
+
+  it('accepts an idempotent producer with acks unset', () => {
+    expect(toClientProducerConfig({ idempotent: true })).toEqual({
+      allowAutoTopicCreation: false,
+      idempotent: true,
+    });
+  });
+
+  it('accepts a non-idempotent producer with acks other than -1', () => {
+    expect(toClientProducerConfig({ idempotent: false, acks: 1 })).toEqual({
+      allowAutoTopicCreation: false,
+      idempotent: false,
+      acks: 1,
+    });
+  });
+
   it('rejects an unknown compression', () => {
     expect(() =>
       toClientProducerConfig({ compression: 'brotli' as ProducerCompression }),

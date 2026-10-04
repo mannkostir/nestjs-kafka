@@ -183,6 +183,19 @@ describe('KafkaModule producer', () => {
       'KafkaModule "producer.compression" must be one of none, gzip, snappy, lz4, zstd. Use one of those codecs or leave it unset for the client default.',
     );
   });
+
+  it('fails module construction when an idempotent producer is not set to acks -1', async () => {
+    await expect(
+      producerConfigOf(
+        KafkaModule.register({
+          clientOptions,
+          producer: { idempotent: true, acks: 1 },
+        }),
+      ),
+    ).rejects.toThrow(
+      'KafkaModule "producer.acks" must be -1 when "producer.idempotent" is true. Set acks to -1, leave it unset, or turn idempotence off.',
+    );
+  });
 });
 
 describe('KafkaModule schema registry', () => {
