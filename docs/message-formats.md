@@ -121,11 +121,11 @@ The schema is chosen per send:
 - `{ schemaId: 42 }` encodes with exactly that registry id.
 
 The latest version is looked up in the registry on every send that does not pass `schemaId`;
-`schemaId` skips that request. The schema must already be registered: the producer never registers
-schemas.
+`schemaId` skips that request. The schema must already be registered as an Avro schema: the producer
+never registers schemas.
 
 A send rejects without producing anything when the value does not match the schema, when the
 subject has no registered version, when both `schemaId` and `subject` are passed, when `schemaId`
-is not a positive integer, or when `subject` is an empty string. Without `schemaRegistry` options
+is not a positive integer, or when `subject` is blank. Without `schemaRegistry` options
 an Avro send rejects with a message naming both the option and the package to install.
 `schemaId` and `subject` apply only to Avro and are ignored by the JSON formats.

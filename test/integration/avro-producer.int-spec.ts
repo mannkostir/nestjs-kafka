@@ -172,6 +172,12 @@ describe('avro producer', () => {
   });
 
   it('writes the Confluent wire format with the registered schema id', async () => {
+    await moduleRef.get(ProducerProxy).send(
+      'orders.placed',
+      { key: 'order-2', value: { orderId: 'order-2', total: 100 } },
+      { messageFormat: MessageFormat.AVRO },
+    );
+
     const raw = await readFirstRawValue(broker.brokers, `${NAMESPACE}.orders.placed`);
 
     expect({ magicByte: raw.readUInt8(0), schemaId: raw.readInt32BE(1) }).toEqual({

@@ -40,9 +40,9 @@ function assertValidTarget({ topic, schemaId, subject }: SerializeTarget): void 
     );
   }
 
-  if (subject === '') {
+  if (subject !== undefined && subject.trim() === '') {
     throw new Error(
-      'Avro send option "subject" must not be an empty string. ' +
+      'Avro send option "subject" must not be blank. ' +
       `Pass a subject name, or omit it to use "${topic}-value".`,
     );
   }

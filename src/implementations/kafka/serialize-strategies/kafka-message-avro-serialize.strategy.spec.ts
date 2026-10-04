@@ -82,11 +82,17 @@ describe('KafkaMessageAvroSerializeStrategy', () => {
     ).toThrow('Avro send option "schemaId" must be a positive integer registry id. Got 0.');
   });
 
+  it('rejects a whitespace-only subject', () => {
+    expect(
+      () => new KafkaMessageAvroSerializeStrategy(registry, { topic: 'orders.created', subject: '  ' }),
+    ).toThrow('Avro send option "subject" must not be blank.');
+  });
+
   it('rejects an empty subject', () => {
     expect(
       () => new KafkaMessageAvroSerializeStrategy(registry, { topic: 'orders.created', subject: '' }),
     ).toThrow(
-      'Avro send option "subject" must not be an empty string. ' +
+      'Avro send option "subject" must not be blank. ' +
       'Pass a subject name, or omit it to use "orders.created-value".',
     );
   });
