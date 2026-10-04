@@ -7,4 +7,5 @@ export type ConsumerConfig = {
   allowAutoTopicCreation?: boolean;
   sessionTimeout?: number;
   rebalanceTimeout?: number;
+  partitionsConsumedConcurrently?: number;
 };

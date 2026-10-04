@@ -403,6 +403,57 @@ describe('KafkaConsumer configuration errors', () => {
   });
 });
 
+describe('KafkaConsumer partitions consumed concurrently', () => {
+  const runConfig = (consumer: ReturnType<typeof consumerStub>) =>
+    (consumer.run as jest.Mock).mock.calls[0][0];
+
+  it('consumes one partition at a time by default', async () => {
+    const consumer = consumerStub();
+
+    await new KafkaConsumer(kafkaStub(consumer)).subscribe(subscription(), jest.fn(), 'orders-service');
+
+    expect(runConfig(consumer).partitionsConsumedConcurrently).toBe(1);
+  });
+
+  it('uses the handler value', async () => {
+    const consumer = consumerStub();
+
+    await new KafkaConsumer(kafkaStub(consumer)).subscribe(
+      { ...subscription(), consumer: { partitionsConsumedConcurrently: 3 } },
+      jest.fn(),
+      'orders-service',
+    );
+
+    expect(runConfig(consumer).partitionsConsumedConcurrently).toBe(3);
+  });
+
+  it('uses the module default', async () => {
+    const consumer = consumerStub();
+
+    await new KafkaConsumer(kafkaStub(consumer), {
+      consumerDefaults: { partitionsConsumedConcurrently: 5 },
+    }).subscribe(subscription(), jest.fn(), 'orders-service');
+
+    expect(runConfig(consumer).partitionsConsumedConcurrently).toBe(5);
+  });
+
+  it('rejects an invalid value before provisioning topics or creating a consumer', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+    const topicProvisioner = provisionerStub();
+
+    await expect(
+      new KafkaConsumer(kafka, { topicProvisioner: topicProvisioner as unknown as KafkaTopicProvisioner }).subscribe(
+        { ...subscription(), consumer: { partitionsConsumedConcurrently: 0 } },
+        jest.fn(),
+        'orders-service',
+      ),
+    ).rejects.toThrow(/partitionsConsumedConcurrently must be a positive integer/);
+    expect(topicProvisioner.assertExisting).not.toHaveBeenCalled();
+    expect(kafka.consumer).not.toHaveBeenCalled();
+  });
+});
+
 describe('KafkaConsumer group assignment', () => {
   afterEach(() => {
     jest.useRealTimers();
@@ -884,6 +935,51 @@ describe('KafkaConsumer fail error handling', () => {
       .catch(() => undefined);
 
     expect(batch.pause).not.toHaveBeenCalled();
+  });
+
+  describe('with two partitions handled concurrently', () => {
+    const partitionPayload = (partition: number, offset: string) => ({
+      batch: { topic: 'orders.created', partition, messages: [failingMessage(offset)] },
+      isRunning: () => true,
+      isStale: () => false,
+      resolveOffset: jest.fn(),
+      pause: jest.fn(() => jest.fn()),
+    });
+
+    const failOnlyPartitionZero = () =>
+      jest.fn(async (_message: unknown, context: { partition: number }) => {
+        if (context.partition === 0) {
+          throw new Error('handler exploded');
+        }
+      });
+
+    const runBoth = async () => {
+      const consumer = consumerStub();
+      await new KafkaConsumer(kafkaStub(consumer)).subscribe(
+        { ...subscription(), errorHandling: { type: 'fail', backoff: false } },
+        failOnlyPartitionZero(),
+        'orders-service',
+      );
+      const eachBatch = eachBatchOf(consumer);
+      const failing = partitionPayload(0, '5');
+      const healthy = partitionPayload(1, '9');
+
+      await Promise.allSettled([eachBatch(failing), eachBatch(healthy)]);
+
+      return { failing, healthy };
+    };
+
+    it('resolves the offset of the partition that succeeded', async () => {
+      const { healthy } = await runBoth();
+
+      expect(healthy.resolveOffset).toHaveBeenCalledWith('9');
+    });
+
+    it('does not resolve the offset of the partition that failed', async () => {
+      const { failing } = await runBoth();
+
+      expect(failing.resolveOffset).not.toHaveBeenCalled();
+    });
   });
 });
 

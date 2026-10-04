@@ -8,6 +8,7 @@ export class ResolvedConsumerConfig {
   private constructor(
     readonly fromBeginning: boolean,
     readonly allowAutoTopicCreation: boolean,
+    readonly partitionsConsumedConcurrently: number,
     private readonly heartbeatInterval: number | undefined,
     private readonly sessionTimeout: number | undefined,
     private readonly rebalanceTimeout: number | undefined,
@@ -17,10 +18,19 @@ export class ResolvedConsumerConfig {
   static resolve(handlerConfig?: ConsumerConfig, moduleDefaults?: ConsumerConfig): ResolvedConsumerConfig {
     const overrides = handlerConfig ?? {};
     const defaults = moduleDefaults ?? {};
+    const partitionsConsumedConcurrently =
+      overrides.partitionsConsumedConcurrently ?? defaults.partitionsConsumedConcurrently ?? 1;
+
+    if (!Number.isInteger(partitionsConsumedConcurrently) || partitionsConsumedConcurrently < 1) {
+      throw new Error(
+        `partitionsConsumedConcurrently must be a positive integer, got ${partitionsConsumedConcurrently}. Set it to 1 or more, or leave it unset to consume one partition at a time.`,
+      );
+    }
 
     return new ResolvedConsumerConfig(
       overrides.fromBeginning ?? defaults.fromBeginning ?? false,
       overrides.allowAutoTopicCreation ?? defaults.allowAutoTopicCreation ?? false,
+      partitionsConsumedConcurrently,
       overrides.heartbeatInterval ?? defaults.heartbeatInterval,
       overrides.sessionTimeout ?? defaults.sessionTimeout,
       overrides.rebalanceTimeout ?? defaults.rebalanceTimeout,

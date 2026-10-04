@@ -121,7 +121,7 @@ export class KafkaConsumer<
 
       await consumer.subscribe(topics);
 
-      await this.run(consumer, cb, parseStrategy, errorStrategy);
+      await this.run(consumer, cb, parseStrategy, errorStrategy, config.partitionsConsumedConcurrently);
 
       if (topicNames.length > 0) {
         await member.joined(config.joinTimeoutMs());
@@ -189,9 +189,11 @@ export class KafkaConsumer<
     cb: MessageHandlerCallback<TMessage>,
     parseStrategy: KafkaMessageParseStrategy,
     errorStrategy: KafkaErrorHandleStrategy,
+    partitionsConsumedConcurrently: number,
   ): Promise<void> {
     await consumer.run({
       eachBatchAutoResolve: false,
+      partitionsConsumedConcurrently,
       eachBatch: this.handleBatchByMessage(
         cb as MessageHandlerCallback<TMessage>,
         parseStrategy,
