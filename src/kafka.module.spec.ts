@@ -9,6 +9,7 @@ import { KAFKA_PRODUCER, KAFKA_CONNECTIONS } from './tokens.js';
 import { ConsumerProxy } from './base/consumer-proxy.js';
 import { ProducerProxy } from './base/producer-proxy.js';
 import { MessageFormat } from './types/message-format.type.js';
+import { ProducerCompression } from './types/producer-config.type.js';
 import { KafkaMessageParseStrategyFactory } from './implementations/kafka/parse-strategies/kafka-message-parse-strategy.factory.js';
 
 jest.mock('@kafkajs/confluent-schema-registry', () => ({
@@ -130,6 +131,70 @@ describe('KafkaModule producer', () => {
         }),
       ),
     ).toEqual({ kafkaJS: { allowAutoTopicCreation: true } });
+  });
+
+  it('creates the producer with the configured delivery settings', async () => {
+    expect(
+      await producerConfigOf(
+        KafkaModule.register({
+          clientOptions,
+          producer: { idempotent: true, acks: -1, compression: 'gzip' },
+        }),
+      ),
+    ).toEqual({
+      kafkaJS: {
+        allowAutoTopicCreation: false,
+        idempotent: true,
+        acks: -1,
+        compression: 'gzip',
+      },
+    });
+  });
+
+  it('creates the producer with the configured delivery settings asynchronously', async () => {
+    expect(
+      await producerConfigOf(
+        KafkaModule.registerAsync({
+          useFactory: () => ({
+            clientOptions,
+            producer: { idempotent: true, acks: -1, compression: 'gzip' },
+          }),
+        }),
+      ),
+    ).toEqual({
+      kafkaJS: {
+        allowAutoTopicCreation: false,
+        idempotent: true,
+        acks: -1,
+        compression: 'gzip',
+      },
+    });
+  });
+
+  it('rejects an unknown producer compression', async () => {
+    await expect(
+      producerConfigOf(
+        KafkaModule.register({
+          clientOptions,
+          producer: { compression: 'brotli' as ProducerCompression },
+        }),
+      ),
+    ).rejects.toThrow(
+      'KafkaModule "producer.compression" must be one of none, gzip, snappy, lz4, zstd. Use one of those codecs or leave it unset for the client default.',
+    );
+  });
+
+  it('fails module construction when an idempotent producer is not set to acks -1', async () => {
+    await expect(
+      producerConfigOf(
+        KafkaModule.register({
+          clientOptions,
+          producer: { idempotent: true, acks: 1 },
+        }),
+      ),
+    ).rejects.toThrow(
+      'KafkaModule "producer.acks" must be -1 when "producer.idempotent" is true. Set acks to -1, leave it unset, or turn idempotence off.',
+    );
   });
 });
 

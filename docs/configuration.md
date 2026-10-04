@@ -192,6 +192,15 @@ The module's `producer` option.
 | Field | Type | Default |
 | --- | --- | --- |
 | `allowAutoTopicCreation` | `boolean` | `false` |
+| `idempotent` | `boolean` | unset — the client applies its own (currently `false`) |
+| `compression` | `'none' \| 'gzip' \| 'snappy' \| 'lz4' \| 'zstd'` | unset — the client applies its own (currently `none`) |
+| `acks` | `number` | unset — the client applies its own (currently `-1`, all in-sync replicas) |
 
 `allowAutoTopicCreation` maps to librdkafka's `allow.auto.create.topics` on the producer. See
 [Producing](producing.md#topic) for what a send to a missing topic does.
+
+`idempotent`, `compression` and `acks` map to librdkafka's `enable.idempotence`,
+`compression.codec` and `acks`. An unset field is not passed, so the client default applies. An
+unknown `compression` fails module construction. They apply to the whole producer; there is no
+per-send `acks` or `compression`. `idempotent: true` requires `acks` to be unset or `-1`; any other
+`acks` fails module construction.

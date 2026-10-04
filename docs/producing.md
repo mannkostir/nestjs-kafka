@@ -3,6 +3,9 @@
 Inject `ProducerProxy` to publish messages. It is connected eagerly during module initialisation; a
 broker that is unreachable at startup fails module construction.
 
+Idempotence, compression and acks are producer-wide; see
+[`ProducerConfig`](configuration.md#producerconfig).
+
 ```ts
 send(
   topic: string,
