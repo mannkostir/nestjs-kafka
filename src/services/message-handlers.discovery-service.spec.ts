@@ -10,10 +10,12 @@ import { DiscoveryModule } from '@nestjs/core';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConsumerProxy } from '../base/consumer-proxy.js';
 import { Message } from '../decorators/message-handler.decorator.js';
+import { MessageBatch } from '../decorators/message-batch-handler.decorator.js';
+import { ReceivedMessage } from '../types/received-message.type.js';
 import { MessageFormat } from '../types/message-format.type.js';
 import { MessageContext } from '../types/message-context.type.js';
 import { MessageType } from '../types/message.type.js';
-import { CONNECTOR_NAME, KAFKA_CONNECTIONS } from '../tokens.js';
+import { BATCH_CONSUMER, CONNECTOR_NAME, KAFKA_CONNECTIONS } from '../tokens.js';
 import { MessageHandlersDiscoveryService } from './message-handlers.discovery-service.js';
 
 @Injectable()
@@ -223,8 +225,67 @@ class OrdersFeatureModule {}
 @Module({ providers: [OrdersHandler] })
 class ReportingFeatureModule {}
 
+@Injectable()
+class OrdersIndexer {
+  public readonly receivers: unknown[] = [];
+
+  @MessageBatch(['orders.created'], {
+    groupId: 'orders-indexer',
+    errorHandling: { type: 'dlq' },
+  })
+  async index(_batch: ReceivedMessage[]): Promise<void> {
+    this.receivers.push(this);
+  }
+}
+
+@Injectable()
+class SharedGroupIndexer {
+  @MessageBatch(['orders.created'], {
+    groupId: 'orders-service',
+    errorHandling: { type: 'fail' },
+  })
+  async index(_batch: ReceivedMessage[]): Promise<void> {}
+}
+
+@Injectable()
+class SecondaryIndexer {
+  @MessageBatch(['secondary.events'], {
+    groupId: 'secondary-indexer',
+    errorHandling: { type: 'fail' },
+    connectorName: 'secondary',
+  })
+  async index(_batch: ReceivedMessage[]): Promise<void> {}
+}
+
+@Injectable({ scope: Scope.REQUEST })
+class RequestScopedIndexer {
+  @MessageBatch(['audit.events'], {
+    groupId: 'audit-indexer',
+    errorHandling: { type: 'fail' },
+  })
+  async index(_batch: ReceivedMessage[]): Promise<void> {}
+}
+
+const DoublyDecoratedHandler = (() => {
+  @Injectable()
+  class DoublyDecoratedHandler {
+    @Message(['orders.created'], {
+      groupId: 'orders-double',
+      errorHandling: { type: 'fail' },
+    })
+    @MessageBatch(['orders.created'], {
+      groupId: 'orders-double-batch',
+      errorHandling: { type: 'fail' },
+    })
+    async handle(_batch: ReceivedMessage[]): Promise<void> {}
+  }
+
+  return DoublyDecoratedHandler;
+})();
+
 type Harness = {
   subscribe: jest.Mock;
+  subscribeBatch: jest.Mock;
   releaseConnections: jest.Mock;
   bootstrap: () => Promise<TestingModule>;
 };
@@ -234,6 +295,7 @@ const harness = (
   options: { connectorName?: string; imports?: Type[] } = {},
 ): Harness => {
   const subscribe = jest.fn().mockResolvedValue(undefined);
+  const subscribeBatch = jest.fn().mockResolvedValue(undefined);
   const releaseConnections = jest.fn().mockResolvedValue(undefined);
   const connectorProviders: Provider[] =
     options.connectorName === undefined
@@ -247,6 +309,7 @@ const harness = (
         ...handlers,
         ...connectorProviders,
         { provide: ConsumerProxy, useValue: { subscribe } },
+        { provide: BATCH_CONSUMER, useValue: { subscribeBatch } },
         { provide: KAFKA_CONNECTIONS, useValue: { releaseConnections } },
         MessageHandlersDiscoveryService,
       ],
@@ -255,7 +318,7 @@ const harness = (
     return moduleRef.init();
   };
 
-  return { subscribe, releaseConnections, bootstrap };
+  return { subscribe, subscribeBatch, releaseConnections, bootstrap };
 };
 
 const subscribedTopics = (subscribe: jest.Mock): string[][] =>
@@ -698,5 +761,71 @@ describe('MessageHandlersDiscoveryService', () => {
       releaseFailure,
     );
     logError.mockRestore();
+  });
+});
+
+describe('MessageHandlersDiscoveryService batch handlers', () => {
+  it('subscribes a batch handler through the batch port', async () => {
+    const { subscribeBatch, bootstrap } = harness([OrdersIndexer]);
+    await bootstrap();
+    expect(subscribeBatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        topicPatterns: ['orders.created'],
+        errorHandling: { type: 'dlq' },
+      }),
+      expect.any(Function),
+      'orders-indexer',
+    );
+  });
+
+  it('does not subscribe a batch handler as a per-message handler', async () => {
+    const { subscribe, bootstrap } = harness([OrdersIndexer]);
+    await bootstrap();
+    expect(subscribe).not.toHaveBeenCalled();
+  });
+
+  it('binds the batch handler to its provider instance', async () => {
+    const { subscribeBatch, bootstrap } = harness([OrdersIndexer]);
+    const moduleRef = await bootstrap();
+    const indexer = moduleRef.get(OrdersIndexer);
+    const [, callback] = subscribeBatch.mock.calls[0];
+    await callback([]);
+    expect(indexer.receivers[0]).toBe(indexer);
+  });
+
+  it('rejects a batch handler sharing a group id with a per-message handler', async () => {
+    const { bootstrap } = harness([OrdersHandler, SharedGroupIndexer]);
+    await expect(bootstrap()).rejects.toThrow(/share groupId "orders-service"/);
+  });
+
+  it('does not subscribe a batch handler named for a different connector', async () => {
+    const { subscribeBatch, bootstrap } = harness([SecondaryIndexer], {
+      connectorName: 'primary',
+    });
+    await bootstrap();
+    expect(subscribeBatch).not.toHaveBeenCalled();
+  });
+
+  it('rejects a batch handler on a request-scoped provider', async () => {
+    const { bootstrap } = harness([RequestScopedIndexer]);
+    await expect(bootstrap()).rejects.toThrow(
+      /RequestScopedIndexer\.index is on a request-scoped provider/,
+    );
+  });
+
+  it('rejects a method carrying both decorators', async () => {
+    const { bootstrap } = harness([DoublyDecoratedHandler]);
+    await expect(bootstrap()).rejects.toThrow(
+      /DoublyDecoratedHandler\.handle has both @Message and @MessageBatch/,
+    );
+  });
+
+  it('releases connections when a batch subscription fails', async () => {
+    const { subscribeBatch, releaseConnections, bootstrap } = harness([
+      OrdersIndexer,
+    ]);
+    subscribeBatch.mockRejectedValue(new Error('batch subscribe failed'));
+    await expect(bootstrap()).rejects.toThrow('batch subscribe failed');
+    expect(releaseConnections).toHaveBeenCalledTimes(1);
   });
 });

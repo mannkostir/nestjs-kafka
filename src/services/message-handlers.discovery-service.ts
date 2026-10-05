@@ -9,18 +9,35 @@ import {
 import { DiscoveryService, MetadataScanner } from '@nestjs/core';
 
 import { ConsumerProxy } from '../base/consumer-proxy.js';
+import { MessageBatchHandlerKey } from '../decorators/message-batch-handler.decorator.js';
 import {
   Message,
   MessageHandlerKey,
 } from '../decorators/message-handler.decorator.js';
+import { BatchMessageHandlerCallback } from '../types/batch-message-handler-callback.type.js';
+import { ConsumerSubscriptionParameters } from '../types/consumer-subscription-parameters.type.js';
 import { MessageHandlerCallback } from '../types/message-handler-callback.type.js';
 import { MessageType } from '../types/message.type.js';
+import { IConsumeMessageBatches } from '../interfaces/consume-message-batches.interface.js';
 import { IReleaseConnections } from '../interfaces/release-connections.interface.js';
-import { CONNECTOR_NAME, KAFKA_CONNECTIONS } from '../tokens.js';
+import {
+  BATCH_CONSUMER,
+  CONNECTOR_NAME,
+  KAFKA_CONNECTIONS,
+} from '../tokens.js';
 
 type HandlerMetadata = Parameters<typeof Message>;
 
-type HandlerMethod = MessageHandlerCallback<MessageType>;
+type HandlerMethod = (...args: never[]) => Promise<void>;
+
+type HandlerKind = {
+  metadataKey: string;
+  subscribe: (
+    subscription: ConsumerSubscriptionParameters,
+    handle: HandlerMethod,
+    groupId: string,
+  ) => Promise<void>;
+};
 
 type ProviderWrapper = ReturnType<DiscoveryService['getProviders']>[number];
 
@@ -28,12 +45,14 @@ type AnnotatedMethod = {
   methodName: string;
   method: HandlerMethod;
   metadata: HandlerMetadata;
+  kind: HandlerKind;
 };
 
 type DiscoveredHandler = {
   handlerClass: Function;
   name: string;
   metadata: HandlerMetadata;
+  kind: HandlerKind;
   handle: HandlerMethod;
 };
 
@@ -44,8 +63,31 @@ const isObject = (value: unknown): value is object =>
 export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
   private readonly logger = new Logger(MessageHandlersDiscoveryService.name);
 
+  private readonly kinds: readonly HandlerKind[] = [
+    {
+      metadataKey: MessageHandlerKey,
+      subscribe: (subscription, handle, groupId) =>
+        this.consumerProxy.subscribe(
+          subscription,
+          handle as MessageHandlerCallback<MessageType>,
+          groupId,
+        ),
+    },
+    {
+      metadataKey: MessageBatchHandlerKey,
+      subscribe: (subscription, handle, groupId) =>
+        this.batchConsumer.subscribeBatch(
+          subscription,
+          handle as BatchMessageHandlerCallback<MessageType>,
+          groupId,
+        ),
+    },
+  ];
+
   constructor(
     private readonly consumerProxy: ConsumerProxy,
+    @Inject(BATCH_CONSUMER)
+    private readonly batchConsumer: IConsumeMessageBatches,
     private readonly discoveryService: DiscoveryService,
     private readonly metadataScanner: MetadataScanner,
     @Inject(KAFKA_CONNECTIONS)
@@ -115,10 +157,11 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
 
   private handlersOf(instance: object): DiscoveredHandler[] {
     return this.annotatedMethodsOf(Object.getPrototypeOf(instance)).map(
-      ({ methodName, method, metadata }) => ({
+      ({ methodName, method, metadata, kind }) => ({
         handlerClass: instance.constructor,
         name: `${instance.constructor.name}.${methodName}`,
         metadata,
+        kind,
         handle: method.bind(instance),
       }),
     );
@@ -135,12 +178,23 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
       .getAllMethodNames(prototype)
       .flatMap((methodName) => {
         const method = prototype[methodName];
-        const metadata: HandlerMetadata | undefined = Reflect.getMetadata(
-          MessageHandlerKey,
-          method,
-        );
+        const annotations = this.kinds.flatMap((kind) => {
+          const metadata: HandlerMetadata | undefined = Reflect.getMetadata(
+            kind.metadataKey,
+            method,
+          );
 
-        return metadata ? [{ methodName, method, metadata }] : [];
+          return metadata ? [{ methodName, method, metadata, kind }] : [];
+        });
+
+        if (annotations.length > 1) {
+          throw new Error(
+            `Message handler ${prototype.constructor.name}.${methodName} has both @Message and @MessageBatch. ` +
+              'Keep one of the two decorators on each method.',
+          );
+        }
+
+        return annotations;
       });
   }
 
@@ -236,7 +290,7 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
   private async subscribe(handler: DiscoveredHandler): Promise<void> {
     const [topicPatterns, options] = handler.metadata;
 
-    await this.consumerProxy.subscribe(
+    await handler.kind.subscribe(
       {
         topicPatterns,
         messageFormat: options.messageFormat,
