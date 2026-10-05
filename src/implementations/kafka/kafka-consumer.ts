@@ -76,14 +76,14 @@ export class KafkaConsumer<
     const parseStrategy = this.parseStrategies.create(
       subscription.messageFormat ?? this.messageFormat,
     );
+    const requestedPatterns = subscription.topicPatterns.filter(Boolean);
+    requestedPatterns.forEach((pattern) => LibrdkafkaTopicPattern.validate(pattern));
+
     const errorStrategy = this.errorStrategies.create(subscription.errorHandling, {
       namespaced,
       groupId: consumerGroupId,
-      topicPatterns: subscription.topicPatterns,
+      topicPatterns: requestedPatterns,
     });
-
-    const requestedPatterns = subscription.topicPatterns.filter(Boolean);
-    requestedPatterns.forEach((pattern) => LibrdkafkaTopicPattern.validate(pattern));
 
     const topicPatterns = requestedPatterns
       .map((pattern) =>
@@ -97,7 +97,11 @@ export class KafkaConsumer<
       (pattern): pattern is string => typeof pattern === 'string',
     );
 
-    const requiredTopics = [...new Set([...topicNames, ...errorStrategy.destinationTopics(topicNames)])];
+    const retryTopics = errorStrategy.consumedTopics(topicNames);
+
+    const requiredTopics = [
+      ...new Set([...topicNames, ...retryTopics, ...errorStrategy.destinationTopics(topicNames)]),
+    ];
 
     if (config.allowAutoTopicCreation) {
       await this.topicProvisioner.createMissing(requiredTopics);
@@ -121,7 +125,7 @@ export class KafkaConsumer<
     try {
       await consumer.connect();
 
-      const topics: KafkaJS.ConsumerSubscribeTopics = { topics: topicPatterns };
+      const topics: KafkaJS.ConsumerSubscribeTopics = { topics: [...topicPatterns, ...retryTopics] };
 
       await consumer.subscribe(topics);
 
@@ -170,7 +174,7 @@ export class KafkaConsumer<
   ) {
     return async (payload: KafkaJS.EachBatchPayload) => {
       for (const message of payload.batch.messages) {
-        if (!payload.isRunning() || payload.isStale()) {
+        if (!payload.isRunning() || payload.isStale() || errorStrategy.holdUntilDue(payload, message)) {
           break;
         }
 
