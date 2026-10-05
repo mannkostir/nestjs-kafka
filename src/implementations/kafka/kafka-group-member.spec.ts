@@ -224,6 +224,62 @@ describe('KafkaGroupMember start offset pinning', () => {
     expect(consumer.dependentAdmin).not.toHaveBeenCalled();
   });
 
+  it('starts an uncommitted partition of a replayed topic at the log start', async () => {
+    const admin = adminStub();
+    admin.fetchOffsets.mockResolvedValue([
+      { topic: 't.g.retry.1', partitions: [{ partition: 0, offset: '-1' }] },
+    ]);
+    admin.fetchTopicOffsets.mockResolvedValue([
+      { partition: 0, high: '42', low: '5', offset: '42' },
+    ]);
+    const kafka = kafkaStub(admin);
+    new KafkaGroupMember(kafka, config(), true, clientLoggerStub(), new Set(['t.g.retry.1']));
+
+    const result = await rebalanceCallback(kafka)({ code: -175 }, [
+      { topic: 't.g.retry.1', partition: 0 },
+    ]);
+
+    expect(result).toEqual([{ topic: 't.g.retry.1', partition: 0, offset: 5 }]);
+  });
+
+  it('keeps a committed offset of a replayed topic', async () => {
+    const admin = adminStub();
+    admin.fetchOffsets.mockResolvedValue([
+      { topic: 't.g.retry.1', partitions: [{ partition: 0, offset: '9' }] },
+    ]);
+    const kafka = kafkaStub(admin);
+    new KafkaGroupMember(kafka, config(), true, clientLoggerStub(), new Set(['t.g.retry.1']));
+
+    const result = await rebalanceCallback(kafka)({ code: -175 }, [
+      { topic: 't.g.retry.1', partition: 0 },
+    ]);
+
+    expect(result).toEqual([{ topic: 't.g.retry.1', partition: 0, offset: 9 }]);
+  });
+
+  it('still starts an uncommitted partition of another topic at the log end alongside replayed topics', async () => {
+    const admin = adminStub();
+    admin.fetchOffsets.mockResolvedValue([
+      { topic: 't', partitions: [{ partition: 0, offset: '-1' }] },
+      { topic: 't.g.retry.1', partitions: [{ partition: 0, offset: '-1' }] },
+    ]);
+    admin.fetchTopicOffsets.mockResolvedValue([
+      { partition: 0, high: '42', low: '5', offset: '42' },
+    ]);
+    const kafka = kafkaStub(admin);
+    new KafkaGroupMember(kafka, config(), true, clientLoggerStub(), new Set(['t.g.retry.1']));
+
+    const result = await rebalanceCallback(kafka)({ code: -175 }, [
+      { topic: 't', partition: 0 },
+      { topic: 't.g.retry.1', partition: 0 },
+    ]);
+
+    expect(result).toEqual([
+      { topic: 't', partition: 0, offset: 42 },
+      { topic: 't.g.retry.1', partition: 0, offset: 5 },
+    ]);
+  });
+
   it('disconnects the admin after reading log ends', async () => {
     const admin = adminStub();
     admin.fetchOffsets.mockResolvedValue([
@@ -296,7 +352,7 @@ describe('KafkaGroupMember pin failure fallback', () => {
     const admin = adminStub();
     admin.connect.mockReturnValue(new Promise(() => undefined));
     const kafka = kafkaStub(admin);
-    const member = new KafkaGroupMember(kafka, config(), true, clientLoggerStub(), 20);
+    const member = new KafkaGroupMember(kafka, config(), true, clientLoggerStub(), new Set(), 20);
 
     const result = await rebalanceCallback(kafka)({ code: -175 }, [{ topic: 't', partition: 0 }]);
 
@@ -308,12 +364,45 @@ describe('KafkaGroupMember pin failure fallback', () => {
     const admin = adminStub();
     admin.connect.mockReturnValue(new Promise(() => undefined));
     const kafka = kafkaStub(admin);
-    new KafkaGroupMember(kafka, config(), true, clientLoggerStub(), 20);
+    new KafkaGroupMember(kafka, config(), true, clientLoggerStub(), new Set(), 20);
 
     await rebalanceCallback(kafka)({ code: -175 }, [{ topic: 't', partition: 0 }]);
 
     expect(warn).toHaveBeenCalledWith(
       expect.stringMatching(/Consumer group "g".*timed out after 20 ms/),
+    );
+  });
+
+  it('warns naming the replayed partitions of an assignment it failed to pin', async () => {
+    const admin = adminStub();
+    admin.fetchOffsets.mockRejectedValue(new Error('broker unreachable'));
+    const kafka = kafkaStub(admin);
+    new KafkaGroupMember(kafka, config(), true, clientLoggerStub(), new Set(['t.g.retry.1']));
+
+    await rebalanceCallback(kafka)({ code: -175 }, [
+      { topic: 't', partition: 0 },
+      { topic: 't.g.retry.1', partition: 0 },
+      { topic: 't.g.retry.1', partition: 1 },
+    ]);
+
+    expect(warn).toHaveBeenCalledWith(
+      'Consumer group "g" failed to pin start offsets for its new assignment; ' +
+        "falling back to the client's default start offsets. broker unreachable " +
+        'Retry partition(s) without a committed offset may start at the log end: t.g.retry.1[0], t.g.retry.1[1].',
+    );
+  });
+
+  it('warns without naming retry partitions when the assignment has none', async () => {
+    const admin = adminStub();
+    admin.fetchOffsets.mockRejectedValue(new Error('broker unreachable'));
+    const kafka = kafkaStub(admin);
+    new KafkaGroupMember(kafka, config(), true, clientLoggerStub(), new Set(['t.g.retry.1']));
+
+    await rebalanceCallback(kafka)({ code: -175 }, [{ topic: 't', partition: 0 }]);
+
+    expect(warn).toHaveBeenCalledWith(
+      'Consumer group "g" failed to pin start offsets for its new assignment; ' +
+        "falling back to the client's default start offsets. broker unreachable",
     );
   });
 
@@ -323,7 +412,7 @@ describe('KafkaGroupMember pin failure fallback', () => {
       { topic: 't', partitions: [{ partition: 0, offset: '7' }] },
     ]);
     const kafka = kafkaStub(admin);
-    new KafkaGroupMember(kafka, config(), true, clientLoggerStub(), 1000);
+    new KafkaGroupMember(kafka, config(), true, clientLoggerStub(), new Set(), 1000);
 
     const result = await rebalanceCallback(kafka)({ code: -175 }, [{ topic: 't', partition: 0 }]);
 

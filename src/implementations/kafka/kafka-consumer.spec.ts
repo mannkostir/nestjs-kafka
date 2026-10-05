@@ -1234,6 +1234,34 @@ describe('KafkaConsumer retry error handling', () => {
     });
   });
 
+  it('starts an uncommitted retry partition at its log start', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+    const admin = (kafka.admin as jest.Mock)();
+    admin.fetchOffsets = jest.fn().mockResolvedValue([
+      { topic: 'orders.created', partitions: [{ partition: 0, offset: '-1' }] },
+      { topic: 'orders.created.orders-service.retry.1', partitions: [{ partition: 0, offset: '-1' }] },
+    ]);
+    admin.fetchTopicOffsets = jest.fn().mockResolvedValue([
+      { partition: 0, high: '42', low: '5', offset: '42' },
+    ]);
+    await new KafkaConsumer(kafka, {
+      producer: producerStub(),
+      topicProvisioner: provisionerStub() as unknown as KafkaTopicProvisioner,
+    }).subscribe(retrySubscription(), jest.fn(), 'orders-service');
+    const { rebalance_cb } = (kafka.consumer as jest.Mock).mock.calls[0][0];
+
+    const pinned = await rebalance_cb({ code: -175 }, [
+      { topic: 'orders.created', partition: 0 },
+      { topic: 'orders.created.orders-service.retry.1', partition: 0 },
+    ]);
+
+    expect(pinned).toEqual([
+      { topic: 'orders.created', partition: 0, offset: 42 },
+      { topic: 'orders.created.orders-service.retry.1', partition: 0, offset: 5 },
+    ]);
+  });
+
   it('does not hand a retry message that is not due yet to the handler', async () => {
     const consumer = consumerStub();
     const handler = jest.fn();

@@ -116,6 +116,7 @@ export class KafkaConsumer<
       config.clientConfig(groupId),
       !config.fromBeginning,
       this.clientLogger,
+      new Set(retryTopics),
     );
     const consumer = member.consumer;
     const consumerSubscription: ConsumerSubscription = { consumer, errorStrategy };

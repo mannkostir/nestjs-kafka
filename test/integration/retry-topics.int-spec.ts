@@ -201,3 +201,79 @@ describe('retry topic provisioning', () => {
     await expect(moduleRef.init()).rejects.toThrow(/invoices\.created\.invoices\.retry\.1/);
   });
 });
+
+const payoutTopics: string[] = [];
+
+@Injectable()
+class PayoutHandler {
+  @Message(['payouts.created'], {
+    groupId: 'payouts',
+    errorHandling: { type: 'retry', attempts: 1 },
+  })
+  async handle(_message: MessageType, context: MessageContext): Promise<void> {
+    payoutTopics.push(context.topic);
+  }
+}
+
+describe('retry topic start offsets', () => {
+  let broker: StartedBroker;
+  let moduleRef: TestingModule;
+
+  beforeAll(async () => {
+    broker = await startBroker();
+    await broker.createTopics([
+      'payouts.created',
+      'payouts.created.payouts.retry.1',
+      'payouts.created.dlq',
+    ]);
+
+    const producer = new KafkaJS.Kafka({
+      kafkaJS: { clientId: 'retry-seeder', brokers: broker.brokers },
+    }).producer();
+
+    await producer.connect();
+    await producer.send({
+      topic: 'payouts.created.payouts.retry.1',
+      messages: [
+        {
+          value: JSON.stringify({ payoutId: 'p-1' }),
+          headers: {
+            'retry.original.topic': 'payouts.created',
+            'retry.attempt': '1',
+            'retry.due': String(Date.now()),
+          },
+        },
+      ],
+    });
+    await producer.disconnect();
+
+    @Module({
+      imports: [
+        KafkaModule.register({
+          clientOptions: { kafkaJS: { clientId: 'retry-start-offsets', brokers: broker.brokers } },
+          consumerDefaults: {
+            rebalanceTimeout: 20000,
+            sessionTimeout: 10000,
+          },
+        }),
+      ],
+      providers: [PayoutHandler],
+    })
+    class TestModule {}
+
+    moduleRef = await Test.createTestingModule({ imports: [TestModule] }).compile();
+
+    await moduleRef.init();
+  }, 120000);
+
+  afterAll(async () => {
+    await moduleRef?.close();
+    await broker?.stop();
+  });
+
+  it('reads a retry record produced before the group first joined', async () => {
+    await waitFor(() => payoutTopics.length > 0, 30000).catch(() => undefined);
+
+    expect(payoutTopics).toEqual(['payouts.created.payouts.retry.1']);
+  });
+});
