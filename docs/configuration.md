@@ -110,9 +110,11 @@ Passing none of the three throws at module construction.
 | `consumer` | `ConsumerConfig` | no | falls back to `consumerDefaults` |
 | `namespaced` | `boolean` | no | `true` |
 | `connectorName` | `string` | no | `undefined` — matches an unnamed module registration |
+| `sharedGroup` | `boolean` | no | `false` — the handler gets its own consumer group |
 
 `errorHandling` is described in [Error handling](error-handling.md). Each handler needs its own
-`groupId`; see [Handlers](handlers.md#one-group-id-per-handler).
+`groupId` unless every handler on that `groupId` sets `sharedGroup: true`;
+see [Handlers](handlers.md#sharing-a-consumer-group).
 
 ## `ConsumerConfig`
 

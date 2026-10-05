@@ -97,8 +97,8 @@ bootstrap with an error naming the handler and its scope.
 
 ## One group id per handler
 
-Within one connector, two `@Message` handlers that declare the same `groupId` fail application
-bootstrap before any consumer connects, with an error naming the group id and both handlers as
+Within one connector, two handlers that declare the same `groupId` without `sharedGroup: true` fail
+application bootstrap before any consumer connects, with an error naming the group id and both handlers as
 `ClassName.methodName`. Handlers registered on different connectors (different `connectorName`s)
 are checked separately.
 
@@ -115,3 +115,44 @@ To keep the number of consumer groups down, give one handler every topic it trea
 `@Message` takes an array of topics and `RegExp` patterns, and the context carries the topic each
 message came from. See
 [Cost of one consumer group per handler](delivery-semantics.md#cost-of-one-consumer-group-per-handler).
+
+## Sharing a consumer group
+
+Handlers that set `sharedGroup: true` and declare the same `groupId` run on one client consumer in
+one consumer group. Each batch the client fetches comes from one topic partition and goes to the
+handler that owns that topic, so `@Message` and `@MessageBatch` handlers can share a group.
+
+```ts
+@Injectable()
+export class BillingHandlers {
+  @Message(['orders.created'], {
+    groupId: 'billing',
+    sharedGroup: true,
+    errorHandling: { type: 'retry', attempts: 3 },
+  })
+  async onOrder(order: MessageType): Promise<void> {}
+
+  @MessageBatch(['refunds.issued'], {
+    groupId: 'billing',
+    sharedGroup: true,
+    errorHandling: { type: 'dlq' },
+  })
+  async onRefunds(batch: ReceivedMessage[]): Promise<void> {}
+}
+```
+
+Each handler keeps its own `errorHandling`, `messageFormat`, and `namespaced`. The rules:
+
+- Every handler on the `groupId` sets `sharedGroup: true`, and the value is a boolean; anything
+  else is rejected when the class is decorated.
+- Topics are concrete names. A `RegExp` topic with `sharedGroup: true` throws when the class is
+  decorated, and subscribe repeats the check. `RegExp` topics are not supported in shared groups yet.
+- Each topic, after namespacing, belongs to exactly one handler in the group, or bootstrap fails.
+  Retry topics belong to the handler whose `retry` policy derives them.
+- Every handler resolves the same `consumer` options, or bootstrap fails with an error naming the
+  option. Set them once in `consumerDefaults`, or pass the same object to each handler.
+
+A lone handler with `sharedGroup: true` behaves exactly like one without it.
+
+What the group gives up is described in
+[Delivery semantics](delivery-semantics.md#sharing-a-consumer-group).

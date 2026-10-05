@@ -15,7 +15,7 @@ Integration-tested against `confluentinc/cp-kafka:7.6.1` in KRaft mode.
 ## Features
 
 - **Decorator handlers** — `@Message(topics, options)` on any singleton provider, each handler in
-  its own consumer group.
+  its own consumer group, or several in one shared group.
 - **Batch handlers** — `@MessageBatch` hands a handler a whole batch for bulk writes, with
   per-message failure control.
 - **Error policies** — `fail` with per-partition exponential backoff, `ignore`, `dlq` with error
