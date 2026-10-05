@@ -1374,11 +1374,15 @@ describe('KafkaConsumer retry error handling', () => {
     });
     await kafkaConsumer.subscribe(retrySubscription(), jest.fn(), 'orders-service');
     const resume = jest.fn();
-    await eachBatchOf(consumer)(retryBatch([retryMessage('7', Date.now() + 30000)], resume));
+    const batch = retryBatch([retryMessage('7', Date.now() + 30000)], resume);
+    await eachBatchOf(consumer)(batch);
 
     await kafkaConsumer.disconnectAll();
     await jest.advanceTimersByTimeAsync(60000);
 
-    expect(resume).not.toHaveBeenCalled();
+    expect({ paused: batch.pause.mock.calls.length, resumed: resume.mock.calls.length }).toEqual({
+      paused: 1,
+      resumed: 0,
+    });
   });
 });

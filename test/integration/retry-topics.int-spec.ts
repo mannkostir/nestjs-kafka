@@ -61,7 +61,8 @@ describe('retry topics', () => {
       kafkaJS: { clientId: 'retry-observer', brokers: broker.brokers },
     });
 
-    await broker.createTopics(['refunds.created', 'refunds.created.dlq']);
+    await broker.createTopics(['refunds.created'], 1);
+    await broker.createTopics(['refunds.created.dlq']);
 
     @Module({
       imports: [

@@ -91,6 +91,12 @@ describe('KafkaErrorHandleRetryStrategy', () => {
     expect(sent(producer)).toEqual(expect.objectContaining({ topic: 'orders.created.dlq' }));
   });
 
+  it('publishes only the dead letter when the last retry fails', async () => {
+    const producer = producerStub();
+    await strategy(producer).handle(new Error('boom'), payloadOn('orders.created.svc.retry.2'), record());
+    expect(producer.send).toHaveBeenCalledTimes(1);
+  });
+
   it('records the original topic on the dead letter', async () => {
     const producer = producerStub();
     await strategy(producer).handle(new Error('boom'), payloadOn('orders.created.svc.retry.2'), record());
