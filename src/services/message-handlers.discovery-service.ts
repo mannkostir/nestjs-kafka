@@ -268,20 +268,34 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
   }
 
   private assertMayShareGroup(group: DiscoveredHandler[]): void {
-    const [owner, challenger] = group;
-
-    if (!challenger) {
+    if (group.length < 2) {
       return;
     }
 
     this.assertProvidedOnce(group);
 
-    if (group.some((handler) => handler.metadata[1].sharedGroup !== true)) {
-      throw new Error(
-        `Message handlers ${owner.name} and ${challenger.name} share groupId "${owner.metadata[1].groupId}". ` +
-          'Give each handler its own groupId, or set sharedGroup: true on every handler of the group.',
-      );
+    const challenger = this.firstUnflaggedMember(group);
+
+    if (!challenger) {
+      return;
     }
+
+    const owner = group.find((handler) => handler !== challenger);
+
+    throw new Error(
+      `Message handlers ${owner?.name} and ${challenger.name} share groupId "${challenger.metadata[1].groupId}". ` +
+        'Give each handler its own groupId, or set sharedGroup: true on every handler of the group.',
+    );
+  }
+
+  private firstUnflaggedMember(
+    group: DiscoveredHandler[],
+  ): DiscoveredHandler | undefined {
+    const [, ...rest] = group;
+
+    return [...rest, group[0]].find(
+      (handler) => handler.metadata[1].sharedGroup !== true,
+    );
   }
 
   private assertProvidedOnce(group: DiscoveredHandler[]): void {

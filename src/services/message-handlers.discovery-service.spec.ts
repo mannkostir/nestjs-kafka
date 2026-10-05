@@ -966,6 +966,18 @@ describe('MessageHandlersDiscoveryService shared groups', () => {
     );
   });
 
+  it('names the unflagged handler when it is listed after two flagged ones', async () => {
+    const { bootstrap } = harness([
+      SharedOrdersHandler,
+      SharedRefundsIndexer,
+      UnflaggedBillingHandler,
+    ]);
+
+    await expect(bootstrap()).rejects.toThrow(
+      /UnflaggedBillingHandler\.onInvoice share groupId "billing"/,
+    );
+  });
+
   it('rejects handlers that set sharedGroup to false on one group id', async () => {
     const { bootstrap } = harness([
       ExplicitlyUnsharedInvoices,

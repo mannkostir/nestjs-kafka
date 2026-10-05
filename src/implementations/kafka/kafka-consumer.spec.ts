@@ -1621,9 +1621,9 @@ describe('KafkaConsumer shared group', () => {
     jest.useFakeTimers();
     const consumer = consumerStub();
     const kafkaConsumer = new KafkaConsumer(kafkaStub(consumer));
-    const failing = route('A.x', 'orders.created', { errorHandling: { type: 'fail' } });
+    const failing = route('B.y', 'orders.created', { errorHandling: { type: 'fail' } });
     failing.delivery.handle.mockRejectedValue(new Error('boom'));
-    await kafkaConsumer.subscribeGroup('billing', [failing, route('B.y', 'parking.lot')]);
+    await kafkaConsumer.subscribeGroup('billing', [route('A.x', 'parking.lot'), failing]);
     const payload = payloadFrom('orders.created');
     const resume = jest.fn();
     payload.pause.mockReturnValue(resume);
