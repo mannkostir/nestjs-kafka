@@ -19,6 +19,9 @@ import { KafkaGroupMember } from './kafka-group-member.js';
 import { NestKafkaLogger } from './nest-kafka-logger.js';
 import { ResolvedConsumerConfig } from './resolved-consumer-config.js';
 import { MessageFormat } from '../../types/message-format.type.js';
+import { IConsumeMessageBatches } from '../../interfaces/consume-message-batches.interface.js';
+import { BatchMessageHandlerCallback } from '../../types/batch-message-handler-callback.type.js';
+import { KafkaBatchDelivery } from './kafka-batch-delivery.js';
 
 export interface KafkaConsumerOptions {
   namespace?: string;
@@ -36,9 +39,17 @@ type ConsumerSubscription = {
   errorStrategy: KafkaErrorHandleStrategy;
 };
 
+type EachBatchHandler = (payload: KafkaJS.EachBatchPayload) => Promise<void>;
+
+type SubscriptionStrategies = {
+  parseStrategy: KafkaMessageParseStrategy;
+  errorStrategy: KafkaErrorHandleStrategy;
+  groupId: string;
+};
+
 export class KafkaConsumer<
   TMessage extends MessageType,
-> extends ConsumerProxy<TMessage> implements OnModuleDestroy {
+> extends ConsumerProxy<TMessage> implements OnModuleDestroy, IConsumeMessageBatches<TMessage> {
 
   private readonly logger = new Logger(KafkaConsumer.name);
   private readonly namespace?: string;
@@ -70,6 +81,26 @@ export class KafkaConsumer<
     subscription: ConsumerSubscriptionParameters,
     cb: MessageHandlerCallback<TMessage>,
     consumerGroupId: string
+  ): Promise<void> {
+    await this.start(subscription, consumerGroupId, ({ parseStrategy, errorStrategy }) =>
+      this.handleBatchByMessage(cb, parseStrategy, errorStrategy));
+  }
+
+  public async subscribeBatch(
+    subscription: ConsumerSubscriptionParameters,
+    cb: BatchMessageHandlerCallback<TMessage>,
+    consumerGroupId: string,
+  ): Promise<void> {
+    await this.start(subscription, consumerGroupId, ({ parseStrategy, errorStrategy, groupId }) => {
+      const delivery = new KafkaBatchDelivery(cb, parseStrategy, errorStrategy, groupId);
+      return (payload) => delivery.deliver(payload);
+    });
+  }
+
+  private async start(
+    subscription: ConsumerSubscriptionParameters,
+    consumerGroupId: string,
+    eachBatchFor: (strategies: SubscriptionStrategies) => EachBatchHandler,
   ): Promise<void> {
     const namespaced = subscription.namespaced ?? true;
 
@@ -130,7 +161,7 @@ export class KafkaConsumer<
 
       await consumer.subscribe(topics);
 
-      await this.run(consumer, cb, parseStrategy, errorStrategy, config.partitionsConsumedConcurrently);
+      await this.run(consumer, eachBatchFor({ parseStrategy, errorStrategy, groupId }), config.partitionsConsumedConcurrently);
 
       if (topicNames.length > 0) {
         await member.joined(config.joinTimeoutMs());
@@ -186,19 +217,13 @@ export class KafkaConsumer<
 
   private async run(
     consumer: KafkaJS.Consumer,
-    cb: MessageHandlerCallback<TMessage>,
-    parseStrategy: KafkaMessageParseStrategy,
-    errorStrategy: KafkaErrorHandleStrategy,
+    eachBatch: EachBatchHandler,
     partitionsConsumedConcurrently: number,
   ): Promise<void> {
     await consumer.run({
       eachBatchAutoResolve: false,
       partitionsConsumedConcurrently,
-      eachBatch: this.handleBatchByMessage(
-        cb as MessageHandlerCallback<TMessage>,
-        parseStrategy,
-        errorStrategy,
-      ),
+      eachBatch,
     });
   }
 
