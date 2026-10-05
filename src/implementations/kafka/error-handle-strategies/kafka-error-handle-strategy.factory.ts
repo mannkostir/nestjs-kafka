@@ -62,7 +62,7 @@ export class KafkaErrorHandleStrategyFactory {
     }
 
     return new KafkaErrorHandleFailStrategy(
-      new RedeliveryBackoff(ExponentialBackoff.from(backoff ?? {}), new Logger(RedeliveryBackoff.name)),
+      new RedeliveryBackoff(ExponentialBackoff.from(backoff ?? {}, 'fail'), new Logger(RedeliveryBackoff.name)),
     );
   }
 

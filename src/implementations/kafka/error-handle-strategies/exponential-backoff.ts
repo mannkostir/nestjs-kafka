@@ -1,5 +1,7 @@
 import type { FailBackoffOptions } from '../../../types/message-error-handling.type.js';
 
+export type BackoffPolicy = 'fail' | 'retry';
+
 export class ExponentialBackoff {
   public static readonly DEFAULTS = { initialMs: 300, maxMs: 30000, multiplier: 2 } as const;
   private static readonly LONGEST_TIMER_DELAY_MS = 2147483647;
@@ -10,14 +12,14 @@ export class ExponentialBackoff {
     private readonly multiplier: number,
   ) {}
 
-  public static from(options: FailBackoffOptions): ExponentialBackoff {
+  public static from(options: FailBackoffOptions, policy: BackoffPolicy): ExponentialBackoff {
     const initialMs = options.initialMs ?? ExponentialBackoff.DEFAULTS.initialMs;
     const maxMs = options.maxMs ?? ExponentialBackoff.DEFAULTS.maxMs;
     const multiplier = options.multiplier ?? ExponentialBackoff.DEFAULTS.multiplier;
 
-    ExponentialBackoff.assertInitialMs(initialMs);
-    ExponentialBackoff.assertMaxMs(maxMs, initialMs);
-    ExponentialBackoff.assertMultiplier(multiplier);
+    ExponentialBackoff.assertInitialMs(initialMs, policy);
+    ExponentialBackoff.assertMaxMs(maxMs, initialMs, policy);
+    ExponentialBackoff.assertMultiplier(multiplier, policy);
 
     return new ExponentialBackoff(initialMs, maxMs, multiplier);
   }
@@ -26,39 +28,42 @@ export class ExponentialBackoff {
     return Math.min(this.initialMs * this.multiplier ** attempt, this.maxMs);
   }
 
-  private static assertInitialMs(initialMs: number): void {
+  private static assertInitialMs(initialMs: number, policy: BackoffPolicy): void {
     if (!Number.isFinite(initialMs) || initialMs <= 0) {
-      throw ExponentialBackoff.invalid(`"initialMs" (${initialMs}) must be a finite number greater than 0.`);
+      throw ExponentialBackoff.invalid(policy, `"initialMs" (${initialMs}) must be a finite number greater than 0.`);
     }
   }
 
-  private static assertMaxMs(maxMs: number, initialMs: number): void {
+  private static assertMaxMs(maxMs: number, initialMs: number, policy: BackoffPolicy): void {
     if (!Number.isFinite(maxMs)) {
-      throw ExponentialBackoff.invalid(`"maxMs" (${maxMs}) must be a finite number.`);
+      throw ExponentialBackoff.invalid(policy, `"maxMs" (${maxMs}) must be a finite number.`);
     }
 
     if (maxMs > ExponentialBackoff.LONGEST_TIMER_DELAY_MS) {
       throw ExponentialBackoff.invalid(
+        policy,
         `"maxMs" (${maxMs}) must be at most ${ExponentialBackoff.LONGEST_TIMER_DELAY_MS}.`,
       );
     }
 
     if (maxMs < initialMs) {
       throw ExponentialBackoff.invalid(
+        policy,
         `"maxMs" (${maxMs}) must be greater than or equal to "initialMs" (${initialMs}).`,
       );
     }
   }
 
-  private static assertMultiplier(multiplier: number): void {
+  private static assertMultiplier(multiplier: number, policy: BackoffPolicy): void {
     if (!Number.isFinite(multiplier) || multiplier < 1) {
       throw ExponentialBackoff.invalid(
+        policy,
         `"multiplier" (${multiplier}) must be a finite number greater than or equal to 1.`,
       );
     }
   }
 
-  private static invalid(reason: string): Error {
-    return new Error(`Invalid fail backoff: ${reason}`);
+  private static invalid(policy: BackoffPolicy, reason: string): Error {
+    return new Error(`Invalid ${policy} backoff: ${reason}`);
   }
 }

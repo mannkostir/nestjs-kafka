@@ -26,7 +26,7 @@ const unpausablePayload = () =>
 
 const stubLogger = () => ({ warn: jest.fn() }) as unknown as Logger & { warn: jest.Mock };
 
-const defaultBackoff = () => ExponentialBackoff.from({});
+const defaultBackoff = () => ExponentialBackoff.from({}, 'fail');
 
 describe('RedeliveryBackoff', () => {
   beforeEach(() => {
