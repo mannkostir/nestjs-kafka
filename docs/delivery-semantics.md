@@ -5,8 +5,9 @@ can die before its offset is committed, in which case the message is delivered a
 
 ## One consumer per handler
 
-Each handler, `@Message` or `@MessageBatch`, gets its own client consumer in its own consumer
-group, created, connected, and run at application bootstrap. Handlers of one connector cannot share a `groupId`; see
+Each handler, `@Message` or `@MessageBatch`, gets by default its own client consumer in its own consumer
+group, created, connected, and run at application bootstrap. Handlers of one connector cannot share a
+`groupId` unless they opt into a [shared group](handlers.md#sharing-a-consumer-group); see
 [Handlers](handlers.md#one-group-id-per-handler).
 
 ## Offsets
@@ -92,7 +93,7 @@ Call `app.enableShutdownHooks()` in the host application so these run on `SIGTER
 
 ## Cost of one consumer group per handler
 
-Every `@Message` handler is an independent subscription: its own client consumer in its own consumer
+By default every `@Message` handler is an independent subscription: its own client consumer in its own consumer
 group. That keeps handlers isolated at the Kafka level — one handler's paused partition, lag, or
 rebalance stays inside its own group — but every cost below is paid once per handler, in every
 replica of the service. A service with 40 handlers running as 3 replicas runs 120 consumers in 40
@@ -126,4 +127,15 @@ have to manage — typically as handlers per service climb into the dozens, mult
 
 To keep the count down, give one handler every topic it treats the same way: `@Message` takes an
 array of topics and `RegExp` patterns, and the handler's context carries the topic each message came
-from.
+from, or put several handlers in one [shared group](#sharing-a-consumer-group).
+
+## Sharing a consumer group
+
+Handlers in a [shared group](handlers.md#sharing-a-consumer-group) pay the costs above once: one
+client consumer, one set of connections and heartbeats, one join at bootstrap, and one rebalance per
+replica change.
+
+They give up isolation in return. The group rebalances as one, so every handler in it pauses while
+it does. `partitionsConsumedConcurrently` is shared: at `1`, a slow handler delays the partitions of
+every other handler in the group. A `fail` backoff still pauses only the failing partition, and a
+`retry` hold only its retry partition.

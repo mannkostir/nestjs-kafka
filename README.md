@@ -15,7 +15,7 @@ Integration-tested against `confluentinc/cp-kafka:7.6.1` in KRaft mode.
 ## Features
 
 - **Decorator handlers** — `@Message(topics, options)` on any singleton provider, each handler in
-  its own consumer group.
+  its own consumer group, or several in one shared group.
 - **Batch handlers** — `@MessageBatch` hands a handler a whole batch for bulk writes, with
   per-message failure control.
 - **Error policies** — `fail` with per-partition exponential backoff, `ignore`, `dlq` with error
@@ -33,7 +33,7 @@ Integration-tested against `confluentinc/cp-kafka:7.6.1` in KRaft mode.
 | | This library | `@nestjs/microservices` (Kafka transport) |
 | --- | --- | --- |
 | Bootstrap | A plain dynamic module in any Nest application | A dedicated microservice or a hybrid app |
-| Consumer groups | One per `@Message` handler | One `groupId` for the whole server |
+| Consumer groups | One per handler by default | One `groupId` for the whole server |
 | Dead-letter routing | Built-in `dlq` policy | Hand-rolled exception filter |
 | Avro / schema registry | Built-in | Not documented |
 | Offsets on handler failure | Per the `fail`, `ignore`, `dlq` policies | Auto-commit by default; manual commit via `KafkaContext` |
@@ -144,7 +144,7 @@ consumers and the producer disconnect cleanly on `SIGTERM`.
   module options, `registerAsync`, multiple connectors, `@Message` options, consumer settings and
   their precedence.
 - [Handlers](https://github.com/mannkostir/nestjs-kafka/blob/main/docs/handlers.md) — the message,
-  its headers and context, provider scope, and why each handler needs its own `groupId`.
+  its headers and context, provider scope, and when handlers may share a `groupId`.
 - [Topics and namespacing](https://github.com/mannkostir/nestjs-kafka/blob/main/docs/topics-and-namespacing.md)
   — namespace rules, `RegExp` subscriptions and their POSIX syntax, and topic provisioning.
 - [Message formats](https://github.com/mannkostir/nestjs-kafka/blob/main/docs/message-formats.md) —

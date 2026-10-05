@@ -148,3 +148,65 @@ describe('ResolvedConsumerConfig', () => {
     );
   });
 });
+
+describe('ResolvedConsumerConfig.agreed', () => {
+  const member = (handlerName: string, config: ResolvedConsumerConfig) => ({ handlerName, config });
+
+  it('returns the shared config when every member resolves the same options', () => {
+    const first = ResolvedConsumerConfig.resolve({ sessionTimeout: 45000 });
+
+    const agreed = ResolvedConsumerConfig.agreed('billing', [
+      member('A.x', first),
+      member('B.y', ResolvedConsumerConfig.resolve(undefined, { sessionTimeout: 45000 })),
+    ]);
+
+    expect(agreed).toBe(first);
+  });
+
+  it('names the differing option, both values and both handlers', () => {
+    expect(() =>
+      ResolvedConsumerConfig.agreed('billing', [
+        member('A.x', ResolvedConsumerConfig.resolve({ fromBeginning: true })),
+        member('B.y', ResolvedConsumerConfig.resolve()),
+      ]),
+    ).toThrow(
+      'Message handlers A.x and B.y share group "billing" but resolve consumer option "fromBeginning" differently (true vs false). Give every handler in a shared group the same consumer options, or set them in consumerDefaults.',
+    );
+  });
+
+  it('reports an option set on one member and unset on another as unset', () => {
+    expect(() =>
+      ResolvedConsumerConfig.agreed('billing', [
+        member('A.x', ResolvedConsumerConfig.resolve()),
+        member('B.y', ResolvedConsumerConfig.resolve({ heartbeatInterval: 1000 })),
+      ]),
+    ).toThrow('resolve consumer option "heartbeatInterval" differently (unset vs 1000)');
+  });
+
+  it('compares retry options by value regardless of key order', () => {
+    expect(() =>
+      ResolvedConsumerConfig.agreed('billing', [
+        member('A.x', ResolvedConsumerConfig.resolve({ retry: { maxRetryTime: 2000, initialRetryTime: 100 } })),
+        member('B.y', ResolvedConsumerConfig.resolve({ retry: { initialRetryTime: 100, maxRetryTime: 2000 } })),
+      ]),
+    ).not.toThrow();
+  });
+
+  it('reports differing retry options', () => {
+    expect(() =>
+      ResolvedConsumerConfig.agreed('billing', [
+        member('A.x', ResolvedConsumerConfig.resolve({ retry: { maxRetryTime: 2000 } })),
+        member('B.y', ResolvedConsumerConfig.resolve()),
+      ]),
+    ).toThrow('resolve consumer option "retry" differently ({"maxRetryTime":2000} vs {})');
+  });
+
+  it('reports differing concurrency', () => {
+    expect(() =>
+      ResolvedConsumerConfig.agreed('billing', [
+        member('A.x', ResolvedConsumerConfig.resolve()),
+        member('B.y', ResolvedConsumerConfig.resolve({ partitionsConsumedConcurrently: 3 })),
+      ]),
+    ).toThrow('resolve consumer option "partitionsConsumedConcurrently" differently (1 vs 3)');
+  });
+});

@@ -9,4 +9,5 @@ export type MessageOptions = {
     consumer?: ConsumerConfig;
     namespaced?: boolean;
     connectorName?: string;
+    sharedGroup?: boolean;
   };

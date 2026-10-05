@@ -35,6 +35,7 @@ import {
   KAFKA_CONNECTIONS,
   MESSAGE_FORMAT,
   BATCH_CONSUMER,
+  SHARED_GROUP_CONSUMER,
 } from './tokens.js';
 
 const kafkaProvider: Provider<KafkaJS.Kafka> = {
@@ -72,6 +73,11 @@ const schemaRegistryProvider: Provider<SchemaRegistry | undefined> = {
 
 const batchConsumerProvider: Provider = {
   provide: BATCH_CONSUMER,
+  useExisting: ConsumerProxy,
+};
+
+const sharedGroupConsumerProvider: Provider = {
+  provide: SHARED_GROUP_CONSUMER,
   useExisting: ConsumerProxy,
 };
 
@@ -234,6 +240,7 @@ export class KafkaModule {
         schemaRegistryProvider,
         consumerProxyProvider,
         batchConsumerProvider,
+        sharedGroupConsumerProvider,
         topicNamespacerProvider,
         producerProxyProvider,
         kafkaConnectionsProvider,
@@ -257,6 +264,7 @@ export class KafkaModule {
         schemaRegistryProvider,
         consumerProxyProvider,
         batchConsumerProvider,
+        sharedGroupConsumerProvider,
         topicNamespacerProvider,
         producerProxyProvider,
         kafkaConnectionsProvider,

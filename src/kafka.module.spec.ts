@@ -5,7 +5,7 @@ import { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
 import { KafkaModule } from './kafka.module.js';
 import { KafkaModuleOptions } from './types/kafka-module-options.type.js';
 import { IReleaseConnections } from './interfaces/release-connections.interface.js';
-import { KAFKA_PRODUCER, KAFKA_CONNECTIONS, BATCH_CONSUMER } from './tokens.js';
+import { KAFKA_PRODUCER, KAFKA_CONNECTIONS, BATCH_CONSUMER, SHARED_GROUP_CONSUMER } from './tokens.js';
 import { ConsumerProxy } from './base/consumer-proxy.js';
 import { ProducerProxy } from './base/producer-proxy.js';
 import { MessageFormat } from './types/message-format.type.js';
@@ -329,6 +329,24 @@ describe('KafkaModule batch consumer', () => {
     const moduleRef = await compileAsyncWith({ clientOptions });
 
     expect(moduleRef.get(BATCH_CONSUMER)).toBe(moduleRef.get(ConsumerProxy));
+
+    await moduleRef.close();
+  });
+});
+
+describe('KafkaModule shared group consumer', () => {
+  it('resolves the shared group consumer to the consumer proxy instance', async () => {
+    const moduleRef = await compileWith({ clientOptions });
+
+    expect(moduleRef.get(SHARED_GROUP_CONSUMER)).toBe(moduleRef.get(ConsumerProxy));
+
+    await moduleRef.close();
+  });
+
+  it('resolves the shared group consumer to the consumer proxy instance when registered asynchronously', async () => {
+    const moduleRef = await compileAsyncWith({ clientOptions });
+
+    expect(moduleRef.get(SHARED_GROUP_CONSUMER)).toBe(moduleRef.get(ConsumerProxy));
 
     await moduleRef.close();
   });

@@ -18,12 +18,15 @@ import { BatchMessageHandlerCallback } from '../types/batch-message-handler-call
 import { ConsumerSubscriptionParameters } from '../types/consumer-subscription-parameters.type.js';
 import { MessageHandlerCallback } from '../types/message-handler-callback.type.js';
 import { MessageType } from '../types/message.type.js';
+import { SharedGroupRoute, RouteDelivery } from '../types/shared-group-route.type.js';
 import { IConsumeMessageBatches } from '../interfaces/consume-message-batches.interface.js';
+import { IConsumeSharedGroups } from '../interfaces/consume-shared-groups.interface.js';
 import { IReleaseConnections } from '../interfaces/release-connections.interface.js';
 import {
   BATCH_CONSUMER,
   CONNECTOR_NAME,
   KAFKA_CONNECTIONS,
+  SHARED_GROUP_CONSUMER,
 } from '../tokens.js';
 
 type HandlerMetadata = Parameters<typeof Message>;
@@ -37,6 +40,7 @@ type HandlerKind = {
     handle: HandlerMethod,
     groupId: string,
   ) => Promise<void>;
+  delivery: (handle: HandlerMethod) => RouteDelivery;
 };
 
 type ProviderWrapper = ReturnType<DiscoveryService['getProviders']>[number];
@@ -72,6 +76,10 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
           handle as MessageHandlerCallback<MessageType>,
           groupId,
         ),
+      delivery: (handle) => ({
+        kind: 'message',
+        handle: handle as MessageHandlerCallback<MessageType>,
+      }),
     },
     {
       metadataKey: MessageBatchHandlerKey,
@@ -81,6 +89,10 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
           handle as BatchMessageHandlerCallback<MessageType>,
           groupId,
         ),
+      delivery: (handle) => ({
+        kind: 'batch',
+        handle: handle as BatchMessageHandlerCallback<MessageType>,
+      }),
     },
   ];
 
@@ -88,6 +100,8 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
     private readonly consumerProxy: ConsumerProxy,
     @Inject(BATCH_CONSUMER)
     private readonly batchConsumer: IConsumeMessageBatches,
+    @Inject(SHARED_GROUP_CONSUMER)
+    private readonly sharedGroupConsumer: IConsumeSharedGroups,
     private readonly discoveryService: DiscoveryService,
     private readonly metadataScanner: MetadataScanner,
     @Inject(KAFKA_CONNECTIONS)
@@ -120,10 +134,12 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
       this.belongsToThisConnector(handler.metadata),
     );
 
-    this.assertUniqueGroupIds(handlers);
+    const groups = this.groupsOf(handlers);
+
+    groups.forEach((group) => this.assertMayShareGroup(group));
 
     const results = await Promise.allSettled(
-      handlers.map((handler) => this.subscribe(handler)),
+      groups.map((group) => this.subscribeGroup(group)),
     );
     const failure = results.find(
       (result): result is PromiseRejectedResult => result.status === 'rejected',
@@ -240,32 +256,58 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
     return 'a provider that depends on a request-scoped provider';
   }
 
-  private assertUniqueGroupIds(handlers: DiscoveredHandler[]): void {
-    const ownerByGroupId = new Map<string, DiscoveredHandler>();
+  private groupsOf(handlers: DiscoveredHandler[]): DiscoveredHandler[][] {
+    const byGroupId = new Map<string, DiscoveredHandler[]>();
 
     for (const handler of handlers) {
       const groupId = handler.metadata[1].groupId;
-      const owner = ownerByGroupId.get(groupId);
-
-      if (owner) {
-        throw this.groupIdCollision(owner, handler, groupId);
-      }
-
-      ownerByGroupId.set(groupId, handler);
+      byGroupId.set(groupId, [...(byGroupId.get(groupId) ?? []), handler]);
     }
+
+    return [...byGroupId.values()];
   }
 
-  private groupIdCollision(
-    owner: DiscoveredHandler,
-    challenger: DiscoveredHandler,
-    groupId: string,
-  ): Error {
-    return this.isSameHandler(owner, challenger)
-      ? this.duplicateRegistration(owner.name, groupId)
-      : new Error(
-          `Message handlers ${owner.name} and ${challenger.name} share groupId "${groupId}". ` +
-            'Give each handler its own groupId.',
-        );
+  private assertMayShareGroup(group: DiscoveredHandler[]): void {
+    if (group.length < 2) {
+      return;
+    }
+
+    this.assertProvidedOnce(group);
+
+    const challenger = this.firstUnflaggedMember(group);
+
+    if (!challenger) {
+      return;
+    }
+
+    const owner = group.find((handler) => handler !== challenger);
+
+    throw new Error(
+      `Message handlers ${owner?.name} and ${challenger.name} share groupId "${challenger.metadata[1].groupId}". ` +
+        'Give each handler its own groupId, or set sharedGroup: true on every handler of the group.',
+    );
+  }
+
+  private firstUnflaggedMember(
+    group: DiscoveredHandler[],
+  ): DiscoveredHandler | undefined {
+    const [, ...rest] = group;
+
+    return [...rest, group[0]].find(
+      (handler) => handler.metadata[1].sharedGroup !== true,
+    );
+  }
+
+  private assertProvidedOnce(group: DiscoveredHandler[]): void {
+    const twin = group.find((handler, index) =>
+      group
+        .slice(0, index)
+        .some((earlier) => this.isSameHandler(earlier, handler)),
+    );
+
+    if (twin) {
+      throw this.duplicateRegistration(twin.name, twin.metadata[1].groupId);
+    }
   }
 
   private isSameHandler(
@@ -287,20 +329,42 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
     );
   }
 
-  private async subscribe(handler: DiscoveredHandler): Promise<void> {
-    const [topicPatterns, options] = handler.metadata;
+  private async subscribeGroup(group: DiscoveredHandler[]): Promise<void> {
+    const [handler] = group;
 
-    await handler.kind.subscribe(
-      {
-        topicPatterns,
-        messageFormat: options.messageFormat,
-        errorHandling: options.errorHandling,
-        consumer: options.consumer,
-        namespaced: options.namespaced,
-      },
-      handler.handle,
-      options.groupId,
+    if (group.length === 1) {
+      await handler.kind.subscribe(
+        this.subscriptionOf(handler),
+        handler.handle,
+        handler.metadata[1].groupId,
+      );
+      return;
+    }
+
+    await this.sharedGroupConsumer.subscribeGroup(
+      handler.metadata[1].groupId,
+      group.map((member) => this.routeOf(member)),
     );
+  }
+
+  private routeOf(handler: DiscoveredHandler): SharedGroupRoute {
+    return {
+      handlerName: handler.name,
+      subscription: this.subscriptionOf(handler),
+      delivery: handler.kind.delivery(handler.handle),
+    };
+  }
+
+  private subscriptionOf({
+    metadata: [topicPatterns, options],
+  }: DiscoveredHandler): ConsumerSubscriptionParameters {
+    return {
+      topicPatterns,
+      messageFormat: options.messageFormat,
+      errorHandling: options.errorHandling,
+      consumer: options.consumer,
+      namespaced: options.namespaced,
+    };
   }
 
   private belongsToThisConnector(metadata: HandlerMetadata): boolean {
