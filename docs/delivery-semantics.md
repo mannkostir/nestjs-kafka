@@ -37,7 +37,9 @@ concurrently, so right after startup or under light traffic batches can still ru
 ## Start offsets
 
 With `fromBeginning: false` (the default), a partition with no committed offset starts at the log
-end as of its assignment. A committed offset, including `0`, is always honoured instead.
+end as of its assignment. A committed offset, including `0`, is always honoured instead. Retry topics
+are the exception: a retry topic partition with no committed offset starts at its log start, see
+[Topics and namespacing](topics-and-namespacing.md#retry-topics).
 
 Messages produced after bootstrap are delivered to the consumer that holds the partition. Until the
 group's first commit, a partition that changes owner — for example a second replica joining, or a

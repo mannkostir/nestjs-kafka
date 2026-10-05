@@ -76,10 +76,16 @@ export class KafkaConsumer<
     const parseStrategy = this.parseStrategies.create(
       subscription.messageFormat ?? this.messageFormat,
     );
-    const errorStrategy = this.errorStrategies.create(subscription.errorHandling, namespaced);
-
     const requestedPatterns = subscription.topicPatterns.filter(Boolean);
     requestedPatterns.forEach((pattern) => LibrdkafkaTopicPattern.validate(pattern));
+
+    const groupId = [this.namespace, consumerGroupId].filter(Boolean).join('-');
+
+    const errorStrategy = this.errorStrategies.create(subscription.errorHandling, {
+      namespaced,
+      groupId,
+      topicPatterns: requestedPatterns,
+    });
 
     const topicPatterns = requestedPatterns
       .map((pattern) =>
@@ -93,7 +99,11 @@ export class KafkaConsumer<
       (pattern): pattern is string => typeof pattern === 'string',
     );
 
-    const requiredTopics = [...new Set([...topicNames, ...errorStrategy.destinationTopics(topicNames)])];
+    const retryTopics = errorStrategy.consumedTopics(topicNames);
+
+    const requiredTopics = [
+      ...new Set([...topicNames, ...retryTopics, ...errorStrategy.destinationTopics(topicNames)]),
+    ];
 
     if (config.allowAutoTopicCreation) {
       await this.topicProvisioner.createMissing(requiredTopics);
@@ -101,13 +111,12 @@ export class KafkaConsumer<
       await this.topicProvisioner.assertExisting(requiredTopics);
     }
 
-    const groupId = [this.namespace, consumerGroupId].filter(Boolean).join('-');
-
     const member = new KafkaGroupMember(
       this.kafka,
       config.clientConfig(groupId),
       !config.fromBeginning,
       this.clientLogger,
+      new Set(retryTopics),
     );
     const consumer = member.consumer;
     const consumerSubscription: ConsumerSubscription = { consumer, errorStrategy };
@@ -117,7 +126,7 @@ export class KafkaConsumer<
     try {
       await consumer.connect();
 
-      const topics: KafkaJS.ConsumerSubscribeTopics = { topics: topicPatterns };
+      const topics: KafkaJS.ConsumerSubscribeTopics = { topics: [...topicPatterns, ...retryTopics] };
 
       await consumer.subscribe(topics);
 
@@ -166,7 +175,7 @@ export class KafkaConsumer<
   ) {
     return async (payload: KafkaJS.EachBatchPayload) => {
       for (const message of payload.batch.messages) {
-        if (!payload.isRunning() || payload.isStale()) {
+        if (!payload.isRunning() || payload.isStale() || errorStrategy.holdUntilDue(payload, message)) {
           break;
         }
 

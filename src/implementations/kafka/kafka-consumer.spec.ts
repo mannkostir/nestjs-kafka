@@ -1145,3 +1145,244 @@ describe('KafkaConsumer handler context', () => {
     expect(producer.send).toHaveBeenCalledWith(expect.objectContaining({ topic: 'parking.lot' }));
   });
 });
+
+describe('KafkaConsumer retry error handling', () => {
+  const retrySubscription = () => ({
+    ...subscription(),
+    errorHandling: { type: 'retry' as const, attempts: 2 },
+  });
+
+  const retryMessage = (offset: string, dueAt?: number) => ({
+    key: null,
+    value: Buffer.from(JSON.stringify({ payload: {} })),
+    timestamp: '0',
+    size: 0,
+    attributes: 0,
+    offset,
+    headers: dueAt === undefined ? undefined : { 'retry.due': String(dueAt) },
+  });
+
+  const retryBatch = (messages: ReturnType<typeof retryMessage>[], resume: () => void = jest.fn()) => ({
+    batch: { topic: 'orders.created.orders-service.retry.1', partition: 0, messages },
+    isRunning: () => true,
+    isStale: () => false,
+    resolveOffset: jest.fn(),
+    pause: jest.fn(() => resume),
+  });
+
+  const eachBatchOf = (consumer: ReturnType<typeof consumerStub>) =>
+    (consumer.run as jest.Mock).mock.calls[0][0].eachBatch;
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('subscribes to the retry topics alongside the source topics', async () => {
+    const consumer = consumerStub();
+
+    await new KafkaConsumer(kafkaStub(consumer), {
+      producer: producerStub(),
+      topicProvisioner: provisionerStub() as unknown as KafkaTopicProvisioner,
+    }).subscribe(retrySubscription(), jest.fn(), 'orders-service');
+
+    expect(consumer.subscribe).toHaveBeenCalledWith({
+      topics: [
+        'orders.created',
+        'orders.created.orders-service.retry.1',
+        'orders.created.orders-service.retry.2',
+      ],
+    });
+  });
+
+  it('checks the retry and dead letter topics exist alongside the source topics', async () => {
+    const consumer = consumerStub();
+    const topicProvisioner = provisionerStub();
+
+    await new KafkaConsumer(kafkaStub(consumer), {
+      producer: producerStub(),
+      topicProvisioner: topicProvisioner as unknown as KafkaTopicProvisioner,
+    }).subscribe(retrySubscription(), jest.fn(), 'orders-service');
+
+    expect(topicProvisioner.assertExisting).toHaveBeenCalledWith([
+      'orders.created',
+      'orders.created.orders-service.retry.1',
+      'orders.created.orders-service.retry.2',
+      'orders.created.dlq',
+    ]);
+  });
+
+  it('subscribes to namespaced retry topics under a namespace', async () => {
+    const consumer = consumerStub();
+
+    await new KafkaConsumer(kafkaStub(consumer), {
+      namespace: 'dev',
+      namespacer: new TopicNamespacer('dev'),
+      producer: producerStub(),
+      topicProvisioner: provisionerStub() as unknown as KafkaTopicProvisioner,
+    }).subscribe(retrySubscription(), jest.fn(), 'orders-service');
+
+    expect(consumer.subscribe).toHaveBeenCalledWith({
+      topics: [
+        'dev.orders.created',
+        'dev.orders.created.dev-orders-service.retry.1',
+        'dev.orders.created.dev-orders-service.retry.2',
+      ],
+    });
+  });
+
+  it('names retry topics of an un-namespaced source by the namespaced group', async () => {
+    const consumer = consumerStub();
+
+    await new KafkaConsumer(kafkaStub(consumer), {
+      namespace: 'dev',
+      namespacer: new TopicNamespacer('dev'),
+      producer: producerStub(),
+      topicProvisioner: provisionerStub() as unknown as KafkaTopicProvisioner,
+    }).subscribe({ ...retrySubscription(), namespaced: false }, jest.fn(), 'orders-service');
+
+    expect(consumer.subscribe).toHaveBeenCalledWith({
+      topics: [
+        'orders.created',
+        'orders.created.dev-orders-service.retry.1',
+        'orders.created.dev-orders-service.retry.2',
+      ],
+    });
+  });
+
+  it('rejects a namespace that cannot be part of a retry topic name before creating a consumer', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+
+    await expect(
+      new KafkaConsumer(kafka, {
+        namespace: 'dev env',
+        producer: producerStub(),
+        topicProvisioner: provisionerStub() as unknown as KafkaTopicProvisioner,
+      }).subscribe({ ...retrySubscription(), namespaced: false }, jest.fn(), 'orders-service'),
+    ).rejects.toThrow(/"dev env-orders-service" contains characters other than/);
+    expect(kafka.consumer).not.toHaveBeenCalled();
+  });
+
+  it('starts an uncommitted retry partition at its log start', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+    const admin = (kafka.admin as jest.Mock)();
+    admin.fetchOffsets = jest.fn().mockResolvedValue([
+      { topic: 'orders.created', partitions: [{ partition: 0, offset: '-1' }] },
+      { topic: 'orders.created.orders-service.retry.1', partitions: [{ partition: 0, offset: '-1' }] },
+    ]);
+    admin.fetchTopicOffsets = jest.fn().mockResolvedValue([
+      { partition: 0, high: '42', low: '5', offset: '42' },
+    ]);
+    await new KafkaConsumer(kafka, {
+      producer: producerStub(),
+      topicProvisioner: provisionerStub() as unknown as KafkaTopicProvisioner,
+    }).subscribe(retrySubscription(), jest.fn(), 'orders-service');
+    const { rebalance_cb } = (kafka.consumer as jest.Mock).mock.calls[0][0];
+
+    const pinned = await rebalance_cb({ code: -175 }, [
+      { topic: 'orders.created', partition: 0 },
+      { topic: 'orders.created.orders-service.retry.1', partition: 0 },
+    ]);
+
+    expect(pinned).toEqual([
+      { topic: 'orders.created', partition: 0, offset: 42 },
+      { topic: 'orders.created.orders-service.retry.1', partition: 0, offset: 5 },
+    ]);
+  });
+
+  it('does not hand a retry message that is not due yet to the handler', async () => {
+    const consumer = consumerStub();
+    const handler = jest.fn();
+    await new KafkaConsumer(kafkaStub(consumer), {
+      producer: producerStub(),
+      topicProvisioner: provisionerStub() as unknown as KafkaTopicProvisioner,
+    }).subscribe(retrySubscription(), handler, 'orders-service');
+
+    await eachBatchOf(consumer)(retryBatch([retryMessage('7', Date.now() + 60000)]));
+
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('does not hand the messages after a held retry message to the handler', async () => {
+    const consumer = consumerStub();
+    const handler = jest.fn();
+    await new KafkaConsumer(kafkaStub(consumer), {
+      producer: producerStub(),
+      topicProvisioner: provisionerStub() as unknown as KafkaTopicProvisioner,
+    }).subscribe(retrySubscription(), handler, 'orders-service');
+
+    await eachBatchOf(consumer)(
+      retryBatch([retryMessage('7', Date.now() + 60000), retryMessage('8')]),
+    );
+
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('leaves the held message and everything after it unresolved', async () => {
+    const consumer = consumerStub();
+    await new KafkaConsumer(kafkaStub(consumer), {
+      producer: producerStub(),
+      topicProvisioner: provisionerStub() as unknown as KafkaTopicProvisioner,
+    }).subscribe(retrySubscription(), jest.fn(), 'orders-service');
+    const batch = retryBatch([retryMessage('7', Date.now() + 60000), retryMessage('8')]);
+
+    await eachBatchOf(consumer)(batch);
+
+    expect(batch.resolveOffset).not.toHaveBeenCalled();
+  });
+
+  it('hands a due retry message to the handler', async () => {
+    const consumer = consumerStub();
+    const handler = jest.fn();
+    await new KafkaConsumer(kafkaStub(consumer), {
+      producer: producerStub(),
+      topicProvisioner: provisionerStub() as unknown as KafkaTopicProvisioner,
+    }).subscribe(retrySubscription(), handler, 'orders-service');
+
+    await eachBatchOf(consumer)(retryBatch([retryMessage('7', Date.now() - 1)]));
+
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a retry subscription with a pattern before creating a consumer', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+
+    await expect(
+      new KafkaConsumer(kafka, {
+        producer: producerStub(),
+        topicProvisioner: provisionerStub() as unknown as KafkaTopicProvisioner,
+      }).subscribe(
+        { ...retrySubscription(), topicPatterns: ['orders.created', /^audit\..+/] },
+        jest.fn(),
+        'orders-service',
+      ),
+    ).rejects.toThrow(/subscribes to a pattern/);
+    expect(kafka.consumer).not.toHaveBeenCalled();
+  });
+
+  it('never resumes a held retry partition after every consumer is disconnected', async () => {
+    const consumer = consumerStub();
+    const kafkaConsumer = new KafkaConsumer(kafkaStub(consumer), {
+      producer: producerStub(),
+      topicProvisioner: provisionerStub() as unknown as KafkaTopicProvisioner,
+    });
+    await kafkaConsumer.subscribe(retrySubscription(), jest.fn(), 'orders-service');
+    const resume = jest.fn();
+    const batch = retryBatch([retryMessage('7', Date.now() + 30000)], resume);
+    await eachBatchOf(consumer)(batch);
+
+    await kafkaConsumer.disconnectAll();
+    await jest.advanceTimersByTimeAsync(60000);
+
+    expect({ paused: batch.pause.mock.calls.length, resumed: resume.mock.calls.length }).toEqual({
+      paused: 1,
+      resumed: 0,
+    });
+  });
+});

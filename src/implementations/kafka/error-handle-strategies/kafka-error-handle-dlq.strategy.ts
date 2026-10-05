@@ -1,11 +1,6 @@
 import type { KafkaJS } from "@confluentinc/kafka-javascript";
 import { KafkaErrorHandleStrategy } from "./kafka-error-handle.strategy.js";
-
-type FailureDescription = {
-    name: string;
-    message: string;
-    stack?: string;
-};
+import { describeFailure } from "./failure-description.js";
 
 export class KafkaErrorHandleDlqStrategy extends KafkaErrorHandleStrategy {
     private static readonly DEFAULT_DLQ_SUFFIX = '.dlq';
@@ -29,20 +24,8 @@ export class KafkaErrorHandleDlqStrategy extends KafkaErrorHandleStrategy {
         return this.dlqTopic || `${originalTopic}${KafkaErrorHandleDlqStrategy.DEFAULT_DLQ_SUFFIX}`;
     }
 
-    private static describeFailure(error: unknown): FailureDescription {
-        if (error instanceof Error) {
-            return {
-                name: error.name || 'Error',
-                message: error.message || 'Unknown error',
-                stack: error.stack,
-            };
-        }
-
-        return { name: 'Error', message: String(error) };
-    }
-
     private buildDlqHeaders(error: unknown, originalTopic: string, originalHeaders?: KafkaJS.IHeaders): KafkaJS.IHeaders {
-        const failure = KafkaErrorHandleDlqStrategy.describeFailure(error);
+        const failure = describeFailure(error);
 
         return {
             ...originalHeaders,
@@ -54,9 +37,7 @@ export class KafkaErrorHandleDlqStrategy extends KafkaErrorHandleStrategy {
         };
     }
 
-    public async handle(error: unknown, payload: KafkaJS.EachBatchPayload, message: KafkaJS.KafkaMessage): Promise<void> {
-        const originalTopic = payload.batch.topic;
-
+    public async publish(error: unknown, originalTopic: string, message: KafkaJS.KafkaMessage): Promise<void> {
         await this.producer.send({
             topic: this.resolveDlqTopic(originalTopic),
             messages: [{
@@ -66,7 +47,10 @@ export class KafkaErrorHandleDlqStrategy extends KafkaErrorHandleStrategy {
                 headers: this.buildDlqHeaders(error, originalTopic, message.headers),
             }],
         });
+    }
 
+    public async handle(error: unknown, payload: KafkaJS.EachBatchPayload, message: KafkaJS.KafkaMessage): Promise<void> {
+        await this.publish(error, payload.batch.topic, message);
         payload.resolveOffset(message.offset);
     }
 }

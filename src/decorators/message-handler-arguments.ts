@@ -4,6 +4,7 @@ const knownErrorHandlingTypes: Record<MessageErrorHandlingConfig['type'], true> 
   fail: true,
   ignore: true,
   dlq: true,
+  retry: true,
 };
 
 const errorHandlingTypes: readonly unknown[] = Object.keys(
@@ -11,7 +12,7 @@ const errorHandlingTypes: readonly unknown[] = Object.keys(
 );
 
 const errorHandlingFix =
-  "Set errorHandling to { type: 'fail' }, { type: 'ignore' } or { type: 'dlq' }.";
+  "Set errorHandling to { type: 'fail' }, { type: 'ignore' }, { type: 'dlq' } or { type: 'retry', attempts }.";
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;

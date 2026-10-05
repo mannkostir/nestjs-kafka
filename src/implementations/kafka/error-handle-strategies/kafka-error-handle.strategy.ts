@@ -7,5 +7,13 @@ export abstract class KafkaErrorHandleStrategy {
         return [];
     }
 
+    public consumedTopics(sourceTopics: string[]): string[] {
+        return [];
+    }
+
+    public holdUntilDue(payload: KafkaJS.EachBatchPayload, message: KafkaJS.KafkaMessage): boolean {
+        return false;
+    }
+
     public stop(): void {}
 }

@@ -37,7 +37,8 @@ export class KafkaGroupMember {
     } catch (error) {
       this.logger.warn(
         `Consumer group "${this.groupId}" failed to pin start offsets for its new assignment; ` +
-          `falling back to the client's default start offsets. ${(error as Error).message}`,
+          `falling back to the client's default start offsets. ${(error as Error).message}` +
+          this.unpinnedReplayWarning(assignment),
       );
       return undefined;
     } finally {
@@ -52,6 +53,7 @@ export class KafkaGroupMember {
     config: KafkaJS.ConsumerConfig,
     private readonly startAtLogEnd: boolean,
     clientLogger: KafkaJS.Logger,
+    private readonly replayedTopics: ReadonlySet<string> = new Set(),
     private readonly pinTimeoutMs: number = DEFAULT_PIN_TIMEOUT_MS,
   ) {
     this.groupId = config.groupId;
@@ -119,7 +121,7 @@ export class KafkaGroupMember {
       await admin.connect();
 
       const committed = await this.committedOffsets(admin, assignment);
-      const logEnds = await KafkaGroupMember.logEndOffsets(
+      const uncommittedStarts = await this.uncommittedStartOffsets(
         admin,
         assignment.filter(
           ({ topic, partition }) =>
@@ -130,7 +132,7 @@ export class KafkaGroupMember {
       return assignment.map(({ topic, partition }) => ({
         topic,
         partition,
-        offset: KafkaGroupMember.startOffset(committed, logEnds, topic, partition),
+        offset: KafkaGroupMember.startOffset(committed, uncommittedStarts, topic, partition),
       }));
     } finally {
       await admin.disconnect();
@@ -153,7 +155,7 @@ export class KafkaGroupMember {
     );
   }
 
-  private static async logEndOffsets(
+  private async uncommittedStartOffsets(
     admin: KafkaJS.Admin,
     partitions: KafkaJS.TopicPartition[],
   ): Promise<Map<string, string>> {
@@ -163,14 +165,26 @@ export class KafkaGroupMember {
 
     const topics = [...new Set(partitions.map(({ topic }) => topic))];
     const offsets = await Promise.all(
-      topics.map(async (topic) =>
-        (await admin.fetchTopicOffsets(topic)).map(
-          ({ partition, high }) => [`${topic}:${partition}`, high] as const,
-        ),
-      ),
+      topics.map(async (topic) => {
+        const startsAtLogStart = this.replayedTopics.has(topic);
+
+        return (await admin.fetchTopicOffsets(topic)).map(
+          ({ partition, high, low }) => [`${topic}:${partition}`, startsAtLogStart ? low : high] as const,
+        );
+      }),
     );
 
     return new Map(offsets.flat());
+  }
+
+  private unpinnedReplayWarning(assignment: KafkaJS.TopicPartition[]): string {
+    const replayed = assignment
+      .filter(({ topic }) => this.replayedTopics.has(topic))
+      .map(({ topic, partition }) => `${topic}[${partition}]`);
+
+    return replayed.length === 0
+      ? ''
+      : ` Retry partition(s) without a committed offset may start at the log end: ${replayed.join(', ')}.`;
   }
 
   private static byTopic(
@@ -189,7 +203,7 @@ export class KafkaGroupMember {
 
   private static startOffset(
     committed: Map<string, string>,
-    logEnds: Map<string, string>,
+    uncommittedStarts: Map<string, string>,
     topic: string,
     partition: number,
   ): number {
@@ -200,12 +214,12 @@ export class KafkaGroupMember {
       return Number(offset);
     }
 
-    const logEnd = logEnds.get(key);
-    if (logEnd === undefined) {
-      throw new Error(`No log end offset was returned for ${key}.`);
+    const uncommittedStart = uncommittedStarts.get(key);
+    if (uncommittedStart === undefined) {
+      throw new Error(`No log offsets were returned for ${key}.`);
     }
 
-    return Number(logEnd);
+    return Number(uncommittedStart);
   }
 
   private static isValidOffset(offset: string | undefined): offset is string {
