@@ -45,6 +45,18 @@ is already namespaced when the source subscription was.
 DLQ topics are checked or created at bootstrap together with the handler's source topics; see
 [Topic provisioning](#topic-provisioning).
 
+## Retry topics
+
+A handler with `errorHandling: { type: 'retry', attempts }` gets one retry topic per attempt and per
+source topic, named `<source topic>.<groupId>.retry.<n>` with `n` from `1` to `attempts`. The source
+topic is the one the broker reports, already namespaced when the subscription was, and `groupId` is
+the handler's own, without the namespace. Under `namespace: 'dev'`, a handler in group
+`orders-service` on `orders.created` uses `dev.orders.created.orders-service.retry.1`.
+
+Retry topics belong to the handler's group: other groups subscribed to the same source topic never see
+them. The handler's own consumer, in its own group, consumes its retry topics next to its source
+topics. The dead-letter destination of a `retry` handler is described under [DLQ topics](#dlq-topics).
+
 ## Pattern (RegExp) topics
 
 A `RegExp` topic pattern given to `@Message` is matched by librdkafka, which compiles it as a
@@ -93,7 +105,8 @@ KafkaModule.register({
 
 Before each handler's consumer is created, the library lists the broker's topics and checks that
 the handler's plain-string topics exist, along with its DLQ topic when it uses
-`errorHandling: { type: 'dlq' }`. What happens to a missing topic is governed by the handler's
+`errorHandling: { type: 'dlq' }`, and its retry topics and DLQ topic when it uses
+`errorHandling: { type: 'retry' }`. What happens to a missing topic is governed by the handler's
 resolved `allowAutoTopicCreation` (see [Configuration](configuration.md#consumerconfig)). `RegExp`
 subscriptions are never provisioned — a pattern matches whatever topics already exist, or come to
 exist later.
@@ -134,3 +147,11 @@ A `RegExp` source has no topic name to derive a destination from at bootstrap, s
 `.dlq` destinations are neither checked nor created. Create them before the application starts, or
 set `producer: { allowAutoTopicCreation: true }` on a broker that auto-creates topics (see
 [Producing](producing.md#topic)).
+
+A `retry` handler's retry topics are checked or created in the same step. A handler in group
+`orders-service` on `orders.created` with `attempts: 2` needs `orders.created.orders-service.retry.1`
+and `orders.created.orders-service.retry.2`, as well as its dead-letter topic:
+
+```
+Topic(s) orders.created.orders-service.retry.1, orders.created.orders-service.retry.2 do not exist and allowAutoTopicCreation is false. Create them before the application starts, or enable allowAutoTopicCreation.
+```

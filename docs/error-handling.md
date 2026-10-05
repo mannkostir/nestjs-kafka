@@ -8,6 +8,7 @@ also when parsing the record throws.
 | `fail` | pauses the partition with backoff, then retries the same message | yes, until it succeeds |
 | `ignore` | resolves the offset and moves on | no |
 | `dlq` | publishes the record to a dead-letter topic, then resolves the offset | no |
+| `retry` | republishes to a delay topic, then dead-letters once attempts run out | yes, after each delay, up to `attempts` times |
 
 ## `{ type: 'fail' }`
 
@@ -95,5 +96,74 @@ async handleDeadLetter(message: MessageType<OrderCreated>): Promise<void> {
   this.logger.warn(
     `Order ${message.value?.orderId} failed: ${message.headers?.['dlq.error.message']}`,
   );
+}
+```
+
+## `{ type: 'retry', attempts, backoff?, dlqTopic? }`
+
+Republishes the failed record to a retry topic, resolves its offset on the source partition, and
+redelivers it from the retry topic after a delay. The failing message leaves its partition, so the
+messages behind it keep flowing. Once the last retry fails, the record is dead-lettered like `dlq`.
+Delivery uses the module's producer.
+
+```ts
+errorHandling: { type: 'retry', attempts: 3 }
+errorHandling: { type: 'retry', attempts: 3, backoff: { initialMs: 1000, multiplier: 10 }, dlqTopic: 'orders.failures' }
+```
+
+| Option | Type | Default | Constraint |
+| --- | --- | --- | --- |
+| `attempts` | `number` | required | integer, at least `1` |
+| `backoff` | `FailBackoffOptions` | see below | same fields and constraints as `fail` |
+| `dlqTopic` | `string` | `<source topic>.dlq` | same as `dlq`'s `topic` |
+
+Retry `n` waits `min(initialMs * multiplier ^ (n - 1), maxMs)`. The `backoff` fields and their
+defaults (`300`, `30000`, `2`) are those of the [`fail`](#-type-fail-) table; `backoff: false` is not
+accepted. An invalid value fails application bootstrap with an error naming the field.
+
+Delays are minimums. The retry consumer pauses the retry partition until the record's `retry.due`
+time, and the client picks it up on its next fetch cycle, which rounds short delays up.
+
+Each hop adds these headers to the record, keeping the original headers:
+
+| Header | Value |
+| --- | --- |
+| `retry.original.topic` | topic the record was first consumed from |
+| `retry.attempt` | number of the retry the record is being sent to, starting at `1` |
+| `retry.due` | epoch milliseconds before which the record is not redelivered |
+| `retry.error.name` | `error.name`, or `Error` |
+| `retry.error.message` | `error.message`, or `Unknown error`; `String(value)` for a thrown value that is not an `Error` |
+
+The headers are informational. The attempt and the original topic are derived from the name of the
+topic the record was consumed from, never read from the headers.
+
+When the last retry fails, the record goes to the dead-letter topic with the `dlq.*` headers described
+under [`dlq`](#-type-dlq-topic-string-), where `dlq.original.topic` is the topic the record was first
+consumed from. The `retry.*` headers are kept. How retry topics are named, namespaced and created is
+described in [Topics and namespacing](topics-and-namespacing.md#retry-topics).
+
+If the republish or the dead-letter publish fails, the offset is not resolved and the record is
+redelivered.
+
+Per-key ordering is not preserved: while a record waits in a retry topic, later records with the same
+key are processed. Use `fail` when order matters.
+
+Bootstrap fails, with a message saying how to fix it, when the handler:
+
+- subscribes to a `RegExp` pattern, because retry topics are derived from concrete topic names;
+- has a `groupId` containing characters other than letters, digits, `.`, `_` and `-`;
+- would need a retry topic name longer than 249 characters;
+- runs in a module that has no producer.
+
+A handler reads the headers from `message.headers`:
+
+```ts
+@Message(['orders.created'], {
+  groupId: 'orders-service',
+  errorHandling: { type: 'retry', attempts: 3 },
+})
+async handleOrder(message: MessageType<OrderCreated>): Promise<void> {
+  const attempt = message.headers?.['retry.attempt'] ?? '0';
+  await this.orders.process(message.value, Number(attempt));
 }
 ```
