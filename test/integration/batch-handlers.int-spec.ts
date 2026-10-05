@@ -12,6 +12,16 @@ import { eventually, waitFor } from './wait.js';
 const backlogSize = 200;
 const keys200 = Array.from({ length: backlogSize }, (_, index) => `k${String(index).padStart(3, '0')}`);
 
+const keysOf = (prefix: string, count: number) =>
+  Array.from({ length: count }, (_, index) => `${prefix}${String(index).padStart(3, '0')}`);
+
+const partialBefore = keysOf('p', 60);
+const partialAfter = keysOf('q', 20);
+const retryBefore = keysOf('r', 60);
+const retryAfter = keysOf('s', 20);
+
+type Position = { index: number; batchLength: number };
+
 const bulk: string[][] = [];
 
 @Injectable()
@@ -27,6 +37,7 @@ class BulkIndexer {
 }
 
 const partialHandled: string[] = [];
+const poisonPositions: Position[] = [];
 
 @Injectable()
 class PartialIndexer {
@@ -41,6 +52,7 @@ class PartialIndexer {
     partialHandled.push(...handled.map(({ message }) => String(message.key)));
 
     if (poison !== -1) {
+      poisonPositions.push({ index: poison, batchLength: batch.length });
       throw new BatchFailure(poison, new Error('poison record'));
     }
   }
@@ -67,6 +79,7 @@ class FlakyIndexer {
 }
 
 const retryTopicsSeen: Array<{ key: string; topic: string }> = [];
+const retryMePositions: Position[] = [];
 let retryThrown = false;
 
 @Injectable()
@@ -77,13 +90,15 @@ class RetryingIndexer {
     consumer: { fromBeginning: true, allowAutoTopicCreation: true },
   })
   async index(batch: ReceivedMessage[]): Promise<void> {
-    retryTopicsSeen.push(
-      ...batch.map(({ message, context }) => ({ key: String(message.key), topic: context.topic })),
-    );
     const target = batch.findIndex(({ message }) => message.key === 'retry-me');
+    const reached = target === -1 || retryThrown ? batch : batch.slice(0, target + 1);
+    retryTopicsSeen.push(
+      ...reached.map(({ message, context }) => ({ key: String(message.key), topic: context.topic })),
+    );
 
     if (!retryThrown && target !== -1) {
       retryThrown = true;
+      retryMePositions.push({ index: target, batchLength: batch.length });
       throw new BatchFailure(target, new Error('retry me'));
     }
   }
@@ -112,10 +127,15 @@ describe('batch handlers', () => {
 
     rawProducer = kafka.producer();
     await rawProducer.connect();
-    await rawProducer.send({
-      topic: 'batch.bulk',
-      messages: keys200.map((key) => ({ key, value: JSON.stringify({}) })),
-    });
+    const sendBacklog = (topic: string, keys: string[]) =>
+      rawProducer.send({
+        topic,
+        messages: keys.map((key) => ({ key, value: JSON.stringify({}) })),
+      });
+
+    await sendBacklog('batch.bulk', keys200);
+    await sendBacklog('batch.partial', [...partialBefore, 'poison', ...partialAfter]);
+    await sendBacklog('batch.retry', [...retryBefore, 'retry-me', ...retryAfter]);
 
     @Module({
       imports: [
@@ -178,16 +198,21 @@ describe('batch handlers', () => {
   });
 
   it('dead-letters only the record a BatchFailure names', async () => {
-    await producer.send('batch.partial', { key: 'a', value: {} });
-    await producer.send('batch.partial', { key: 'poison', value: {} });
-    await producer.send('batch.partial', { key: 'b', value: {} });
+    const fillers = [...partialBefore, ...partialAfter];
 
-    await waitFor(() => partialHandled.includes('b') && dlqKeys.length > 0);
+    await waitFor(() => fillers.every((key) => partialHandled.includes(key)) && dlqKeys.length > 0);
 
-    expect({ dlq: dlqKeys, handled: [...new Set(partialHandled)].sort() }).toEqual({
-      dlq: ['poison'],
-      handled: ['a', 'b'],
-    });
+    expect(poisonPositions[0].index).toBeGreaterThan(0);
+    expect(poisonPositions[0].batchLength).toBeGreaterThan(1);
+    expect(dlqKeys).toEqual(['poison']);
+  });
+
+  it('handles each record around a dead-lettered one exactly once', async () => {
+    const fillers = [...partialBefore, ...partialAfter];
+
+    await waitFor(() => fillers.every((key) => partialHandled.includes(key)));
+
+    expect([...partialHandled].sort()).toEqual([...fillers].sort());
   });
 
   it('redelivers a batch whose handler failed under the fail policy', async () => {
@@ -198,16 +223,26 @@ describe('batch handlers', () => {
     expect(failSeen.filter((key) => key === 'flaky').length).toBeGreaterThanOrEqual(2);
   });
 
-  it('retries a failed record from its retry topic', async () => {
-    await producer.send('batch.retry', { key: 'retry-me', value: {} });
+  it('retries only the failed record from its retry topic', async () => {
+    const fillers = [...retryBefore, ...retryAfter];
+    const handledKeys = () => retryTopicsSeen.map(({ key }) => key);
 
-    await waitFor(() =>
-      retryTopicsSeen.some(({ key, topic }) => key === 'retry-me' && topic.endsWith('.retry.1')),
+    await waitFor(
+      () =>
+        fillers.every((key) => handledKeys().includes(key)) &&
+        retryTopicsSeen.some(({ key, topic }) => key === 'retry-me' && topic.endsWith('.retry.1')),
     );
 
-    expect(retryTopicsSeen.filter(({ key }) => key === 'retry-me').map(({ topic }) => topic)).toEqual([
-      'batch.retry',
-      'batch.retry.batch-retry.retry.1',
-    ]);
+    expect(retryMePositions[0].index).toBeGreaterThan(0);
+    expect(retryMePositions[0].batchLength).toBeGreaterThan(1);
+    expect({
+      retryMeTopics: retryTopicsSeen.filter(({ key }) => key === 'retry-me').map(({ topic }) => topic),
+      otherTopics: [...new Set(retryTopicsSeen.filter(({ key }) => key !== 'retry-me').map(({ topic }) => topic))],
+      fillersHandledOnce: fillers.every((key) => handledKeys().filter((seen) => seen === key).length === 1),
+    }).toEqual({
+      retryMeTopics: ['batch.retry', 'batch.retry.batch-retry.retry.1'],
+      otherTopics: ['batch.retry'],
+      fillersHandledOnce: true,
+    });
   });
 });
