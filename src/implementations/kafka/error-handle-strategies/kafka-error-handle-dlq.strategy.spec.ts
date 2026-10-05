@@ -138,4 +138,23 @@ describe('KafkaErrorHandleDlqStrategy', () => {
       expect.objectContaining({ key: failed.key, value: failed.value }),
     );
   });
+
+  it('publishes to the dead letter topic derived from the given original topic', async () => {
+    const producer = producerStub();
+    const strategy = new KafkaErrorHandleDlqStrategy(producer);
+
+    await strategy.publish(new Error('boom'), 'orders.created', record());
+
+    expect(producer.send).toHaveBeenCalledWith(expect.objectContaining({ topic: 'orders.created.dlq' }));
+  });
+
+  it('records the given original topic in the headers', async () => {
+    const producer = producerStub();
+    const strategy = new KafkaErrorHandleDlqStrategy(producer);
+
+    await strategy.publish(new Error('boom'), 'orders.created', record());
+
+    const sent = (producer.send as jest.Mock).mock.calls[0][0];
+    expect(sent.messages[0].headers['dlq.original.topic']).toBe('orders.created');
+  });
 });
