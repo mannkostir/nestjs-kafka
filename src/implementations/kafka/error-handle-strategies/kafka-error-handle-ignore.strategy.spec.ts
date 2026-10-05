@@ -23,6 +23,10 @@ describe('KafkaErrorHandleIgnoreStrategy', () => {
     expect(strategy.destinationTopics(['orders.created'])).toEqual([]);
   });
 
+  it('consumes no topics of its own', () => {
+    expect(new KafkaErrorHandleIgnoreStrategy().consumedTopics(['orders.created'])).toEqual([]);
+  });
+
   it('resolves the offset so the failed record is not redelivered', async () => {
     const strategy = new KafkaErrorHandleIgnoreStrategy();
     const payload = batchPayload();
