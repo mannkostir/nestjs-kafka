@@ -82,3 +82,31 @@ describe('RetryDelayGate', () => {
     expect(resume).not.toHaveBeenCalled();
   });
 });
+
+describe('RetryDelayGate.isDue', () => {
+  const asMessage = (message: ReturnType<typeof dueMessage>) => message as unknown as KafkaJS.KafkaMessage;
+
+  it('treats a source topic message as due, whatever its headers say', () => {
+    expect(gate().isDue(payloadOn('orders.created', jest.fn()), asMessage(dueMessage('999999')))).toBe(true);
+  });
+
+  it('treats a retry message whose due time has passed as due', () => {
+    expect(gate().isDue(payloadOn('orders.created.svc.retry.1', jest.fn()), asMessage(dueMessage('1000')))).toBe(true);
+  });
+
+  it('treats a retry message without a due time as due', () => {
+    expect(gate().isDue(payloadOn('orders.created.svc.retry.1', jest.fn()), asMessage(dueMessage()))).toBe(true);
+  });
+
+  it('treats a retry message whose due time is ahead as not due', () => {
+    expect(gate().isDue(payloadOn('orders.created.svc.retry.1', jest.fn()), asMessage(dueMessage('1500')))).toBe(false);
+  });
+
+  it('does not pause the partition', () => {
+    const payload = payloadOn('orders.created.svc.retry.1', jest.fn());
+
+    gate().isDue(payload, asMessage(dueMessage('1500')));
+
+    expect(payload.pause).not.toHaveBeenCalled();
+  });
+});
