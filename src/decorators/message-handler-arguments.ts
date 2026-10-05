@@ -31,18 +31,19 @@ export function describeHandler(
 }
 
 export function assertValidMessageArguments(
+  decorator: string,
   handler: string,
   topicPatterns: unknown,
   options: unknown,
 ): void {
   if (!isObject(options)) {
     throw new Error(
-      `${handler} has no options. Pass an options object with groupId and errorHandling as the second argument of @Message.`,
+      `${handler} has no options. Pass an options object with groupId and errorHandling as the second argument of @${decorator}.`,
     );
   }
   assertGroupId(handler, options.groupId);
   assertErrorHandling(handler, options.errorHandling);
-  assertTopicPatterns(handler, topicPatterns);
+  assertTopicPatterns(decorator, handler, topicPatterns);
 }
 
 function assertGroupId(handler: string, groupId: unknown): void {
@@ -66,15 +67,19 @@ function assertErrorHandling(handler: string, errorHandling: unknown): void {
   }
 }
 
-function assertTopicPatterns(handler: string, topicPatterns: unknown): void {
+function assertTopicPatterns(
+  decorator: string,
+  handler: string,
+  topicPatterns: unknown,
+): void {
   if (!Array.isArray(topicPatterns)) {
     throw new Error(
-      `${handler} needs an array of topics. Pass the topic names and RegExp patterns as an array, for example @Message(['orders'], options).`,
+      `${handler} needs an array of topics. Pass the topic names and RegExp patterns as an array, for example @${decorator}(['orders'], options).`,
     );
   }
   if (!topicPatterns.some(isTopicPattern)) {
     throw new Error(
-      `${handler} has no topic. Pass at least one non-empty topic name or RegExp pattern as the first argument of @Message.`,
+      `${handler} has no topic. Pass at least one non-empty topic name or RegExp pattern as the first argument of @${decorator}.`,
     );
   }
 }

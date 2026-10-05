@@ -44,6 +44,16 @@ describe('@MessageBatch', () => {
     }).toThrow(/@MessageBatch handler OrdersIndexer\.index has no options/);
   });
 
+  it('names @MessageBatch in the options hint', () => {
+    expect(() => {
+      class OrdersIndexer {
+        @MessageBatch(['orders'], asOptions(undefined))
+        async index(_batch: ReceivedMessage[]): Promise<void> {}
+      }
+      return OrdersIndexer;
+    }).toThrow(/second argument of @MessageBatch/);
+  });
+
   it('rejects an empty topic list, naming the batch handler', () => {
     expect(() => {
       class OrdersIndexer {

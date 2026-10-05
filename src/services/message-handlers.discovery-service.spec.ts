@@ -471,7 +471,7 @@ describe('MessageHandlersDiscoveryService', () => {
     const { bootstrap } = harness([InvoicesHandler, RefundsHandler]);
 
     await expect(bootstrap()).rejects.toThrow(
-      'Message handlers InvoicesHandler.onInvoiceIssued and RefundsHandler.onRefundIssued share groupId "shared-group". Give each @Message handler its own groupId.',
+      'Message handlers InvoicesHandler.onInvoiceIssued and RefundsHandler.onRefundIssued share groupId "shared-group". Give each handler its own groupId.',
     );
   });
 

@@ -12,13 +12,18 @@ export const MessageBatchHandlerKey = 'HANDLE_MESSAGE_BATCH' as const;
 export function MessageBatch(
   topicPattern: ConsumerSubscriptionParameters['topicPatterns'],
   options: MessageOptions,
-) {
+): <TMessage extends MessageType>(
+  target: object,
+  propertyKey: string | symbol,
+  descriptor: TypedPropertyDescriptor<BatchMessageHandlerCallback<TMessage>>,
+) => void {
   return <TMessage extends MessageType>(
     target: object,
     propertyKey: string | symbol,
     descriptor: TypedPropertyDescriptor<BatchMessageHandlerCallback<TMessage>>,
   ): void => {
     assertValidMessageArguments(
+      'MessageBatch',
       describeHandler('MessageBatch', target, propertyKey),
       topicPattern,
       options,

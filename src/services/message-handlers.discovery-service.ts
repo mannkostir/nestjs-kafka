@@ -264,7 +264,7 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
       ? this.duplicateRegistration(owner.name, groupId)
       : new Error(
           `Message handlers ${owner.name} and ${challenger.name} share groupId "${groupId}". ` +
-            'Give each @Message handler its own groupId.',
+            'Give each handler its own groupId.',
         );
   }
 
