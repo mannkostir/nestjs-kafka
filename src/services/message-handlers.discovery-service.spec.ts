@@ -15,7 +15,12 @@ import { ReceivedMessage } from '../types/received-message.type.js';
 import { MessageFormat } from '../types/message-format.type.js';
 import { MessageContext } from '../types/message-context.type.js';
 import { MessageType } from '../types/message.type.js';
-import { BATCH_CONSUMER, CONNECTOR_NAME, KAFKA_CONNECTIONS } from '../tokens.js';
+import {
+  BATCH_CONSUMER,
+  CONNECTOR_NAME,
+  KAFKA_CONNECTIONS,
+  SHARED_GROUP_CONSUMER,
+} from '../tokens.js';
 import { MessageHandlersDiscoveryService } from './message-handlers.discovery-service.js';
 
 @Injectable()
@@ -283,9 +288,69 @@ const DoublyDecoratedHandler = (() => {
   return DoublyDecoratedHandler;
 })();
 
+@Injectable()
+class SharedOrdersHandler {
+  public readonly receivers: unknown[] = [];
+
+  @Message(['billing.orders'], {
+    groupId: 'billing',
+    errorHandling: { type: 'fail' },
+    sharedGroup: true,
+  })
+  async onOrder(): Promise<void> {
+    this.receivers.push(this);
+  }
+}
+
+@Injectable()
+class SharedRefundsIndexer {
+  @MessageBatch(['billing.refunds'], {
+    groupId: 'billing',
+    errorHandling: { type: 'dlq' },
+    sharedGroup: true,
+  })
+  async index(_batch: ReceivedMessage[]): Promise<void> {}
+}
+
+@Injectable()
+class UnflaggedBillingHandler {
+  @Message(['billing.invoices'], {
+    groupId: 'billing',
+    errorHandling: { type: 'fail' },
+  })
+  async onInvoice(): Promise<void> {}
+}
+
+@Injectable()
+class ExplicitlyUnsharedInvoices {
+  @Message(['invoices.issued'], {
+    groupId: 'unshared',
+    errorHandling: { type: 'fail' },
+    sharedGroup: false,
+  })
+  async onInvoice(): Promise<void> {}
+}
+
+@Injectable()
+class ExplicitlyUnsharedRefunds {
+  @Message(['refunds.issued'], {
+    groupId: 'unshared',
+    errorHandling: { type: 'fail' },
+    sharedGroup: false,
+  })
+  async onRefund(): Promise<void> {}
+}
+
+@Module({ providers: [SharedOrdersHandler] })
+class SharedOrdersModuleA {}
+
+@Module({ providers: [SharedOrdersHandler] })
+class SharedOrdersModuleB {}
+
 type Harness = {
   subscribe: jest.Mock;
   subscribeBatch: jest.Mock;
+  subscribeGroup: jest.Mock;
   releaseConnections: jest.Mock;
   bootstrap: () => Promise<TestingModule>;
 };
@@ -296,6 +361,7 @@ const harness = (
 ): Harness => {
   const subscribe = jest.fn().mockResolvedValue(undefined);
   const subscribeBatch = jest.fn().mockResolvedValue(undefined);
+  const subscribeGroup = jest.fn().mockResolvedValue(undefined);
   const releaseConnections = jest.fn().mockResolvedValue(undefined);
   const connectorProviders: Provider[] =
     options.connectorName === undefined
@@ -310,6 +376,7 @@ const harness = (
         ...connectorProviders,
         { provide: ConsumerProxy, useValue: { subscribe } },
         { provide: BATCH_CONSUMER, useValue: { subscribeBatch } },
+        { provide: SHARED_GROUP_CONSUMER, useValue: { subscribeGroup } },
         { provide: KAFKA_CONNECTIONS, useValue: { releaseConnections } },
         MessageHandlersDiscoveryService,
       ],
@@ -318,7 +385,13 @@ const harness = (
     return moduleRef.init();
   };
 
-  return { subscribe, subscribeBatch, releaseConnections, bootstrap };
+  return {
+    subscribe,
+    subscribeBatch,
+    subscribeGroup,
+    releaseConnections,
+    bootstrap,
+  };
 };
 
 const subscribedTopics = (subscribe: jest.Mock): string[][] =>
@@ -471,7 +544,7 @@ describe('MessageHandlersDiscoveryService', () => {
     const { bootstrap } = harness([InvoicesHandler, RefundsHandler]);
 
     await expect(bootstrap()).rejects.toThrow(
-      'Message handlers InvoicesHandler.onInvoiceIssued and RefundsHandler.onRefundIssued share groupId "shared-group". Give each handler its own groupId.',
+      'Message handlers InvoicesHandler.onInvoiceIssued and RefundsHandler.onRefundIssued share groupId "shared-group". Give each handler its own groupId, or set sharedGroup: true on every handler of the group.',
     );
   });
 
@@ -826,6 +899,118 @@ describe('MessageHandlersDiscoveryService batch handlers', () => {
     ]);
     subscribeBatch.mockRejectedValue(new Error('batch subscribe failed'));
     await expect(bootstrap()).rejects.toThrow('batch subscribe failed');
+    expect(releaseConnections).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('MessageHandlersDiscoveryService shared groups', () => {
+  it('subscribes a lone flagged handler through its own port', async () => {
+    const { subscribe, subscribeGroup, bootstrap } = harness([
+      SharedOrdersHandler,
+    ]);
+
+    await bootstrap();
+
+    expect({
+      subscribe: subscribe.mock.calls.length,
+      subscribeGroup: subscribeGroup.mock.calls.length,
+    }).toEqual({ subscribe: 1, subscribeGroup: 0 });
+  });
+
+  it('subscribes flagged handlers of one group id together', async () => {
+    const { subscribeGroup, bootstrap } = harness([
+      SharedOrdersHandler,
+      SharedRefundsIndexer,
+    ]);
+
+    await bootstrap();
+
+    expect(subscribeGroup).toHaveBeenCalledWith('billing', [
+      {
+        handlerName: 'SharedOrdersHandler.onOrder',
+        subscription: expect.objectContaining({
+          topicPatterns: ['billing.orders'],
+          errorHandling: { type: 'fail' },
+        }),
+        delivery: { kind: 'message', handle: expect.any(Function) },
+      },
+      {
+        handlerName: 'SharedRefundsIndexer.index',
+        subscription: expect.objectContaining({
+          topicPatterns: ['billing.refunds'],
+          errorHandling: { type: 'dlq' },
+        }),
+        delivery: { kind: 'batch', handle: expect.any(Function) },
+      },
+    ]);
+  });
+
+  it('subscribes no member of a shared group on its own', async () => {
+    const { subscribe, subscribeBatch, bootstrap } = harness([
+      SharedOrdersHandler,
+      SharedRefundsIndexer,
+    ]);
+
+    await bootstrap();
+
+    expect([...subscribe.mock.calls, ...subscribeBatch.mock.calls]).toEqual(
+      [],
+    );
+  });
+
+  it('rejects a group where one member does not set sharedGroup', async () => {
+    const { bootstrap } = harness([SharedOrdersHandler, UnflaggedBillingHandler]);
+
+    await expect(bootstrap()).rejects.toThrow(
+      'Message handlers SharedOrdersHandler.onOrder and UnflaggedBillingHandler.onInvoice share groupId "billing". Give each handler its own groupId, or set sharedGroup: true on every handler of the group.',
+    );
+  });
+
+  it('rejects handlers that set sharedGroup to false on one group id', async () => {
+    const { bootstrap } = harness([
+      ExplicitlyUnsharedInvoices,
+      ExplicitlyUnsharedRefunds,
+    ]);
+
+    await expect(bootstrap()).rejects.toThrow(/share groupId "unshared"/);
+  });
+
+  it('reports a flagged handler provided by two modules as a duplicate registration', async () => {
+    const { bootstrap } = harness([], {
+      imports: [SharedOrdersModuleA, SharedOrdersModuleB],
+    });
+
+    await expect(bootstrap()).rejects.toThrow(
+      /SharedOrdersHandler\.onOrder is provided more than once/,
+    );
+  });
+
+  it('binds a shared route to its provider instance', async () => {
+    const { subscribeGroup, bootstrap } = harness([
+      SharedOrdersHandler,
+      SharedRefundsIndexer,
+    ]);
+
+    const app = await bootstrap();
+    const [, routes] = subscribeGroup.mock.calls[0];
+    await routes[0].delivery.handle(
+      { key: null, value: null },
+      { topic: 'billing.orders', partition: 0, offset: '0', timestamp: '0' },
+    );
+
+    expect(app.get(SharedOrdersHandler).receivers[0]).toBe(
+      app.get(SharedOrdersHandler),
+    );
+  });
+
+  it('releases connections when a shared group fails to subscribe', async () => {
+    const { subscribeGroup, releaseConnections, bootstrap } = harness([
+      SharedOrdersHandler,
+      SharedRefundsIndexer,
+    ]);
+    subscribeGroup.mockRejectedValue(new Error('group subscribe failed'));
+
+    await expect(bootstrap()).rejects.toThrow('group subscribe failed');
     expect(releaseConnections).toHaveBeenCalledTimes(1);
   });
 });
