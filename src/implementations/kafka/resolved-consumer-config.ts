@@ -1,6 +1,10 @@
 import type { KafkaJS } from '@confluentinc/kafka-javascript';
 import { ConsumerConfig } from '../../types/consumer-config.type.js';
 
+type SharedGroupMember = { handlerName: string; config: ResolvedConsumerConfig };
+
+type OptionDifference = { option: string; value: unknown; otherValue: unknown };
+
 export class ResolvedConsumerConfig {
   private static readonly DEFAULT_REBALANCE_TIMEOUT_MS = 300000;
   private static readonly DEFAULT_SESSION_TIMEOUT_MS = 30000;
@@ -59,5 +63,61 @@ export class ResolvedConsumerConfig {
     return Object.fromEntries(
       Object.entries(config).filter(([, value]) => value !== undefined),
     ) as T;
+  }
+
+  static agreed(groupId: string, members: readonly SharedGroupMember[]): ResolvedConsumerConfig {
+    const [first, ...rest] = members;
+
+    for (const member of rest) {
+      const difference = first.config.differenceFrom(member.config);
+
+      if (difference) {
+        throw new Error(
+          `Message handlers ${first.handlerName} and ${member.handlerName} share group "${groupId}" but resolve consumer option "${difference.option}" differently (${ResolvedConsumerConfig.describe(difference.value)} vs ${ResolvedConsumerConfig.describe(difference.otherValue)}). Give every handler in a shared group the same consumer options, or set them in consumerDefaults.`,
+        );
+      }
+    }
+
+    return first.config;
+  }
+
+  private differenceFrom(other: ResolvedConsumerConfig): OptionDifference | undefined {
+    const theirs = other.options();
+
+    return Object.entries(this.options())
+      .map(([option, value]) => ({ option, value, otherValue: theirs[option] }))
+      .find(({ value, otherValue }) => !ResolvedConsumerConfig.sameValue(value, otherValue));
+  }
+
+  private options(): Record<string, unknown> {
+    return {
+      fromBeginning: this.fromBeginning,
+      allowAutoTopicCreation: this.allowAutoTopicCreation,
+      partitionsConsumedConcurrently: this.partitionsConsumedConcurrently,
+      heartbeatInterval: this.heartbeatInterval,
+      sessionTimeout: this.sessionTimeout,
+      rebalanceTimeout: this.rebalanceTimeout,
+      retry: this.retry,
+    };
+  }
+
+  private static sameValue(value: unknown, otherValue: unknown): boolean {
+    return ResolvedConsumerConfig.canonical(value) === ResolvedConsumerConfig.canonical(otherValue);
+  }
+
+  private static canonical(value: unknown): string | undefined {
+    if (typeof value === 'object' && value !== null) {
+      return JSON.stringify(
+        Object.entries(value)
+          .filter(([, entry]) => entry !== undefined)
+          .sort(([left], [right]) => left.localeCompare(right)),
+      );
+    }
+
+    return JSON.stringify(value);
+  }
+
+  private static describe(value: unknown): string {
+    return value === undefined ? 'unset' : JSON.stringify(value);
   }
 }
