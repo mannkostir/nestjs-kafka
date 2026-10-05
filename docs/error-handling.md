@@ -171,3 +171,26 @@ async handleOrder(message: MessageType<OrderCreated>): Promise<void> {
   await this.orders.process(message.value, Number(attempt));
 }
 ```
+
+## Batch handlers
+
+When a `@MessageBatch` handler returns, every message of its batch is resolved. When it throws, the
+policy applies to every message of the batch, in order: `ignore` skips them all, `dlq` dead-letters
+each one, `retry` sends each one to its next retry topic, and `fail` pauses the partition and
+redelivers the whole batch.
+
+To fail a single message, throw `BatchFailure` with its index in the batch the handler received and
+the underlying error:
+
+```ts
+throw new BatchFailure(index, error);
+```
+
+The messages before `index` are resolved, the policy applies to the message at `index` with `error`,
+and the messages after it are delivered again in a later batch. An index outside the batch is
+treated as a failure of the whole batch and logged as a warning.
+
+A message that cannot be decoded ends the batch: the handler receives the messages before it, and
+then the policy applies to it on its own. On a retry topic, a message that is not due yet also ends
+the batch: the handler receives the due messages before it, and then the partition is paused until
+the message is due.

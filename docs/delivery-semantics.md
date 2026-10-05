@@ -19,6 +19,10 @@ by the framework — that decision belongs to the
 When the consumer is stopping or its assignment has been revoked, the batch stops early and the
 remaining messages are left unresolved for redelivery.
 
+A [batch handler](handlers.md#batch-handlers) is called once per batch; all of its messages are
+resolved after it returns, and on failure the policy decides per message, see
+[Error handling](error-handling.md#batch-handlers).
+
 ## Ordering and concurrency
 
 Ordering is guaranteed per partition only. By default a handler's consumer processes one partition

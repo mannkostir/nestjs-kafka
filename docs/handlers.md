@@ -20,9 +20,9 @@ The full option list is in [Configuration](configuration.md#message-options).
 ## Required options
 
 Every handler needs an array of topics holding at least one non-empty topic name or `RegExp`, a
-`groupId` that is a non-empty string, and `errorHandling` whose `type` is `fail`, `ignore` or
-`dlq`; see [Error handling](error-handling.md). TypeScript checks the types. `@Message` also checks
-the values, empty ones included, when the class is defined. A JavaScript host or a cast options
+`groupId` that is a non-empty string, and `errorHandling` whose `type` is `fail`, `ignore`,
+`dlq` or `retry`; see [Error handling](error-handling.md). TypeScript checks the types. `@Message` and
+`@MessageBatch` also check the values, empty ones included, when the class is defined. A JavaScript host or a cast options
 object therefore fails early, with an error naming the handler as `ClassName.methodName` and the
 option to fix.
 
@@ -54,6 +54,41 @@ type MessageContext = {
 when the handler subscribed with a `RegExp`. `offset` and `timestamp` are strings as the client
 reports them: the 64-bit offset, and the record timestamp in epoch milliseconds. A handler that does
 not need the context can leave the parameter out.
+
+## Batch handlers
+
+`@MessageBatch(topics, options)` takes the same options as `@Message` and marks a method that receives
+the decoded messages of one client batch at once, for bulk writes such as database upserts or search
+indexing.
+
+```ts
+@MessageBatch(['orders.created'], {
+  groupId: 'orders-indexer',
+  errorHandling: { type: 'dlq' },
+})
+async index(batch: ReceivedMessage<MessageType<OrderCreated>>[]): Promise<void> {
+  await this.search.bulkIndex(batch.map(({ message }) => message.value));
+}
+```
+
+Each entry is `{ message, context }`, with the same message and context a `@Message` handler gets. A
+batch holds messages of one topic partition, in offset order. A method carries one of the two
+decorators, never both, and batch handlers share the one-group-id-per-handler rule with `@Message`
+handlers.
+
+How failures are handled is described in [Error handling](error-handling.md#batch-handlers).
+
+### Batch size
+
+There are no batch options. A batch holds at most `'js.consumer.max.batch.size'` messages (client
+default `32`; `-1` hands over everything the client has cached for the partition), set at the top
+level of `clientOptions` and so shared by every handler of the connector. How long the client waits
+for data is librdkafka's `fetch.wait.max.ms` and `fetch.min.bytes`.
+
+The size is an upper bound, not a target. The client's cache starts at one message after an
+assignment and grows with throughput, so right after startup or under light traffic a batch can
+hold a single message. With `partitionsConsumedConcurrently` above `1`, batches of different
+partitions reach the handler concurrently.
 
 ## Provider scope
 
