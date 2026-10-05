@@ -79,9 +79,11 @@ export class KafkaConsumer<
     const requestedPatterns = subscription.topicPatterns.filter(Boolean);
     requestedPatterns.forEach((pattern) => LibrdkafkaTopicPattern.validate(pattern));
 
+    const groupId = [this.namespace, consumerGroupId].filter(Boolean).join('-');
+
     const errorStrategy = this.errorStrategies.create(subscription.errorHandling, {
       namespaced,
-      groupId: consumerGroupId,
+      groupId,
       topicPatterns: requestedPatterns,
     });
 
@@ -108,8 +110,6 @@ export class KafkaConsumer<
     } else {
       await this.topicProvisioner.assertExisting(requiredTopics);
     }
-
-    const groupId = [this.namespace, consumerGroupId].filter(Boolean).join('-');
 
     const member = new KafkaGroupMember(
       this.kafka,

@@ -1228,10 +1228,43 @@ describe('KafkaConsumer retry error handling', () => {
     expect(consumer.subscribe).toHaveBeenCalledWith({
       topics: [
         'dev.orders.created',
-        'dev.orders.created.orders-service.retry.1',
-        'dev.orders.created.orders-service.retry.2',
+        'dev.orders.created.dev-orders-service.retry.1',
+        'dev.orders.created.dev-orders-service.retry.2',
       ],
     });
+  });
+
+  it('names retry topics of an un-namespaced source by the namespaced group', async () => {
+    const consumer = consumerStub();
+
+    await new KafkaConsumer(kafkaStub(consumer), {
+      namespace: 'dev',
+      namespacer: new TopicNamespacer('dev'),
+      producer: producerStub(),
+      topicProvisioner: provisionerStub() as unknown as KafkaTopicProvisioner,
+    }).subscribe({ ...retrySubscription(), namespaced: false }, jest.fn(), 'orders-service');
+
+    expect(consumer.subscribe).toHaveBeenCalledWith({
+      topics: [
+        'orders.created',
+        'orders.created.dev-orders-service.retry.1',
+        'orders.created.dev-orders-service.retry.2',
+      ],
+    });
+  });
+
+  it('rejects a namespace that cannot be part of a retry topic name before creating a consumer', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+
+    await expect(
+      new KafkaConsumer(kafka, {
+        namespace: 'dev env',
+        producer: producerStub(),
+        topicProvisioner: provisionerStub() as unknown as KafkaTopicProvisioner,
+      }).subscribe({ ...retrySubscription(), namespaced: false }, jest.fn(), 'orders-service'),
+    ).rejects.toThrow(/"dev env-orders-service" contains characters other than/);
+    expect(kafka.consumer).not.toHaveBeenCalled();
   });
 
   it('starts an uncommitted retry partition at its log start', async () => {
