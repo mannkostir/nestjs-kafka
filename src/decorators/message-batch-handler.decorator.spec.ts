@@ -73,6 +73,16 @@ describe('@MessageBatch', () => {
       return OrdersIndexer;
     }).toThrow(/@MessageBatch handler OrdersIndexer\.index.*"errorHandling\.type"/);
   });
+
+  it('rejects sharedGroup with a RegExp topic', () => {
+    expect(() => {
+      class OrdersIndexer {
+        @MessageBatch(['orders', /refunds\..*/], { groupId: 'g', errorHandling: { type: 'fail' }, sharedGroup: true })
+        async index(_batch: ReceivedMessage[]): Promise<void> {}
+      }
+      return OrdersIndexer;
+    }).toThrow(/@MessageBatch handler .* sets sharedGroup but subscribes to a RegExp pattern/);
+  });
 });
 
 describe('@MessageBatch handler signature', () => {

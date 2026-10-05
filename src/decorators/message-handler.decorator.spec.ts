@@ -156,4 +156,32 @@ describe('@Message', () => {
       Reflect.getMetadata(MessageHandlerKey, OrdersHandler.prototype.handle),
     ).toEqual([topics, validOptions]);
   });
+
+  it('accepts sharedGroup with concrete topic names', () => {
+    expect(() =>
+      defineOrdersHandler(['orders', 'refunds'], { ...validOptions, sharedGroup: true }),
+    ).not.toThrow();
+  });
+
+  it('rejects sharedGroup with a RegExp topic, naming the handler', () => {
+    expect(() =>
+      defineOrdersHandler(['orders', /refunds\..*/], { ...validOptions, sharedGroup: true }),
+    ).toThrow(
+      '@Message handler OrdersHandler.handle sets sharedGroup but subscribes to a RegExp pattern. Handlers in a shared group must list concrete topic names.',
+    );
+  });
+
+  it('accepts a RegExp topic when sharedGroup is false', () => {
+    expect(() =>
+      defineOrdersHandler([/refunds\..*/], { ...validOptions, sharedGroup: false }),
+    ).not.toThrow();
+  });
+
+  it('rejects a non-boolean sharedGroup', () => {
+    expect(() =>
+      defineOrdersHandler(['orders'], asOptions({ ...validOptions, sharedGroup: 'yes' })),
+    ).toThrow(
+      '@Message handler OrdersHandler.handle has an invalid "sharedGroup" option: yes. Set sharedGroup to true or false, or leave it unset.',
+    );
+  });
 });
