@@ -76,7 +76,11 @@ export class KafkaConsumer<
     const parseStrategy = this.parseStrategies.create(
       subscription.messageFormat ?? this.messageFormat,
     );
-    const errorStrategy = this.errorStrategies.create(subscription.errorHandling, namespaced);
+    const errorStrategy = this.errorStrategies.create(subscription.errorHandling, {
+      namespaced,
+      groupId: consumerGroupId,
+      topicPatterns: subscription.topicPatterns,
+    });
 
     const requestedPatterns = subscription.topicPatterns.filter(Boolean);
     requestedPatterns.forEach((pattern) => LibrdkafkaTopicPattern.validate(pattern));

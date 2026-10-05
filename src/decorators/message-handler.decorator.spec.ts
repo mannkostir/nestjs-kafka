@@ -77,9 +77,18 @@ describe('@Message', () => {
     expect(() =>
       defineOrdersHandler(
         ['orders'],
-        asOptions({ ...validOptions, errorHandling: { type: 'retry' } }),
+        asOptions({ ...validOptions, errorHandling: { type: 'skip' } }),
       ),
     ).toThrow(/OrdersHandler\.handle.*"errorHandling\.type"/);
+  });
+
+  it('accepts the retry errorHandling type', () => {
+    expect(() =>
+      defineOrdersHandler(
+        ['orders'],
+        asOptions({ ...validOptions, errorHandling: { type: 'retry', attempts: 3 } }),
+      ),
+    ).not.toThrow();
   });
 
   it('rejects undefined topics', () => {

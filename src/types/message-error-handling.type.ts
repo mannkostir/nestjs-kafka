@@ -3,4 +3,5 @@ export type FailBackoffOptions = { initialMs?: number; maxMs?: number; multiplie
 export type MessageErrorHandlingConfig =
     | { type: 'fail'; backoff?: FailBackoffOptions | false }
     | { type: 'ignore' }
-    | { type: 'dlq'; topic?: string };
+    | { type: 'dlq'; topic?: string }
+    | { type: 'retry'; attempts: number; backoff?: FailBackoffOptions; dlqTopic?: string };
