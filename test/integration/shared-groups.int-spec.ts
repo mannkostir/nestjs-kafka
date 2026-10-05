@@ -27,7 +27,7 @@ class OrdersHandler {
   async onOrder(message: MessageType, context: MessageContext): Promise<void> {
     ordersSeen.push({ key: String(message.key), topic: context.topic });
 
-    if (message.key === 'retry-me' && !retryThrown) {
+    if (String(message.key) === 'retry-me' && !retryThrown) {
       retryThrown = true;
       throw new Error('retry me');
     }
@@ -116,6 +116,6 @@ describe('shared consumer groups', () => {
 
     const { groups } = await admin.listGroups();
 
-    expect(groups.filter(({ groupId }) => groupId === 'shared-billing')).toHaveLength(1);
+    expect(groups.map(({ groupId }) => groupId)).toEqual(['shared-billing']);
   });
 });
