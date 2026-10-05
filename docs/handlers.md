@@ -2,7 +2,8 @@
 
 A handler is a method on any provider in the application, marked with `@Message(topics, options)`.
 Handlers are discovered application-wide on bootstrap, not scoped to the module that declares them,
-and each one is subscribed to its own Kafka consumer in its own consumer group.
+and each one is subscribed to its own Kafka consumer in its own consumer group, unless handlers
+share a group; see [Sharing a consumer group](#sharing-a-consumer-group).
 
 ```ts
 @Message(['orders.created'], {
@@ -73,8 +74,8 @@ async index(batch: ReceivedMessage<MessageType<OrderCreated>>[]): Promise<void> 
 
 Each entry is `{ message, context }`, with the same message and context a `@Message` handler gets. A
 batch holds messages of one topic partition, in offset order. A method carries one of the two
-decorators, never both, and batch handlers share the one-group-id-per-handler rule with `@Message`
-handlers.
+decorators, never both, and batch handlers follow the same group id rules as `@Message`
+handlers, including [sharing a consumer group](#sharing-a-consumer-group).
 
 How failures are handled is described in [Error handling](error-handling.md#batch-handlers).
 
@@ -103,8 +104,9 @@ application bootstrap before any consumer connects, with an error naming the gro
 are checked separately.
 
 The Kafka consumer group protocol assigns a group's partitions only for the topics its members
-subscribed to, so a group shared across different topics would silently starve one handler, and on
-the same topics it would split the messages between two different methods.
+subscribed to. When separate consumers share a group id, a group shared across different topics
+would silently starve one handler, and on the same topics it would split the messages between two
+different methods. A shared group avoids both by running its handlers on one consumer.
 
 The same check catches a handler class provided more than once — listed in the `providers` of
 more than one module, or under a second token with `useClass`: each creates its own instance, which
@@ -146,13 +148,13 @@ Each handler keeps its own `errorHandling`, `messageFormat`, and `namespaced`. T
 - Every handler on the `groupId` sets `sharedGroup: true`, and the value is a boolean; anything
   else is rejected when the class is decorated.
 - Topics are concrete names. A `RegExp` topic with `sharedGroup: true` throws when the class is
-  decorated, and subscribe repeats the check. `RegExp` topics are not supported in shared groups yet.
+  decorated. `RegExp` topics are not supported in shared groups.
 - Each topic, after namespacing, belongs to exactly one handler in the group, or bootstrap fails.
   Retry topics belong to the handler whose `retry` policy derives them.
 - Every handler resolves the same `consumer` options, or bootstrap fails with an error naming the
   option. Set them once in `consumerDefaults`, or pass the same object to each handler.
 
-A lone handler with `sharedGroup: true` behaves exactly like one without it.
+A lone handler with `sharedGroup: true` subscribes exactly like one without it.
 
 What the group gives up is described in
 [Delivery semantics](delivery-semantics.md#sharing-a-consumer-group).

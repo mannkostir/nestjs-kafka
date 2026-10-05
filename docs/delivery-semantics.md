@@ -5,9 +5,9 @@ can die before its offset is committed, in which case the message is delivered a
 
 ## One consumer per handler
 
-Each handler, `@Message` or `@MessageBatch`, gets its own client consumer in its own consumer
+Each handler, `@Message` or `@MessageBatch`, gets by default its own client consumer in its own consumer
 group, created, connected, and run at application bootstrap. Handlers of one connector cannot share a
-`groupId` unless they opt into a shared group; see
+`groupId` unless they opt into a [shared group](handlers.md#sharing-a-consumer-group); see
 [Handlers](handlers.md#one-group-id-per-handler).
 
 ## Offsets
@@ -93,7 +93,7 @@ Call `app.enableShutdownHooks()` in the host application so these run on `SIGTER
 
 ## Cost of one consumer group per handler
 
-Every `@Message` handler is an independent subscription: its own client consumer in its own consumer
+By default every `@Message` handler is an independent subscription: its own client consumer in its own consumer
 group. That keeps handlers isolated at the Kafka level — one handler's paused partition, lag, or
 rebalance stays inside its own group — but every cost below is paid once per handler, in every
 replica of the service. A service with 40 handlers running as 3 replicas runs 120 consumers in 40
