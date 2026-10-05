@@ -124,6 +124,10 @@ accepted. An invalid value fails application bootstrap with an error naming the 
 Delays are minimums. The retry consumer pauses the retry partition until the record's `retry.due`
 time, and the client picks it up on its next fetch cycle, which rounds short delays up.
 
+A retry topic partition without a committed offset is read from its beginning, whatever
+`fromBeginning` says, so no waiting retry is skipped. On a retried delivery, `MessageContext.topic`
+is the retry topic the record was consumed from.
+
 Each hop adds these headers to the record, keeping the original headers:
 
 | Header | Value |
@@ -134,8 +138,8 @@ Each hop adds these headers to the record, keeping the original headers:
 | `retry.error.name` | `error.name`, or `Error` |
 | `retry.error.message` | `error.message`, or `Unknown error`; `String(value)` for a thrown value that is not an `Error` |
 
-The headers are informational. The attempt and the original topic are derived from the name of the
-topic the record was consumed from, never read from the headers.
+Routing never reads the headers: the attempt and the original topic come from the name of the topic
+the record was consumed from. `retry.due` sets when the record is consumed.
 
 When the last retry fails, the record goes to the dead-letter topic with the `dlq.*` headers described
 under [`dlq`](#-type-dlq-topic-string-), where `dlq.original.topic` is the topic the record was first
@@ -151,9 +155,9 @@ key are processed. Use `fail` when order matters.
 Bootstrap fails, with a message saying how to fix it, when the handler:
 
 - subscribes to a `RegExp` pattern, because retry topics are derived from concrete topic names;
-- has a `groupId` containing characters other than letters, digits, `.`, `_` and `-`;
-- would need a retry topic name longer than 249 characters;
-- runs in a module that has no producer.
+- has an effective group id (the `groupId` joined to the namespace) containing characters other than
+  letters, digits, `.`, `_` and `-`;
+- would need a retry topic name longer than 249 characters.
 
 A handler reads the headers from `message.headers`:
 

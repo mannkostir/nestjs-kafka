@@ -48,14 +48,20 @@ DLQ topics are checked or created at bootstrap together with the handler's sourc
 ## Retry topics
 
 A handler with `errorHandling: { type: 'retry', attempts }` gets one retry topic per attempt and per
-source topic, named `<source topic>.<groupId>.retry.<n>` with `n` from `1` to `attempts`. The source
-topic is the one the broker reports, already namespaced when the subscription was, and `groupId` is
-the handler's own, without the namespace. Under `namespace: 'dev'`, a handler in group
-`orders-service` on `orders.created` uses `dev.orders.created.orders-service.retry.1`.
+source topic, named `<source topic>.<group id>.retry.<n>` with `n` from `1` to `attempts`. The source
+topic is the one the broker reports, already namespaced when the subscription was, and the group id
+is the effective one, namespaced as described under [Namespace](#namespace). Under `namespace: 'dev'`,
+a handler in group `orders-service` on `orders.created` uses
+`dev.orders.created.dev-orders-service.retry.1`; with `namespaced: false` on `payments.settled` and
+group `ledger`, it uses `payments.settled.dev-ledger.retry.1`. Without a namespace, the same handler
+uses `orders.created.orders-service.retry.1`.
 
-Retry topics belong to the handler's group: other groups subscribed to the same source topic never see
-them. The handler's own consumer, in its own group, consumes its retry topics next to its source
-topics. The dead-letter destination of a `retry` handler is described under [DLQ topics](#dlq-topics).
+Retry topics belong to the handler's effective group, so they are never shared between groups or
+namespaces: other groups subscribed to the same source topic, and the same group under another
+namespace, never see them. The handler's own consumer consumes its retry topics next to its source
+topics, and reads a retry topic partition without a committed offset from its beginning, whatever
+`fromBeginning` says. The dead-letter destination of a `retry` handler, including an explicit
+`dlqTopic`, namespaced like `topic`, is described under [DLQ topics](#dlq-topics).
 
 ## Pattern (RegExp) topics
 
@@ -149,9 +155,10 @@ set `producer: { allowAutoTopicCreation: true }` on a broker that auto-creates t
 [Producing](producing.md#topic)).
 
 A `retry` handler's retry topics are checked or created in the same step. A handler in group
-`orders-service` on `orders.created` with `attempts: 2` needs `orders.created.orders-service.retry.1`
-and `orders.created.orders-service.retry.2`, as well as its dead-letter topic:
+`orders-service` on `orders.created` with `attempts: 2` and no namespace needs
+`orders.created.orders-service.retry.1` and `orders.created.orders-service.retry.2`, as well as its
+dead-letter topic `orders.created.dlq`:
 
 ```
-Topic(s) orders.created.orders-service.retry.1, orders.created.orders-service.retry.2 do not exist and allowAutoTopicCreation is false. Create them before the application starts, or enable allowAutoTopicCreation.
+Topic(s) orders.created.orders-service.retry.1, orders.created.orders-service.retry.2, orders.created.dlq do not exist and allowAutoTopicCreation is false. Create them before the application starts, or enable allowAutoTopicCreation.
 ```
