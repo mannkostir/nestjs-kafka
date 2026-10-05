@@ -1,6 +1,7 @@
 export { KafkaModule } from "./kafka.module.js";
 
 export { Message } from "./decorators/message-handler.decorator.js";
+export { MessageBatch } from "./decorators/message-batch-handler.decorator.js";
 
 export { ConsumerProxy } from "./base/consumer-proxy.js";
 export { ProducerProxy } from "./base/producer-proxy.js";

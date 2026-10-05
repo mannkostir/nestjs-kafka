@@ -21,12 +21,13 @@ const isTopicPattern = (entry: unknown): boolean =>
   entry instanceof RegExp || (typeof entry === 'string' && entry.length > 0);
 
 export function describeHandler(
+  decorator: string,
   target: object,
   propertyKey: string | symbol,
 ): string {
   const className =
     typeof target === 'function' ? target.name : target.constructor.name;
-  return `@Message handler ${className}.${String(propertyKey)}`;
+  return `@${decorator} handler ${className}.${String(propertyKey)}`;
 }
 
 export function assertValidMessageArguments(

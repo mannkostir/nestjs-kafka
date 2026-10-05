@@ -22,6 +22,12 @@ function defineOrdersHandler(topics: TopicPatterns, options: MessageOptions) {
 }
 
 describe('@Message', () => {
+  it('names the decorator in its error', () => {
+    expect(() =>
+      defineOrdersHandler(['orders'], asOptions(undefined)),
+    ).toThrow(/@Message handler OrdersHandler\.handle has no options/);
+  });
+
   it('rejects undefined options, naming the handler', () => {
     expect(() =>
       defineOrdersHandler(['orders'], asOptions(undefined)),

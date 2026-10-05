@@ -1,30 +1,32 @@
+import { BatchMessageHandlerCallback } from '../types/batch-message-handler-callback.type.js';
 import { ConsumerSubscriptionParameters } from '../types/consumer-subscription-parameters.type.js';
 import { MessageOptions } from '../types/message-options.type.js';
+import { MessageType } from '../types/message.type.js';
 import {
   assertValidMessageArguments,
   describeHandler,
 } from './message-handler-arguments.js';
 
-export const MessageHandlerKey = 'HANDLE_MESSAGE' as const;
+export const MessageBatchHandlerKey = 'HANDLE_MESSAGE_BATCH' as const;
 
-export function Message(
+export function MessageBatch(
   topicPattern: ConsumerSubscriptionParameters['topicPatterns'],
   options: MessageOptions,
-): MethodDecorator {
-  return (
+) {
+  return <TMessage extends MessageType>(
     target: object,
     propertyKey: string | symbol,
-    descriptor: PropertyDescriptor,
-  ) => {
+    descriptor: TypedPropertyDescriptor<BatchMessageHandlerCallback<TMessage>>,
+  ): void => {
     assertValidMessageArguments(
-      describeHandler('Message', target, propertyKey),
+      describeHandler('MessageBatch', target, propertyKey),
       topicPattern,
       options,
     );
     Reflect.defineMetadata(
-      MessageHandlerKey,
+      MessageBatchHandlerKey,
       [topicPattern, options],
-      descriptor.value,
+      descriptor.value as object,
     );
   };
 }
