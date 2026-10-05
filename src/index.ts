@@ -14,6 +14,9 @@ export { ProducerConfig } from "./types/producer-config.type.js";
 export { ConsumerSubscriptionParameters } from "./types/consumer-subscription-parameters.type.js";
 export { MessageHandlerCallback } from "./types/message-handler-callback.type.js";
 export { MessageContext } from "./types/message-context.type.js";
+export { ReceivedMessage } from "./types/received-message.type.js";
+export { BatchMessageHandlerCallback } from "./types/batch-message-handler-callback.type.js";
+export { BatchFailure } from "./errors/batch-failure.js";
 export {
   KafkaModuleOptions,
   KafkaModuleAsyncOptions,
