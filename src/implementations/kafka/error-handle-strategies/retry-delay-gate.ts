@@ -12,12 +12,12 @@ export class RetryDelayGate {
     private readonly clock: () => number = Date.now,
   ) {}
 
-  public holdUntilDue(payload: KafkaJS.EachBatchPayload, message: KafkaJS.KafkaMessage): boolean {
-    if (!this.topics.isRetryTopic(payload.batch.topic)) {
-      return false;
-    }
+  public isDue(payload: KafkaJS.EachBatchPayload, message: KafkaJS.KafkaMessage): boolean {
+    return !(this.waitMs(payload, message) > 0);
+  }
 
-    const waitMs = RetryHeaders.dueAt(message) - this.clock();
+  public holdUntilDue(payload: KafkaJS.EachBatchPayload, message: KafkaJS.KafkaMessage): boolean {
+    const waitMs = this.waitMs(payload, message);
 
     if (!(waitMs > 0)) {
       return false;
@@ -28,5 +28,13 @@ export class RetryDelayGate {
 
   public stop(): void {
     this.partitions.stop();
+  }
+
+  private waitMs(payload: KafkaJS.EachBatchPayload, message: KafkaJS.KafkaMessage): number {
+    if (!this.topics.isRetryTopic(payload.batch.topic)) {
+      return 0;
+    }
+
+    return RetryHeaders.dueAt(message) - this.clock();
   }
 }

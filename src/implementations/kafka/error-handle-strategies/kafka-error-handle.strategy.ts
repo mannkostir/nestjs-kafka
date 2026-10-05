@@ -11,6 +11,10 @@ export abstract class KafkaErrorHandleStrategy {
         return [];
     }
 
+    public isDue(payload: KafkaJS.EachBatchPayload, message: KafkaJS.KafkaMessage): boolean {
+        return true;
+    }
+
     public holdUntilDue(payload: KafkaJS.EachBatchPayload, message: KafkaJS.KafkaMessage): boolean {
         return false;
     }

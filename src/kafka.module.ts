@@ -34,6 +34,7 @@ import {
   KAFKA_PRODUCER,
   KAFKA_CONNECTIONS,
   MESSAGE_FORMAT,
+  BATCH_CONSUMER,
 } from './tokens.js';
 
 const kafkaProvider: Provider<KafkaJS.Kafka> = {
@@ -67,6 +68,11 @@ const schemaRegistryProvider: Provider<SchemaRegistry | undefined> = {
     return new SchemaRegistry({ host: options.url });
   },
   inject: [SCHEMA_REGISTRY_OPTIONS],
+};
+
+const batchConsumerProvider: Provider = {
+  provide: BATCH_CONSUMER,
+  useExisting: ConsumerProxy,
 };
 
 const consumerProxyProvider: Provider<ConsumerProxy> = {
@@ -227,6 +233,7 @@ export class KafkaModule {
         kafkaProducerProvider,
         schemaRegistryProvider,
         consumerProxyProvider,
+        batchConsumerProvider,
         topicNamespacerProvider,
         producerProxyProvider,
         kafkaConnectionsProvider,
@@ -249,6 +256,7 @@ export class KafkaModule {
         kafkaProducerProvider,
         schemaRegistryProvider,
         consumerProxyProvider,
+        batchConsumerProvider,
         topicNamespacerProvider,
         producerProxyProvider,
         kafkaConnectionsProvider,

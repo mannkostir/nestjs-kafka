@@ -16,6 +16,8 @@ Integration-tested against `confluentinc/cp-kafka:7.6.1` in KRaft mode.
 
 - **Decorator handlers** — `@Message(topics, options)` on any singleton provider, each handler in
   its own consumer group.
+- **Batch handlers** — `@MessageBatch` hands a handler a whole batch for bulk writes, with
+  per-message failure control.
 - **Error policies** — `fail` with per-partition exponential backoff, `ignore`, `dlq` with error
   details in headers, or `retry` through delay topics before the DLQ.
 - **Message formats** — JSON, enveloped JSON, and Avro via Confluent Schema Registry.

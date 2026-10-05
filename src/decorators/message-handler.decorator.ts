@@ -17,7 +17,8 @@ export function Message(
     descriptor: PropertyDescriptor,
   ) => {
     assertValidMessageArguments(
-      describeHandler(target, propertyKey),
+      'Message',
+      describeHandler('Message', target, propertyKey),
       topicPattern,
       options,
     );

@@ -1386,3 +1386,82 @@ describe('KafkaConsumer retry error handling', () => {
     });
   });
 });
+
+describe('KafkaConsumer batch subscription', () => {
+  const eachBatchOf = (consumer: ReturnType<typeof consumerStub>) =>
+    (consumer.run as jest.Mock).mock.calls[0][0].eachBatch;
+
+  const record = (offset: string) => ({
+    key: null,
+    value: Buffer.from(JSON.stringify({ id: offset })),
+    timestamp: '0',
+    size: 0,
+    attributes: 0,
+    offset,
+    headers: {},
+  });
+
+  const batchPayload = (messages: ReturnType<typeof record>[]) => ({
+    batch: { topic: 'orders.created', partition: 0, messages },
+    isRunning: () => true,
+    isStale: () => false,
+    resolveOffset: jest.fn(),
+    pause: jest.fn(() => jest.fn()),
+  });
+
+  it('hands the whole client batch to the handler in one call', async () => {
+    const consumer = consumerStub();
+    const handler = jest.fn().mockResolvedValue(undefined);
+    await new KafkaConsumer(kafkaStub(consumer)).subscribeBatch(subscription(), handler, 'orders-indexer');
+
+    await eachBatchOf(consumer)(batchPayload([record('1'), record('2')]));
+
+    expect(handler.mock.calls[0][0]).toHaveLength(2);
+  });
+
+  it('subscribes with the same group id rules as a per-message handler', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+
+    await new KafkaConsumer(kafka, { namespace: 'dev' }).subscribeBatch(subscription(), jest.fn(), 'orders-indexer');
+
+    expect(consumerConfig(kafka)).toEqual(expect.objectContaining({ groupId: 'dev-orders-indexer' }));
+  });
+
+  it('subscribes batch handlers to the retry topics of a retry policy', async () => {
+    const consumer = consumerStub();
+
+    await new KafkaConsumer(kafkaStub(consumer), {
+      producer: producerStub(),
+      topicProvisioner: provisionerStub() as unknown as KafkaTopicProvisioner,
+    }).subscribeBatch(
+      { ...subscription(), errorHandling: { type: 'retry', attempts: 1 } },
+      jest.fn(),
+      'orders-indexer',
+    );
+
+    expect(consumer.subscribe).toHaveBeenCalledWith({
+      topics: ['orders.created', 'orders.created.orders-indexer.retry.1'],
+    });
+  });
+
+  it('disconnects a batch consumer whose subscription fails and rethrows', async () => {
+    const consumer = consumerStub();
+    consumer.subscribe.mockRejectedValue(new Error('subscribe failed'));
+
+    await expect(
+      new KafkaConsumer(kafkaStub(consumer)).subscribeBatch(subscription(), jest.fn(), 'orders-indexer'),
+    ).rejects.toThrow('subscribe failed');
+    expect(consumer.disconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('disconnects batch consumers on shutdown', async () => {
+    const consumer = consumerStub();
+    const kafkaConsumer = new KafkaConsumer(kafkaStub(consumer));
+    await kafkaConsumer.subscribeBatch(subscription(), jest.fn(), 'orders-indexer');
+
+    await kafkaConsumer.onModuleDestroy();
+
+    expect(consumer.disconnect).toHaveBeenCalledTimes(1);
+  });
+});

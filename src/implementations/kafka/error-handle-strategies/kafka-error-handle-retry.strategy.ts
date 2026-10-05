@@ -39,6 +39,10 @@ export class KafkaErrorHandleRetryStrategy extends KafkaErrorHandleStrategy {
     return this.topics.allFor(sourceTopics);
   }
 
+  public override isDue(payload: KafkaJS.EachBatchPayload, message: KafkaJS.KafkaMessage): boolean {
+    return this.gate.isDue(payload, message);
+  }
+
   public override holdUntilDue(payload: KafkaJS.EachBatchPayload, message: KafkaJS.KafkaMessage): boolean {
     return this.gate.holdUntilDue(payload, message);
   }
