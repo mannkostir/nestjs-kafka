@@ -20,11 +20,11 @@ The full option list is in [Configuration](configuration.md#message-options).
 ## Required options
 
 Every handler needs an array of topics holding at least one non-empty topic name or `RegExp`, a
-`groupId` that is a non-empty string, and `errorHandling` whose `type` is `fail`, `ignore`,
-`dlq` or `retry`; see [Error handling](error-handling.md). TypeScript checks the types. `@Message` and
-`@MessageBatch` also check the values, empty ones included, when the class is defined. A JavaScript host or a cast options
-object therefore fails early, with an error naming the handler as `ClassName.methodName` and the
-option to fix.
+`groupId` that is a non-empty string, and `errorHandling` whose `type` is `fail`, `ignore`, `dlq` or
+`retry`; see [Error handling](error-handling.md). TypeScript checks the types. `@Message` and
+`@MessageBatch` also check the values, empty ones included, when the class is defined. A JavaScript
+host or a cast options object therefore fails early, with an error naming the handler as
+`ClassName.methodName` and the option to fix.
 
 ## The message
 
@@ -80,10 +80,8 @@ How failures are handled is described in [Error handling](error-handling.md#batc
 
 ### Batch size
 
-There are no batch options. A batch holds at most `'js.consumer.max.batch.size'` messages (client
-default `32`; `-1` hands over everything the client has cached for the partition), set at the top
-level of `clientOptions` and so shared by every handler of the connector. How long the client waits
-for data is librdkafka's `fetch.wait.max.ms` and `fetch.min.bytes`.
+A batch holds at most 32 messages, the client's default. The library does not offer a way to
+change that yet.
 
 The size is an upper bound, not a target. The client's cache starts at one message after an
 assignment and grows with throughput, so right after startup or under light traffic a batch can
