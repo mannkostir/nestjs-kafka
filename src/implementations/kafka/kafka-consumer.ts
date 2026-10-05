@@ -22,6 +22,7 @@ import { MessageFormat } from '../../types/message-format.type.js';
 import { IConsumeMessageBatches } from '../../interfaces/consume-message-batches.interface.js';
 import { BatchMessageHandlerCallback } from '../../types/batch-message-handler-callback.type.js';
 import { KafkaBatchDelivery } from './kafka-batch-delivery.js';
+import { RouteDelivery, SharedGroupRoute } from '../../types/shared-group-route.type.js';
 
 export interface KafkaConsumerOptions {
   namespace?: string;
@@ -34,17 +35,22 @@ export interface KafkaConsumerOptions {
   messageFormat?: MessageFormat;
 }
 
-type ConsumerSubscription = {
-  consumer: KafkaJS.Consumer;
-  errorStrategy: KafkaErrorHandleStrategy;
-};
-
 type EachBatchHandler = (payload: KafkaJS.EachBatchPayload) => Promise<void>;
 
-type SubscriptionStrategies = {
-  parseStrategy: KafkaMessageParseStrategy;
+type PreparedRoute = {
+  handlerName: string;
+  config: ResolvedConsumerConfig;
   errorStrategy: KafkaErrorHandleStrategy;
-  groupId: string;
+  topicPatterns: (string | RegExp)[];
+  topicNames: string[];
+  retryTopics: string[];
+  requiredTopics: string[];
+  eachBatch: EachBatchHandler;
+};
+
+type ConsumerSubscription = {
+  consumer: KafkaJS.Consumer;
+  errorStrategies: KafkaErrorHandleStrategy[];
 };
 
 export class KafkaConsumer<
@@ -82,8 +88,9 @@ export class KafkaConsumer<
     cb: MessageHandlerCallback<TMessage>,
     consumerGroupId: string
   ): Promise<void> {
-    await this.start(subscription, consumerGroupId, ({ parseStrategy, errorStrategy }) =>
-      this.handleBatchByMessage(cb, parseStrategy, errorStrategy));
+    await this.start(consumerGroupId, [
+      { handlerName: consumerGroupId, subscription, delivery: { kind: 'message', handle: cb } },
+    ]);
   }
 
   public async subscribeBatch(
@@ -91,17 +98,61 @@ export class KafkaConsumer<
     cb: BatchMessageHandlerCallback<TMessage>,
     consumerGroupId: string,
   ): Promise<void> {
-    await this.start(subscription, consumerGroupId, ({ parseStrategy, errorStrategy, groupId }) => {
-      const delivery = new KafkaBatchDelivery(cb, parseStrategy, errorStrategy, groupId);
-      return (payload) => delivery.deliver(payload);
-    });
+    await this.start(consumerGroupId, [
+      { handlerName: consumerGroupId, subscription, delivery: { kind: 'batch', handle: cb } },
+    ]);
   }
 
-  private async start(
-    subscription: ConsumerSubscriptionParameters,
-    consumerGroupId: string,
-    eachBatchFor: (strategies: SubscriptionStrategies) => EachBatchHandler,
-  ): Promise<void> {
+  private async start(consumerGroupId: string, routes: SharedGroupRoute<TMessage>[]): Promise<void> {
+    const groupId = [this.namespace, consumerGroupId].filter(Boolean).join('-');
+    const prepared = routes.map((route) => this.prepare(route, groupId));
+    const [{ config, eachBatch }] = prepared;
+
+    const topicPatterns = prepared.flatMap((route) => route.topicPatterns);
+    const topicNames = prepared.flatMap((route) => route.topicNames);
+    const retryTopics = prepared.flatMap((route) => route.retryTopics);
+    const requiredTopics = [...new Set(prepared.flatMap((route) => route.requiredTopics))];
+
+    if (config.allowAutoTopicCreation) {
+      await this.topicProvisioner.createMissing(requiredTopics);
+    } else {
+      await this.topicProvisioner.assertExisting(requiredTopics);
+    }
+
+    const member = new KafkaGroupMember(
+      this.kafka,
+      config.clientConfig(groupId),
+      !config.fromBeginning,
+      this.clientLogger,
+      new Set(retryTopics),
+    );
+    const consumer = member.consumer;
+    const consumerSubscription: ConsumerSubscription = {
+      consumer,
+      errorStrategies: prepared.map((route) => route.errorStrategy),
+    };
+
+    this.subscriptions.push(consumerSubscription);
+
+    try {
+      await consumer.connect();
+
+      const topics: KafkaJS.ConsumerSubscribeTopics = { topics: [...topicPatterns, ...retryTopics] };
+
+      await consumer.subscribe(topics);
+
+      await this.run(consumer, eachBatch, config.partitionsConsumedConcurrently);
+
+      if (topicNames.length > 0) {
+        await member.joined(config.joinTimeoutMs());
+      }
+    } catch (error) {
+      await this.closeFailedSubscription(consumerSubscription);
+      throw error;
+    }
+  }
+
+  private prepare({ handlerName, subscription, delivery }: SharedGroupRoute<TMessage>, groupId: string): PreparedRoute {
     const namespaced = subscription.namespaced ?? true;
 
     const parseStrategy = this.parseStrategies.create(
@@ -109,8 +160,6 @@ export class KafkaConsumer<
     );
     const requestedPatterns = subscription.topicPatterns.filter(Boolean);
     requestedPatterns.forEach((pattern) => LibrdkafkaTopicPattern.validate(pattern));
-
-    const groupId = [this.namespace, consumerGroupId].filter(Boolean).join('-');
 
     const errorStrategy = this.errorStrategies.create(subscription.errorHandling, {
       namespaced,
@@ -132,44 +181,30 @@ export class KafkaConsumer<
 
     const retryTopics = errorStrategy.consumedTopics(topicNames);
 
-    const requiredTopics = [
-      ...new Set([...topicNames, ...retryTopics, ...errorStrategy.destinationTopics(topicNames)]),
-    ];
+    return {
+      handlerName,
+      config,
+      errorStrategy,
+      topicPatterns,
+      topicNames,
+      retryTopics,
+      requiredTopics: [...topicNames, ...retryTopics, ...errorStrategy.destinationTopics(topicNames)],
+      eachBatch: this.eachBatchFor(delivery, parseStrategy, errorStrategy, groupId),
+    };
+  }
 
-    if (config.allowAutoTopicCreation) {
-      await this.topicProvisioner.createMissing(requiredTopics);
-    } else {
-      await this.topicProvisioner.assertExisting(requiredTopics);
+  private eachBatchFor(
+    delivery: RouteDelivery<TMessage>,
+    parseStrategy: KafkaMessageParseStrategy,
+    errorStrategy: KafkaErrorHandleStrategy,
+    groupId: string,
+  ): EachBatchHandler {
+    if (delivery.kind === 'batch') {
+      const batchDelivery = new KafkaBatchDelivery(delivery.handle, parseStrategy, errorStrategy, groupId);
+      return (payload) => batchDelivery.deliver(payload);
     }
 
-    const member = new KafkaGroupMember(
-      this.kafka,
-      config.clientConfig(groupId),
-      !config.fromBeginning,
-      this.clientLogger,
-      new Set(retryTopics),
-    );
-    const consumer = member.consumer;
-    const consumerSubscription: ConsumerSubscription = { consumer, errorStrategy };
-
-    this.subscriptions.push(consumerSubscription);
-
-    try {
-      await consumer.connect();
-
-      const topics: KafkaJS.ConsumerSubscribeTopics = { topics: [...topicPatterns, ...retryTopics] };
-
-      await consumer.subscribe(topics);
-
-      await this.run(consumer, eachBatchFor({ parseStrategy, errorStrategy, groupId }), config.partitionsConsumedConcurrently);
-
-      if (topicNames.length > 0) {
-        await member.joined(config.joinTimeoutMs());
-      }
-    } catch (error) {
-      await this.closeFailedSubscription(consumerSubscription);
-      throw error;
-    }
+    return this.handleBatchByMessage(delivery.handle, parseStrategy, errorStrategy);
   }
 
   private async closeFailedSubscription(subscription: ConsumerSubscription): Promise<void> {
@@ -185,8 +220,8 @@ export class KafkaConsumer<
     }
   }
 
-  private static async close({ consumer, errorStrategy }: ConsumerSubscription): Promise<void> {
-    errorStrategy.stop();
+  private static async close({ consumer, errorStrategies }: ConsumerSubscription): Promise<void> {
+    errorStrategies.forEach((strategy) => strategy.stop());
     await consumer.disconnect();
   }
 
