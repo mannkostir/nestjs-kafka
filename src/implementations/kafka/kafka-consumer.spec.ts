@@ -1465,3 +1465,174 @@ describe('KafkaConsumer batch subscription', () => {
     expect(consumer.disconnect).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('KafkaConsumer shared group', () => {
+  const eachBatchOf = (consumer: ReturnType<typeof consumerStub>) =>
+    (consumer.run as jest.Mock).mock.calls[0][0].eachBatch;
+
+  const record = (offset: string) => ({
+    key: null,
+    value: Buffer.from(JSON.stringify({ id: offset })),
+    timestamp: '0',
+    size: 0,
+    attributes: 0,
+    offset,
+    headers: {},
+  });
+
+  const payloadFrom = (topic: string) => ({
+    batch: { topic, partition: 0, messages: [record('1')] },
+    isRunning: () => true,
+    isStale: () => false,
+    resolveOffset: jest.fn(),
+    pause: jest.fn(() => jest.fn()),
+  });
+
+  const route = (handlerName: string, topic: string, overrides: object = {}) => ({
+    handlerName,
+    subscription: {
+      topicPatterns: [topic],
+      messageFormat: MessageFormat.JSON,
+      errorHandling: { type: 'ignore' as const },
+      ...overrides,
+    },
+    delivery: { kind: 'message' as const, handle: jest.fn().mockResolvedValue(undefined) },
+  });
+
+  const batchRoute = (handlerName: string, topic: string) => ({
+    handlerName,
+    subscription: { topicPatterns: [topic], messageFormat: MessageFormat.JSON, errorHandling: { type: 'ignore' as const } },
+    delivery: { kind: 'batch' as const, handle: jest.fn().mockResolvedValue(undefined) },
+  });
+
+  it('creates one client consumer for every handler of the group', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+
+    await new KafkaConsumer(kafka).subscribeGroup('billing', [
+      route('A.x', 'orders.created'),
+      route('B.y', 'parking.lot'),
+    ]);
+
+    expect(kafka.consumer).toHaveBeenCalledTimes(1);
+  });
+
+  it('subscribes the consumer to the union of the topics', async () => {
+    const consumer = consumerStub();
+
+    await new KafkaConsumer(kafkaStub(consumer)).subscribeGroup('billing', [
+      route('A.x', 'orders.created'),
+      route('B.y', 'parking.lot'),
+    ]);
+
+    expect(consumer.subscribe).toHaveBeenCalledWith({ topics: ['orders.created', 'parking.lot'] });
+  });
+
+  it('subscribes to each retry route\'s retry topics', async () => {
+    const consumer = consumerStub();
+
+    await new KafkaConsumer(kafkaStub(consumer), {
+      producer: producerStub(),
+      topicProvisioner: provisionerStub() as unknown as KafkaTopicProvisioner,
+    }).subscribeGroup('billing', [
+      route('A.x', 'orders.created', { errorHandling: { type: 'retry', attempts: 1 } }),
+      route('B.y', 'parking.lot'),
+    ]);
+
+    expect(consumer.subscribe).toHaveBeenCalledWith({
+      topics: ['orders.created', 'parking.lot', 'orders.created.billing.retry.1'],
+    });
+  });
+
+  it('hands a batch only to the handler that owns its topic', async () => {
+    const consumer = consumerStub();
+    const orders = route('A.x', 'orders.created');
+    const lot = route('B.y', 'parking.lot');
+    await new KafkaConsumer(kafkaStub(consumer)).subscribeGroup('billing', [orders, lot]);
+
+    await eachBatchOf(consumer)(payloadFrom('parking.lot'));
+
+    expect({
+      orders: orders.delivery.handle.mock.calls.length,
+      lot: lot.delivery.handle.mock.calls.length,
+    }).toEqual({ orders: 0, lot: 1 });
+  });
+
+  it('hands a batch route the whole batch in one call', async () => {
+    const consumer = consumerStub();
+    const indexer = batchRoute('B.y', 'parking.lot');
+    await new KafkaConsumer(kafkaStub(consumer)).subscribeGroup('billing', [route('A.x', 'orders.created'), indexer]);
+
+    await eachBatchOf(consumer)(payloadFrom('parking.lot'));
+
+    expect(indexer.delivery.handle).toHaveBeenCalledWith([expect.objectContaining({ context: expect.objectContaining({ topic: 'parking.lot' }) })]);
+  });
+
+  it('rethrows a fail route\'s error without calling the other handler', async () => {
+    const consumer = consumerStub();
+    const failing = route('A.x', 'orders.created', { errorHandling: { type: 'fail', backoff: false } });
+    failing.delivery.handle.mockRejectedValue(new Error('boom'));
+    const other = route('B.y', 'parking.lot');
+    await new KafkaConsumer(kafkaStub(consumer)).subscribeGroup('billing', [failing, other]);
+
+    await expect(eachBatchOf(consumer)(payloadFrom('orders.created'))).rejects.toThrow('boom');
+    expect(other.delivery.handle).not.toHaveBeenCalled();
+  });
+
+  it('rejects differing consumer options before creating a consumer', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+
+    await expect(
+      new KafkaConsumer(kafka).subscribeGroup('billing', [
+        route('A.x', 'orders.created', { consumer: { fromBeginning: true } }),
+        route('B.y', 'parking.lot'),
+      ]),
+    ).rejects.toThrow('Message handlers A.x and B.y share group "billing" but resolve consumer option "fromBeginning" differently (true vs false).');
+    expect(kafka.consumer).not.toHaveBeenCalled();
+  });
+
+  it('rejects an un-namespaced topic that equals another handler\'s namespaced topic', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+
+    await expect(
+      new KafkaConsumer(kafka, { namespace: 'dev', namespacer: new TopicNamespacer('dev') }).subscribeGroup('billing', [
+        route('A.x', 'orders.created'),
+        route('B.y', 'dev.orders.created', { namespaced: false }),
+      ]),
+    ).rejects.toThrow('Message handlers A.x and B.y share group "billing" and both consume topic "dev.orders.created".');
+    expect(kafka.consumer).not.toHaveBeenCalled();
+  });
+
+  it('uses the namespaced group id', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+
+    await new KafkaConsumer(kafka, { namespace: 'dev', namespacer: new TopicNamespacer('dev') }).subscribeGroup('billing', [
+      route('A.x', 'orders.created'),
+      route('B.y', 'parking.lot'),
+    ]);
+
+    expect(consumerConfig(kafka)).toEqual(expect.objectContaining({ groupId: 'dev-billing' }));
+  });
+
+  it('stops every route\'s error strategy before disconnecting', async () => {
+    jest.useFakeTimers();
+    const consumer = consumerStub();
+    const kafkaConsumer = new KafkaConsumer(kafkaStub(consumer));
+    const failing = route('A.x', 'orders.created', { errorHandling: { type: 'fail' } });
+    failing.delivery.handle.mockRejectedValue(new Error('boom'));
+    await kafkaConsumer.subscribeGroup('billing', [failing, route('B.y', 'parking.lot')]);
+    const payload = payloadFrom('orders.created');
+    const resume = jest.fn();
+    payload.pause.mockReturnValue(resume);
+    await eachBatchOf(consumer)(payload).catch(() => undefined);
+
+    await kafkaConsumer.onModuleDestroy();
+    jest.runAllTimers();
+
+    expect(resume).not.toHaveBeenCalled();
+    jest.useRealTimers();
+  });
+});

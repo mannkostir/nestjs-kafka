@@ -22,6 +22,8 @@ import { MessageFormat } from '../../types/message-format.type.js';
 import { IConsumeMessageBatches } from '../../interfaces/consume-message-batches.interface.js';
 import { BatchMessageHandlerCallback } from '../../types/batch-message-handler-callback.type.js';
 import { KafkaBatchDelivery } from './kafka-batch-delivery.js';
+import { IConsumeSharedGroups } from '../../interfaces/consume-shared-groups.interface.js';
+import { KafkaHandlerRoutes } from './kafka-handler-routes.js';
 import { RouteDelivery, SharedGroupRoute } from '../../types/shared-group-route.type.js';
 
 export interface KafkaConsumerOptions {
@@ -55,7 +57,7 @@ type ConsumerSubscription = {
 
 export class KafkaConsumer<
   TMessage extends MessageType,
-> extends ConsumerProxy<TMessage> implements OnModuleDestroy, IConsumeMessageBatches<TMessage> {
+> extends ConsumerProxy<TMessage> implements OnModuleDestroy, IConsumeMessageBatches<TMessage>, IConsumeSharedGroups<TMessage> {
 
   private readonly logger = new Logger(KafkaConsumer.name);
   private readonly namespace?: string;
@@ -103,10 +105,31 @@ export class KafkaConsumer<
     ]);
   }
 
+  public async subscribeGroup(
+    consumerGroupId: string,
+    routes: SharedGroupRoute<TMessage>[],
+  ): Promise<void> {
+    await this.start(consumerGroupId, routes);
+  }
+
+  private static dispatcherFor(consumerGroupId: string, prepared: PreparedRoute[]): EachBatchHandler {
+    if (prepared.length === 1) {
+      return prepared[0].eachBatch;
+    }
+
+    const routes = KafkaHandlerRoutes.claim(
+      consumerGroupId,
+      prepared.map((route) => ({ topics: [...route.topicPatterns, ...route.retryTopics], route })),
+    );
+
+    return (payload) => routes.handlerFor(payload.batch.topic).eachBatch(payload);
+  }
+
   private async start(consumerGroupId: string, routes: SharedGroupRoute<TMessage>[]): Promise<void> {
     const groupId = [this.namespace, consumerGroupId].filter(Boolean).join('-');
     const prepared = routes.map((route) => this.prepare(route, groupId));
-    const [{ config, eachBatch }] = prepared;
+    const config = ResolvedConsumerConfig.agreed(consumerGroupId, prepared);
+    const eachBatch = KafkaConsumer.dispatcherFor(consumerGroupId, prepared);
 
     const topicPatterns = prepared.flatMap((route) => route.topicPatterns);
     const topicNames = prepared.flatMap((route) => route.topicNames);
