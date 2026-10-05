@@ -91,9 +91,9 @@ partitions reach the handler concurrently.
 ## Provider scope
 
 A handler's provider must be a singleton, and so must every provider it injects. A Kafka message has
-no request to scope an instance to, so a `@Message` handler on a request-scoped or transient
-provider, or on a provider that depends on a request-scoped one, fails application bootstrap with an
-error naming the handler and its scope.
+no request to scope an instance to, so a `@Message` or `@MessageBatch` handler on a request-scoped
+or transient provider, or on a provider that depends on a request-scoped one, fails application
+bootstrap with an error naming the handler and its scope.
 
 ## One group id per handler
 

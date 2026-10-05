@@ -5,8 +5,8 @@ can die before its offset is committed, in which case the message is delivered a
 
 ## One consumer per handler
 
-Each `@Message` method gets its own client consumer in its own consumer group, created, connected,
-and run at application bootstrap. Handlers of one connector cannot share a `groupId`; see
+Each handler, `@Message` or `@MessageBatch`, gets its own client consumer in its own consumer
+group, created, connected, and run at application bootstrap. Handlers of one connector cannot share a `groupId`; see
 [Handlers](handlers.md#one-group-id-per-handler).
 
 ## Offsets
@@ -30,8 +30,8 @@ at a time.
 
 With `partitionsConsumedConcurrently` above `1` (see [`ConsumerConfig`](configuration.md#consumerconfig)),
 batches from different partitions run concurrently, up to the number of partitions assigned to the
-consumer. Messages within one partition still reach the handler one at a time and in order, and
-nothing is ordered across partitions. The `fail` policy's backoff pauses only the failing
+consumer. Messages within one partition still reach the handler one at a time, or one batch at a
+time for a batch handler, and in order, and nothing is ordered across partitions. The `fail` policy's backoff pauses only the failing
 partition; the others keep being processed. Because one provider instance serves every partition,
 its handler method must be safe to call concurrently.
 
