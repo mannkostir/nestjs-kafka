@@ -1,8 +1,10 @@
 import type { KafkaJS } from '@confluentinc/kafka-javascript';
 import type { Logger } from '@nestjs/common';
+import { GroupRetryTopics } from './group-retry-topics.js';
+import { HandlerRetryTopics } from './handler-retry-topics.js';
 import { PausedPartitions } from './paused-partitions.js';
 import { RetryDelayGate } from './retry-delay-gate.js';
-import { RetryTopics } from './retry-topics.js';
+import { SourceRetryTopics } from './source-retry-topics.js';
 
 const stubLogger = () => ({ warn: jest.fn() }) as unknown as Logger & { warn: jest.Mock };
 
@@ -16,7 +18,8 @@ const dueMessage = (due?: string) => ({
   headers: due !== undefined ? { 'retry.due': due } : undefined,
 });
 
-const gate = () => new RetryDelayGate(RetryTopics.for('svc', 2), new PausedPartitions(stubLogger()), () => 1000);
+const gate = () =>
+  new RetryDelayGate(new HandlerRetryTopics(SourceRetryTopics.for('svc', 2), new Set()), new PausedPartitions(stubLogger()), () => 1000);
 
 describe('RetryDelayGate', () => {
   beforeEach(() => {
@@ -108,5 +111,15 @@ describe('RetryDelayGate.isDue', () => {
     gate().isDue(payload, asMessage(dueMessage('1500')));
 
     expect(payload.pause).not.toHaveBeenCalled();
+  });
+
+  it('holds a group retry message that is not due yet', () => {
+    const groupGate = new RetryDelayGate(
+      new HandlerRetryTopics(SourceRetryTopics.for('svc', 2), new Set(), GroupRetryTopics.for('svc', 2)),
+      new PausedPartitions(stubLogger()),
+      () => 1000,
+    );
+
+    expect(groupGate.holdUntilDue(payloadOn('svc.retry.1', jest.fn()), dueMessage('1500') as unknown as KafkaJS.KafkaMessage)).toBe(true);
   });
 });

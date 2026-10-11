@@ -2,14 +2,15 @@ import type { KafkaJS } from '@confluentinc/kafka-javascript';
 import { KafkaErrorHandleStrategy } from './kafka-error-handle.strategy.js';
 import type { KafkaErrorHandleDlqStrategy } from './kafka-error-handle-dlq.strategy.js';
 import type { ExponentialBackoff } from './exponential-backoff.js';
+import type { HandlerRetryTopics } from './handler-retry-topics.js';
 import type { RetryDelayGate } from './retry-delay-gate.js';
 import { RetryHeaders } from './retry-headers.js';
-import type { RetryHop, RetryTopics } from './retry-topics.js';
+import type { RetryHop } from './retry-topic-name.js';
 
 export class KafkaErrorHandleRetryStrategy extends KafkaErrorHandleStrategy {
   constructor(
     private readonly producer: KafkaJS.Producer,
-    private readonly topics: RetryTopics,
+    private readonly topics: HandlerRetryTopics,
     private readonly schedule: ExponentialBackoff,
     private readonly gate: RetryDelayGate,
     private readonly deadLetters: KafkaErrorHandleDlqStrategy,
@@ -19,7 +20,7 @@ export class KafkaErrorHandleRetryStrategy extends KafkaErrorHandleStrategy {
   }
 
   public async handle(error: unknown, payload: KafkaJS.EachBatchPayload, message: KafkaJS.KafkaMessage): Promise<void> {
-    const hop = this.topics.locate(payload.batch.topic);
+    const hop = this.topics.locate(payload.batch.topic, message);
     const next = this.topics.nextTopic(hop);
 
     if (next === undefined) {
@@ -32,11 +33,19 @@ export class KafkaErrorHandleRetryStrategy extends KafkaErrorHandleStrategy {
   }
 
   public override destinationTopics(sourceTopics: string[]): string[] {
-    return [...this.topics.allFor(sourceTopics), ...this.deadLetters.destinationTopics(sourceTopics)];
+    return [
+      ...this.topics.perSourceTopics(sourceTopics),
+      ...this.topics.groupTopics(),
+      ...this.deadLetters.destinationTopics(sourceTopics),
+    ];
   }
 
   public override consumedTopics(sourceTopics: string[]): string[] {
-    return this.topics.allFor(sourceTopics);
+    return this.topics.perSourceTopics(sourceTopics);
+  }
+
+  public override sharedConsumedTopics(): string[] {
+    return this.topics.groupTopics();
   }
 
   public override isDue(payload: KafkaJS.EachBatchPayload, message: KafkaJS.KafkaMessage): boolean {

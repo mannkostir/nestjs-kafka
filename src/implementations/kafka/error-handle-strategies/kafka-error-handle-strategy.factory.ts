@@ -9,7 +9,8 @@ import { KafkaErrorHandleFailStrategy } from './kafka-error-handle-fail.strategy
 import { ExponentialBackoff } from './exponential-backoff.js';
 import { RedeliveryBackoff } from './redelivery-backoff.js';
 import { KafkaErrorHandleRetryStrategy } from './kafka-error-handle-retry.strategy.js';
-import { RetryTopics } from './retry-topics.js';
+import { HandlerRetryTopics } from './handler-retry-topics.js';
+import { SourceRetryTopics } from './source-retry-topics.js';
 import { RetryDelayGate } from './retry-delay-gate.js';
 import { PausedPartitions } from './paused-partitions.js';
 
@@ -99,7 +100,7 @@ export class KafkaErrorHandleStrategyFactory {
       );
     }
 
-    const topics = RetryTopics.for(scope.groupId, config.attempts);
+    const topics = new HandlerRetryTopics(SourceRetryTopics.for(scope.groupId, config.attempts), new Set());
     const schedule = ExponentialBackoff.from(config.backoff ?? {}, 'retry');
     const gate = new RetryDelayGate(topics, new PausedPartitions(new Logger(RetryDelayGate.name)));
     const deadLetters = new KafkaErrorHandleDlqStrategy(
