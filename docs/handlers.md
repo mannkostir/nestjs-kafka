@@ -147,10 +147,16 @@ Each handler keeps its own `errorHandling`, `messageFormat`, and `namespaced`. T
 
 - Every handler on the `groupId` sets `sharedGroup: true`, and the value is a boolean; anything
   else is rejected when the class is decorated.
-- Topics are concrete names. A `RegExp` topic with `sharedGroup: true` throws when the class is
-  decorated. `RegExp` topics are not supported in shared groups.
-- Each topic, after namespacing, belongs to exactly one handler in the group, or bootstrap fails.
-  Retry topics belong to the handler whose `retry` policy derives them.
+- Topics may be names or `RegExp` patterns. A topic listed by name belongs to that handler, even
+  when another handler's pattern matches it.
+- A topic matched by the patterns of two or more handlers, and listed by name by none, cannot be
+  routed. Its partitions are paused and an error names the topic and the handlers; nothing from it
+  is consumed or committed until you rename the topic or narrow the patterns and restart. Other
+  topics keep flowing.
+- Each topic name, after namespacing, is listed by at most one handler in the group, or bootstrap
+  fails. Retry topics belong to the handler whose `retry` policy derives them. Pattern handlers with
+  `retry` share the group retry topics; each record returns to the handler that owns its original
+  topic.
 - Every handler resolves the same `consumer` options, or bootstrap fails with an error naming the
   option. Set them once in `consumerDefaults`, or pass the same object to each handler.
 

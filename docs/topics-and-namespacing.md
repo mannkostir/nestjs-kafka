@@ -63,6 +63,18 @@ topics, and reads a retry topic partition without a committed offset from its be
 `fromBeginning` says. The dead-letter destination of a `retry` handler, including an explicit
 `dlqTopic`, namespaced like `topic`, is described under [DLQ topics](#dlq-topics).
 
+A `retry` handler subscribed to a `RegExp` also consumes the group's retry topics
+`<group>.retry.1` to `<group>.retry.<attempts>`, where `<group>` is the effective group id. A record
+first consumed through the pattern hops through these, carrying its original topic in
+`retry.original.topic`; the concrete topics of the same handler keep the per-source names above.
+
+| Group | Namespace | `attempts` | Group retry topics |
+| --- | --- | --- | --- |
+| `audit` | none | `2` | `audit.retry.1`, `audit.retry.2` |
+| `audit` | `dev` | `2` | `dev-audit.retry.1`, `dev-audit.retry.2` |
+
+The names do not depend on the handler's `namespaced` flag.
+
 ## Pattern (RegExp) topics
 
 A `RegExp` topic pattern given to `@Message` is matched by librdkafka, which compiles it as a
@@ -115,7 +127,8 @@ the handler's plain-string topics exist, along with its DLQ topic when it uses
 `errorHandling: { type: 'retry' }`. What happens to a missing topic is governed by the handler's
 resolved `allowAutoTopicCreation` (see [Configuration](configuration.md#consumerconfig)). `RegExp`
 subscriptions are never provisioned — a pattern matches whatever topics already exist, or come to
-exist later.
+exist later. The group retry topics of a pattern handler with `retry` are concrete names and are
+provisioned.
 
 With the default `allowAutoTopicCreation: false`, bootstrap fails if any of them is missing:
 
@@ -162,3 +175,7 @@ dead-letter topic `orders.created.dlq`:
 ```
 Topic(s) orders.created.orders-service.retry.1, orders.created.orders-service.retry.2, orders.created.dlq do not exist and allowAutoTopicCreation is false. Create them before the application starts, or enable allowAutoTopicCreation.
 ```
+
+A pattern handler with `retry` has its group retry topics checked or created in the same step, so it
+waits for its group assignment at bootstrap like a handler with plain-string topics (see
+[Delivery semantics](delivery-semantics.md#bootstrap-waits-for-group-assignment)).
