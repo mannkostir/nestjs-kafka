@@ -62,12 +62,12 @@ group.
 - If the client reports a group or topic authorization failure during the wait, bootstrap fails
   immediately, with an error naming the consumer group and the broker's reason.
 
-A handler subscribed only to `RegExp` patterns, without `retry`, does not wait: librdkafka sends no `JoinGroup` while a
-subscription matches no existing topic, so bootstrap would otherwise block until the timeout and
-then fail. Such a handler starts consuming once the client's metadata refresh
+A handler subscribed only to `RegExp` patterns, without `retry`, does not wait: librdkafka sends no
+`JoinGroup` while a subscription matches no existing topic, so bootstrap would otherwise block until
+the timeout and then fail. Such a handler starts consuming once the client's metadata refresh
 (`'topic.metadata.refresh.interval.ms'`, default `300000`, settable at the top level of
-`clientOptions`) notices a topic matching its pattern. A pattern-only handler with `retry` does wait for its
-assignment, because its group retry topics exist.
+`clientOptions`) notices a topic matching its pattern. A pattern-only handler with `retry` does wait
+for its assignment, because its group retry topics exist.
 
 The wait relies on librdkafka's `rebalance_cb` consumer property, which the library reserves; do
 not set it yourself.

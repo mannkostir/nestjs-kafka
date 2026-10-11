@@ -71,7 +71,7 @@ export class KafkaSharedGroupDispatcher<TRoute extends DispatchedRoute> {
     if (originalTopic === undefined) {
       return {
         kind: 'unroutable',
-        reason: `Record at offset ${message.offset} of retry topic "${topic}" has no retry.original.topic header, so no handler can be chosen for it.`,
+        reason: `Record at offset ${message.offset} of retry topic "${topic}" has no retry.original.topic header, so no handler can be chosen for it. Move the group's committed offset past it to resume.`,
       };
     }
 
@@ -81,8 +81,18 @@ export class KafkaSharedGroupDispatcher<TRoute extends DispatchedRoute> {
   private pause(payload: KafkaJS.EachBatchPayload, reason: string): void {
     const { topic, partition } = payload.batch;
 
-    payload.pause();
-    this.logger.error(`${reason} Partition ${partition} of "${topic}" is paused until the next rebalance.`);
+    this.logger.error(`${reason} Partition ${partition} of "${topic}" is paused.`);
+    this.pauseTolerantly(payload);
+  }
+
+  private pauseTolerantly(payload: KafkaJS.EachBatchPayload): void {
+    try {
+      payload.pause();
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      const { topic, partition } = payload.batch;
+      this.logger.warn(`Could not pause topic "${topic}" partition ${partition}: ${reason}`);
+    }
   }
 
   private static sameOwner<TRoute>(left: RouteResolution<TRoute>, right: RouteResolution<TRoute>): boolean {

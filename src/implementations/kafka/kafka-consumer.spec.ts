@@ -1686,6 +1686,25 @@ describe('KafkaConsumer shared group', () => {
     });
   });
 
+  it('hands a shared group retry record only to the route that owns its original topic', async () => {
+    const consumer = consumerStub();
+    const audit = patternRoute('A.x', [/^audit\..+/], { errorHandling: { type: 'retry', attempts: 1 } });
+    const ledger = patternRoute('B.y', [/^ledger\..+/], { errorHandling: { type: 'retry', attempts: 1 } });
+    const payload = payloadFrom('billing.retry.1');
+    payload.batch.messages = [{ ...record('1'), headers: { 'retry.original.topic': 'ledger.eu', 'retry.due': '1' } }];
+
+    await new KafkaConsumer(kafkaStub(consumer), {
+      producer: producerStub(),
+      topicProvisioner: provisionerStub() as unknown as KafkaTopicProvisioner,
+    }).subscribeGroup('billing', [audit, ledger]);
+    await eachBatchOf(consumer)(payload);
+
+    expect({
+      audit: audit.delivery.handle.mock.calls.length,
+      ledger: ledger.delivery.handle.mock.calls.length,
+    }).toEqual({ audit: 0, ledger: 1 });
+  });
+
   it('hands a batch route the whole batch in one call', async () => {
     const consumer = consumerStub();
     const indexer = batchRoute('B.y', 'parking.lot');

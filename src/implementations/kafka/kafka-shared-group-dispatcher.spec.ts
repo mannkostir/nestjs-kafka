@@ -3,7 +3,7 @@ import type { Logger } from '@nestjs/common';
 import { KafkaHandlerRoutes } from './kafka-handler-routes.js';
 import { KafkaSharedGroupDispatcher } from './kafka-shared-group-dispatcher.js';
 
-const stubLogger = () => ({ error: jest.fn() }) as unknown as Logger & { error: jest.Mock };
+const stubLogger = () => ({ error: jest.fn(), warn: jest.fn() }) as unknown as Logger & { error: jest.Mock; warn: jest.Mock };
 
 const record = (offset: string, originalTopic?: string) =>
   ({
@@ -68,8 +68,32 @@ describe('KafkaSharedGroupDispatcher', () => {
     await dispatcherFor(resolvingRoute('A.x'), resolvingRoute('B.y'), logger).dispatch(payloadOn('payments', [record('1')]));
 
     expect(logger.error).toHaveBeenCalledWith(
-      'Topic "payments" matches no handler of shared group "billing". Partition 3 of "payments" is paused until the next rebalance.',
+      'Topic "payments" matches no handler of shared group "billing". Partition 3 of "payments" is paused.',
     );
+  });
+
+  it('still logs the error when pausing the partition fails', async () => {
+    const logger = stubLogger();
+    const payload = payloadOn('payments', [record('1')]);
+    payload.pause.mockImplementation(() => {
+      throw new Error('not assigned');
+    });
+
+    await dispatcherFor(resolvingRoute('A.x'), resolvingRoute('B.y'), logger).dispatch(payload);
+
+    expect(logger.error).toHaveBeenCalledTimes(1);
+  });
+
+  it('warns when pausing the partition fails', async () => {
+    const logger = stubLogger();
+    const payload = payloadOn('payments', [record('1')]);
+    payload.pause.mockImplementation(() => {
+      throw new Error('not assigned');
+    });
+
+    await dispatcherFor(resolvingRoute('A.x'), resolvingRoute('B.y'), logger).dispatch(payload);
+
+    expect(logger.warn).toHaveBeenCalledWith('Could not pause topic "payments" partition 3: not assigned');
   });
 
   it('pauses again on a later batch of the same unroutable topic', async () => {
@@ -123,7 +147,6 @@ describe('KafkaSharedGroupDispatcher', () => {
   });
 
   it('pauses a shared retry partition at a record whose original topic two patterns match', async () => {
-    const logger = stubLogger();
     const payload = payloadOn('billing.retry.1', [record('1', 'audit.eu')]);
     const dispatcher = new KafkaSharedGroupDispatcher(
       KafkaHandlerRoutes.claim('billing', [
@@ -131,7 +154,7 @@ describe('KafkaSharedGroupDispatcher', () => {
         { topics: [/^.*(eu)/], route: resolvingRoute('B.y') },
       ]),
       new Set(['billing.retry.1']),
-      logger,
+      stubLogger(),
     );
 
     await dispatcher.dispatch(payload);

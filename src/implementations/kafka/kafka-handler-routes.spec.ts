@@ -44,6 +44,17 @@ describe('KafkaHandlerRoutes', () => {
     expect(routes.resolve('audit.eu')).toEqual({ kind: 'owned', route: audit });
   });
 
+  it('lets one handler own a topic that two of its own patterns match', () => {
+    const audit = route('B.y');
+
+    const routes = KafkaHandlerRoutes.claim('billing', [
+      { topics: ['orders'], route: route('A.x') },
+      { topics: [/^audit\..+/, /^.*(eu)/], route: audit },
+    ]);
+
+    expect(routes.resolve('audit.eu')).toEqual({ kind: 'owned', route: audit });
+  });
+
   it('lets a concrete claim beat a pattern', () => {
     const special = route('A.x');
 

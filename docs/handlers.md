@@ -153,6 +153,10 @@ Each handler keeps its own `errorHandling`, `messageFormat`, and `namespaced`. T
   routed. Its partitions are paused and an error names the topic and the handlers; nothing from it
   is consumed or committed until you rename the topic or narrow the patterns and restart. Other
   topics keep flowing.
+- A topic that no handler's name or pattern matches, and a record on a group retry topic that has no
+  `retry.original.topic` header or whose original topic no handler owns, are paused the same way,
+  and again after each rebalance; fix the configuration or move the group's committed offset past
+  the record to resume.
 - Each topic name, after namespacing, is listed by at most one handler in the group, or bootstrap
   fails. Retry topics belong to the handler whose `retry` policy derives them. Pattern handlers with
   `retry` share the group retry topics; each record returns to the handler that owns its original
