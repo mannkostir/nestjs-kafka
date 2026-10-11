@@ -77,4 +77,104 @@ export class LibrdkafkaTopicPattern {
 
     return undefined;
   }
+
+  private static readonly POSIX_CLASSES: ReadonlyMap<string, string> = new Map([
+    ['alnum', 'A-Za-z0-9'],
+    ['alpha', 'A-Za-z'],
+    ['blank', ' \\t'],
+    ['cntrl', '\\x00-\\x1f\\x7f'],
+    ['digit', '0-9'],
+    ['graph', '!-~'],
+    ['lower', 'a-z'],
+    ['print', ' -~'],
+    ['punct', '!-\\/:-@\\[-`{-~'],
+    ['space', ' \\t\\n\\r\\f\\v'],
+    ['upper', 'A-Z'],
+    ['xdigit', '0-9A-Fa-f'],
+  ]);
+
+  public static matcher(pattern: RegExp): RegExp {
+    return new RegExp(LibrdkafkaTopicPattern.toJavaScript(pattern));
+  }
+
+  private static toJavaScript(pattern: RegExp): string {
+    const source = pattern.source;
+    let translated = '';
+    let index = 0;
+
+    while (index < source.length) {
+      const char = source[index];
+
+      if (char === '\\') {
+        translated += source.slice(index, index + 2);
+        index += 2;
+      } else if (char === '[') {
+        const bracket = LibrdkafkaTopicPattern.translateBracket(pattern, index);
+        translated += bracket.translated;
+        index = bracket.end;
+      } else {
+        translated += char;
+        index++;
+      }
+    }
+
+    return translated;
+  }
+
+  private static translateBracket(pattern: RegExp, start: number): { translated: string; end: number } {
+    const source = pattern.source;
+    let index = start + 1;
+    let translated = '[';
+
+    if (source[index] === '^') {
+      translated += '^';
+      index++;
+    }
+
+    if (source[index] === ']') {
+      translated += '\\]';
+      index++;
+    }
+
+    while (index < source.length && source[index] !== ']') {
+      if (source.startsWith('[:', index)) {
+        const close = source.indexOf(':]', index + 2);
+
+        if (close === -1) {
+          throw LibrdkafkaTopicPattern.unterminated(pattern);
+        }
+
+        translated += LibrdkafkaTopicPattern.posixClass(pattern, source.slice(index + 2, close));
+        index = close + 2;
+      } else if (source.startsWith('[.', index) || source.startsWith('[=', index)) {
+        throw new Error(
+          `Topic pattern ${pattern} cannot be routed in a shared group: collating elements and equivalence classes are not supported. ` +
+          'Spell the characters out in the bracket expression.',
+        );
+      } else {
+        translated += source[index] === '\\' ? '\\\\' : source[index];
+        index++;
+      }
+    }
+
+    if (index >= source.length) {
+      throw LibrdkafkaTopicPattern.unterminated(pattern);
+    }
+
+    return { translated: `${translated}]`, end: index + 1 };
+  }
+
+  private static posixClass(pattern: RegExp, name: string): string {
+    const range = LibrdkafkaTopicPattern.POSIX_CLASSES.get(name);
+
+    if (range === undefined) {
+      throw new Error(`Topic pattern ${pattern} uses [:${name}:], which is not a POSIX character class.`);
+    }
+
+    return range;
+  }
+
+  private static unterminated(pattern: RegExp): Error {
+    return new Error(`Topic pattern ${pattern} has an unterminated bracket expression.`);
+  }
 }
