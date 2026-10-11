@@ -24,6 +24,7 @@ import { BatchMessageHandlerCallback } from '../../types/batch-message-handler-c
 import { KafkaBatchDelivery } from './kafka-batch-delivery.js';
 import { IConsumeSharedGroups } from '../../interfaces/consume-shared-groups.interface.js';
 import { KafkaHandlerRoutes } from './kafka-handler-routes.js';
+import { KafkaSharedGroupDispatcher } from './kafka-shared-group-dispatcher.js';
 import { RouteDelivery, SharedGroupRoute } from '../../types/shared-group-route.type.js';
 
 export interface KafkaConsumerOptions {
@@ -118,12 +119,15 @@ export class KafkaConsumer<
       return prepared[0].eachBatch;
     }
 
-    const routes = KafkaHandlerRoutes.claim(
-      consumerGroupId,
-      prepared.map((route) => ({ topics: [...route.topicPatterns, ...route.retryTopics], route })),
+    const dispatcher = new KafkaSharedGroupDispatcher(
+      KafkaHandlerRoutes.claim(
+        consumerGroupId,
+        prepared.map((route) => ({ topics: [...route.topicPatterns, ...route.retryTopics], route })),
+      ),
+      new Set(prepared.flatMap((route) => route.sharedRetryTopics)),
     );
 
-    return (payload) => routes.handlerFor(payload.batch.topic).eachBatch(payload);
+    return (payload) => dispatcher.dispatch(payload);
   }
 
   private async start(consumerGroupId: string, routes: SharedGroupRoute<TMessage>[]): Promise<void> {

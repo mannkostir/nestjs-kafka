@@ -1573,6 +1573,9 @@ describe('KafkaConsumer shared group', () => {
     delivery: { kind: 'message' as const, handle: jest.fn().mockResolvedValue(undefined) },
   });
 
+  const patternRoute = (handlerName: string, topicPatterns: RegExp[], overrides: object = {}) =>
+    route(handlerName, 'unused', { topicPatterns, ...overrides });
+
   const batchRoute = (handlerName: string, topic: string) => ({
     handlerName,
     subscription: { topicPatterns: [topic], messageFormat: MessageFormat.JSON, errorHandling: { type: 'ignore' as const } },
@@ -1630,6 +1633,57 @@ describe('KafkaConsumer shared group', () => {
       orders: orders.delivery.handle.mock.calls.length,
       lot: lot.delivery.handle.mock.calls.length,
     }).toEqual({ orders: 0, lot: 1 });
+  });
+
+  it('hands a batch from a pattern topic to the pattern route', async () => {
+    const consumer = consumerStub();
+    const orders = route('A.x', 'orders.created');
+    const audit = patternRoute('B.y', [/^audit\..+/]);
+
+    await new KafkaConsumer(kafkaStub(consumer)).subscribeGroup('billing', [orders, audit]);
+    await eachBatchOf(consumer)(payloadFrom('audit.eu'));
+
+    expect(audit.delivery.handle).toHaveBeenCalledTimes(1);
+  });
+
+  it('pauses a topic matched by two pattern routes', async () => {
+    const consumer = consumerStub();
+    const first = patternRoute('A.x', [/^audit\..+/]);
+    const second = patternRoute('B.y', [/^.*(eu)/]);
+    const payload = payloadFrom('audit.eu');
+
+    await new KafkaConsumer(kafkaStub(consumer)).subscribeGroup('billing', [first, second]);
+    await eachBatchOf(consumer)(payload);
+
+    expect([payload.pause.mock.calls.length, first.delivery.handle.mock.calls.length, second.delivery.handle.mock.calls.length]).toEqual([1, 0, 0]);
+  });
+
+  it('pauses a topic no route of the group claims', async () => {
+    const consumer = consumerStub();
+    const payload = payloadFrom('payments');
+
+    await new KafkaConsumer(kafkaStub(consumer)).subscribeGroup('billing', [
+      route('A.x', 'orders.created'),
+      route('B.y', 'parking.lot'),
+    ]);
+    await eachBatchOf(consumer)(payload);
+
+    expect(payload.pause).toHaveBeenCalledTimes(1);
+  });
+
+  it('subscribes a shared group once to the group retry topics of its pattern retry routes', async () => {
+    const consumer = consumerStub();
+    const first = patternRoute('A.x', [/^audit\..+/], { errorHandling: { type: 'retry', attempts: 2 } });
+    const second = patternRoute('B.y', [/^ledger\..+/], { errorHandling: { type: 'retry', attempts: 1 } });
+
+    await new KafkaConsumer(kafkaStub(consumer), {
+      producer: producerStub(),
+      topicProvisioner: provisionerStub() as unknown as KafkaTopicProvisioner,
+    }).subscribeGroup('billing', [first, second]);
+
+    expect(consumer.subscribe).toHaveBeenCalledWith({
+      topics: [/^audit\..+/, /^ledger\..+/, 'billing.retry.1', 'billing.retry.2'],
+    });
   });
 
   it('hands a batch route the whole batch in one call', async () => {
