@@ -11,7 +11,7 @@ share a group; see [Sharing a consumer group](#sharing-a-consumer-group).
   errorHandling: { type: 'dlq' },
 })
 async handleOrderCreated(
-  message: MessageType<OrderCreated>,
+  message: KafkaMessage<OrderCreated>,
   context: MessageContext,
 ): Promise<void> {}
 ```
@@ -19,7 +19,7 @@ async handleOrderCreated(
 The full option list is in [Configuration](configuration.md#message-options).
 
 TypeScript checks the decorated method against `MessageHandlerCallback`. It must return a
-`Promise<void>`. Its first parameter, if any, must accept any `MessageType<T>`, including a `null`
+`Promise<void>`. Its first parameter, if any, must accept any `KafkaMessage<T>`, including a `null`
 key and a `null` value, so a parameter that narrows `key` to a string or `value` to non-null is
 rejected. Its second parameter, if any, must accept a `MessageContext`. A method that does not fit,
 such as a synchronous one, fails to compile at the decorator. `@Message` returns a typed decorator,
@@ -74,15 +74,17 @@ indexing.
   groupId: 'orders-indexer',
   errorHandling: { type: 'dlq' },
 })
-async index(batch: ReceivedMessage<MessageType<OrderCreated>>[]): Promise<void> {
+async index(batch: ReceivedMessage<OrderCreated>[]): Promise<void> {
   await this.search.bulkIndex(batch.map(({ message }) => message.value));
 }
 ```
 
-Each entry is `{ message, context }`, with the same message and context a `@Message` handler gets. A
-batch holds messages of one topic partition, in offset order. A method carries one of the two
-decorators, never both, and batch handlers follow the same group id rules as `@Message`
-handlers, including [sharing a consumer group](#sharing-a-consumer-group).
+Each entry is a `ReceivedMessage<TValue>`, `{ message, context }`, with the same message and
+context a `@Message` handler gets. TypeScript checks the decorated method against
+`MessageBatchHandlerCallback<TValue>`: it takes a `ReceivedMessage<TValue>[]` and returns a
+`Promise<void>`. A batch holds messages of one topic partition, in offset order. A method carries
+one of the two decorators, never both, and batch handlers follow the same group id rules as
+`@Message` handlers, including [sharing a consumer group](#sharing-a-consumer-group).
 
 How failures are handled is described in [Error handling](error-handling.md#batch-handlers).
 
@@ -139,7 +141,7 @@ export class BillingHandlers {
     sharedGroup: true,
     errorHandling: { type: 'retry', attempts: 3 },
   })
-  async onOrder(order: MessageType): Promise<void> {}
+  async onOrder(order: KafkaMessage): Promise<void> {}
 
   @MessageBatch(['refunds.issued'], {
     groupId: 'billing',

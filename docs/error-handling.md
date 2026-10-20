@@ -94,14 +94,14 @@ A handler subscribed to a dead-letter topic reads these headers from `message.he
   groupId: 'orders-dead-letters',
   errorHandling: { type: 'ignore' },
 })
-async handleDeadLetter(message: MessageType<OrderCreated>): Promise<void> {
+async handleDeadLetter(message: KafkaMessage<OrderCreated>): Promise<void> {
   this.logger.warn(
     `Order ${message.value?.orderId} failed: ${message.headers?.['dlq.error.message']}`,
   );
 }
 ```
 
-## `{ type: 'retry', attempts, backoff?, dlqTopic? }`
+## `{ type: 'retry', attempts, backoff?, dlq? }`
 
 Republishes the failed record to a retry topic, resolves its offset on the source partition, and
 redelivers it from the retry topic after a delay. The failing message leaves its partition, so the
@@ -110,14 +110,14 @@ Delivery uses the module's producer.
 
 ```ts
 errorHandling: { type: 'retry', attempts: 3 }
-errorHandling: { type: 'retry', attempts: 3, backoff: { initialMs: 1000, multiplier: 10 }, dlqTopic: 'orders.failures' }
+errorHandling: { type: 'retry', attempts: 3, backoff: { initialMs: 1000, multiplier: 10 }, dlq: { topic: 'orders.failures' } }
 ```
 
 | Option | Type | Default | Constraint |
 | --- | --- | --- | --- |
 | `attempts` | `number` | required | integer, at least `1` |
-| `backoff` | `FailBackoffOptions` | see below | same fields and constraints as `fail` |
-| `dlqTopic` | `string` | `<source topic>.dlq` | same as `dlq`'s `topic` |
+| `backoff` | `BackoffOptions` | see below | same fields and constraints as `fail` |
+| `dlq.topic` | `string` | `<source topic>.dlq` | same as `dlq`'s `topic` |
 
 For a pattern source, `<source topic>` is the topic the pattern matched.
 
@@ -173,7 +173,7 @@ A handler reads the headers from `message.headers`:
   groupId: 'orders-service',
   errorHandling: { type: 'retry', attempts: 3 },
 })
-async handleOrder(message: MessageType<OrderCreated>): Promise<void> {
+async handleOrder(message: KafkaMessage<OrderCreated>): Promise<void> {
   const attempt = message.headers?.['retry.attempt'] ?? '0';
   await this.orders.process(message.value, Number(attempt));
 }

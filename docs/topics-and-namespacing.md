@@ -61,7 +61,7 @@ namespaces: other groups subscribed to the same source topic, and the same group
 namespace, never see them. The handler's own consumer consumes its retry topics next to its source
 topics, and reads a retry topic partition without a committed offset from its beginning, whatever
 `fromBeginning` says. The dead-letter destination of a `retry` handler, including an explicit
-`dlqTopic`, namespaced like `topic`, is described under [DLQ topics](#dlq-topics).
+`dlq.topic`, namespaced like `dlq`'s `topic`, is described under [DLQ topics](#dlq-topics).
 
 A `retry` handler subscribed to a `RegExp` also consumes the group's retry topics
 `<group>.retry.1` to `<group>.retry.<attempts>`, where `<group>` is the effective group id. A record
@@ -125,7 +125,7 @@ Before each handler's consumer is created, the library lists the broker's topics
 the handler's plain-string topics exist, along with its DLQ topic when it uses
 `errorHandling: { type: 'dlq' }`, and its retry topics and DLQ topic when it uses
 `errorHandling: { type: 'retry' }`. What happens to a missing topic is governed by the handler's
-resolved `createMissingTopics` (see [Configuration](configuration.md#consumerconfig)). `RegExp`
+resolved `createMissingTopics` (see [Configuration](configuration.md#consumeroptions)). `RegExp`
 subscriptions are never provisioned — a pattern matches whatever topics already exist, or come to
 exist later. The group retry topics of a pattern handler with `retry` are concrete names and are
 provisioned.

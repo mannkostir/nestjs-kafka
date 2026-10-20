@@ -4,6 +4,11 @@ The format is chosen per module with `messageFormat`, and overridden per handler
 `@Message({ messageFormat })` and per send with `{ messageFormat }`. It defaults to
 `MessageFormat.JSON`.
 
+`MessageFormat` is a constant object and a type of the same name. The constants
+`MessageFormat.JSON`, `MessageFormat.ENVELOPED_JSON` and `MessageFormat.AVRO` hold the string
+literals `'json'`, `'enveloped-json'` and `'avro'`, and the type is their union, so either form is
+accepted wherever a format is set.
+
 ## JSON
 
 `MessageFormat.JSON` is the default and needs no extra configuration.
@@ -52,7 +57,7 @@ producers and consumers agree:
   messageFormat: MessageFormat.JSON,
   errorHandling: { type: 'dlq' },
 })
-async handleOrderCreated(message: MessageType<OrderCreated>): Promise<void> {}
+async handleOrderCreated(message: KafkaMessage<OrderCreated>): Promise<void> {}
 ```
 
 ```ts
@@ -86,7 +91,7 @@ KafkaModule.register({
   messageFormat: MessageFormat.AVRO,
   errorHandling: { type: 'dlq' },
 })
-async handleOrderCreated(message: MessageType<OrderCreated>): Promise<void> {}
+async handleOrderCreated(message: KafkaMessage<OrderCreated>): Promise<void> {}
 ```
 
 The handler receives the registry-decoded record as `message.value`. The record key decodes the

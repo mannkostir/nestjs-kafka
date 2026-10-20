@@ -4,12 +4,12 @@ Inject `ProducerProxy` to publish messages. It is connected eagerly during modul
 broker that is unreachable at startup fails module construction.
 
 Idempotence, compression and acks are producer-wide; see
-[`ProducerConfig`](configuration.md#producerconfig).
+[`ProducerOptions`](configuration.md#produceroptions).
 
 ```ts
 send<TValue>(
   topic: string,
-  message: MessageType<TValue>,
+  message: KafkaMessage<TValue>,
   options?: {
     namespaced?: boolean;
     messageFormat?: MessageFormat;
