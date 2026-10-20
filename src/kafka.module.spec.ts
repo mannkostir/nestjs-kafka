@@ -353,7 +353,7 @@ describe('KafkaModule exported providers', () => {
   it('keeps the consumer proxy out of a host\'s reach', async () => {
     await expect(
       compileHostInjecting(KafkaModule.register({ clientOptions }), ConsumerProxy),
-    ).rejects.toThrow(/HostService/);
+    ).rejects.toThrow(/argument ConsumerProxy at index \[0\] is available/);
   });
 
   it('keeps the consumer proxy out of a host\'s reach when registered asynchronously', async () => {
@@ -362,7 +362,7 @@ describe('KafkaModule exported providers', () => {
         KafkaModule.registerAsync({ useFactory: () => ({ clientOptions }) }),
         ConsumerProxy,
       ),
-    ).rejects.toThrow(/HostService/);
+    ).rejects.toThrow(/argument ConsumerProxy at index \[0\] is available/);
   });
 });
 
