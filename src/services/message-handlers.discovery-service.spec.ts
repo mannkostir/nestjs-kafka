@@ -1,4 +1,5 @@
 import {
+  DynamicModule,
   Injectable,
   Logger,
   Module,
@@ -79,6 +80,16 @@ class SecondaryHandler {
     connectorName: 'secondary',
   })
   async onSecondaryEvent(): Promise<void> {}
+}
+
+@Injectable()
+class MistypedConnectorHandler {
+  @Message(['primary.audits'], {
+    groupId: 'primary-audit-service',
+    errorHandling: { type: 'fail' },
+    connectorName: 'primray',
+  })
+  async onPrimaryAudit(): Promise<void> {}
 }
 
 @Injectable()
@@ -348,51 +359,77 @@ class SharedOrdersModuleA {}
 @Module({ providers: [SharedOrdersHandler] })
 class SharedOrdersModuleB {}
 
-type Harness = {
+type ConnectorPorts = {
   subscribe: jest.Mock;
   subscribeBatch: jest.Mock;
   subscribeGroup: jest.Mock;
   releaseConnections: jest.Mock;
+};
+
+type Harness = ConnectorPorts & {
   bootstrap: () => Promise<TestingModule>;
 };
 
+const connectorPorts = (): ConnectorPorts => ({
+  subscribe: jest.fn().mockResolvedValue(undefined),
+  subscribeBatch: jest.fn().mockResolvedValue(undefined),
+  subscribeGroup: jest.fn().mockResolvedValue(undefined),
+  releaseConnections: jest.fn().mockResolvedValue(undefined),
+});
+
+const connectorProviders = (
+  connectorName: string | undefined,
+  ports: ConnectorPorts,
+): Provider[] => [
+  { provide: CONNECTOR_NAME, useValue: connectorName },
+  { provide: ConsumerProxy, useValue: { subscribe: ports.subscribe } },
+  { provide: BATCH_CONSUMER, useValue: { subscribeBatch: ports.subscribeBatch } },
+  { provide: SHARED_GROUP_CONSUMER, useValue: { subscribeGroup: ports.subscribeGroup } },
+  { provide: KAFKA_CONNECTIONS, useValue: { releaseConnections: ports.releaseConnections } },
+  MessageHandlersDiscoveryService,
+];
+
+@Module({})
+class RegisteredConnectorNameModule {}
+
+const registeredConnectorName = (
+  connectorName: string | undefined,
+): DynamicModule => ({
+  module: RegisteredConnectorNameModule,
+  providers: [{ provide: CONNECTOR_NAME, useValue: connectorName }],
+});
+
+@Module({})
+class AnotherConnectorModule {}
+
+const anotherConnector = (
+  connectorName: string | undefined,
+  ports: ConnectorPorts,
+): DynamicModule => ({
+  module: AnotherConnectorModule,
+  imports: [DiscoveryModule],
+  providers: connectorProviders(connectorName, ports),
+});
+
 const harness = (
   handlers: Provider[],
-  options: { connectorName?: string; imports?: Type[] } = {},
+  options: { connectorName?: string; imports?: Array<Type | DynamicModule> } = {},
 ): Harness => {
-  const subscribe = jest.fn().mockResolvedValue(undefined);
-  const subscribeBatch = jest.fn().mockResolvedValue(undefined);
-  const subscribeGroup = jest.fn().mockResolvedValue(undefined);
-  const releaseConnections = jest.fn().mockResolvedValue(undefined);
-  const connectorProviders: Provider[] =
-    options.connectorName === undefined
-      ? []
-      : [{ provide: CONNECTOR_NAME, useValue: options.connectorName }];
+  const ports = connectorPorts();
 
   const bootstrap = async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [DiscoveryModule, ...(options.imports ?? [])],
       providers: [
         ...handlers,
-        ...connectorProviders,
-        { provide: ConsumerProxy, useValue: { subscribe } },
-        { provide: BATCH_CONSUMER, useValue: { subscribeBatch } },
-        { provide: SHARED_GROUP_CONSUMER, useValue: { subscribeGroup } },
-        { provide: KAFKA_CONNECTIONS, useValue: { releaseConnections } },
-        MessageHandlersDiscoveryService,
+        ...connectorProviders(options.connectorName, ports),
       ],
     }).compile();
 
     return moduleRef.init();
   };
 
-  return {
-    subscribe,
-    subscribeBatch,
-    subscribeGroup,
-    releaseConnections,
-    bootstrap,
-  };
+  return { ...ports, bootstrap };
 };
 
 const subscribedTopics = (subscribe: jest.Mock): string[][] =>
@@ -491,6 +528,7 @@ describe('MessageHandlersDiscoveryService', () => {
   it('does not subscribe a handler named for a different connector', async () => {
     const { subscribe, bootstrap } = harness([SecondaryHandler], {
       connectorName: 'primary',
+      imports: [registeredConnectorName('secondary')],
     });
 
     await bootstrap();
@@ -501,6 +539,7 @@ describe('MessageHandlersDiscoveryService', () => {
   it('does not subscribe an unnamed handler when a connector name is configured', async () => {
     const { subscribe, bootstrap } = harness([OrdersHandler], {
       connectorName: 'primary',
+      imports: [registeredConnectorName(undefined)],
     });
 
     await bootstrap();
@@ -517,7 +556,9 @@ describe('MessageHandlersDiscoveryService', () => {
   });
 
   it('does not subscribe a named handler when no connector name is configured', async () => {
-    const { subscribe, bootstrap } = harness([PrimaryHandler]);
+    const { subscribe, bootstrap } = harness([PrimaryHandler], {
+      imports: [registeredConnectorName('primary')],
+    });
 
     await bootstrap();
 
@@ -606,7 +647,7 @@ describe('MessageHandlersDiscoveryService', () => {
   it('allows handlers on different connectors to share a group id', async () => {
     const { subscribe, bootstrap } = harness(
       [PrimarySharedGroupHandler, SecondarySharedGroupHandler],
-      { connectorName: 'primary' },
+      { connectorName: 'primary', imports: [registeredConnectorName('secondary')] },
     );
 
     await bootstrap();
@@ -786,7 +827,7 @@ describe('MessageHandlersDiscoveryService', () => {
   it('ignores a scoped handler named for a different connector', async () => {
     const { subscribe, bootstrap } = harness(
       [PrimaryHandler, RequestScopedSecondaryHandler],
-      { connectorName: 'primary' },
+      { connectorName: 'primary', imports: [registeredConnectorName('secondary')] },
     );
 
     await bootstrap();
@@ -929,6 +970,7 @@ describe('MessageHandlersDiscoveryService batch handlers', () => {
   it('does not subscribe a batch handler named for a different connector', async () => {
     const { subscribeBatch, bootstrap } = harness([SecondaryIndexer], {
       connectorName: 'primary',
+      imports: [registeredConnectorName('secondary')],
     });
     await bootstrap();
     expect(subscribeBatch).not.toHaveBeenCalled();
@@ -1091,5 +1133,177 @@ describe('MessageHandlersDiscoveryService shared groups', () => {
     await expect(bootstrap()).rejects.toThrow(
       '- SharedOrdersHandler.onOrder, SharedRefundsIndexer.index (groupId "billing"): group subscribe failed',
     );
+  });
+});
+
+describe('MessageHandlersDiscoveryService connector names', () => {
+  it('fails bootstrap naming a handler whose connector name no module registers and the registered names', async () => {
+    const { bootstrap } = harness([PrimaryHandler, MistypedConnectorHandler], {
+      connectorName: 'primary',
+    });
+
+    await expect(bootstrap()).rejects.toThrow(
+      'Message handlers name connectorNames that no KafkaModule registers:\n' +
+        '- "primray": MistypedConnectorHandler.onPrimaryAudit\n' +
+        'Registered connectorNames: "primary".\n' +
+        "Set each handler's connectorName to a registered one, or register a KafkaModule with that connectorName.",
+    );
+  });
+
+  it('fails bootstrap on an unnamed handler when only named connectors are registered', async () => {
+    const { bootstrap } = harness([OrdersHandler], {
+      connectorName: 'primary',
+      imports: [registeredConnectorName('secondary')],
+    });
+
+    await expect(bootstrap()).rejects.toThrow(
+      '- the unnamed connector: OrdersHandler.onOrderCreated\n',
+    );
+  });
+
+  it('fails bootstrap on a handler of an unknown connector on a scoped provider', async () => {
+    const { bootstrap } = harness([RequestScopedSecondaryHandler], {
+      connectorName: 'primary',
+    });
+
+    await expect(bootstrap()).rejects.toThrow(
+      '- "secondary": RequestScopedSecondaryHandler.onSecondaryAudited\n',
+    );
+  });
+
+  it('names an aliased handler of an unknown connector once', async () => {
+    const { bootstrap } = harness(
+      [
+        MistypedConnectorHandler,
+        { provide: 'MISTYPED_HANDLER_ALIAS', useExisting: MistypedConnectorHandler },
+      ],
+      { connectorName: 'primary' },
+    );
+
+    await expect(bootstrap()).rejects.toThrow(
+      '- "primray": MistypedConnectorHandler.onPrimaryAudit\n',
+    );
+  });
+
+  it('subscribes nothing when a handler names an unknown connector', async () => {
+    const { subscribe, bootstrap } = harness(
+      [PrimaryHandler, MistypedConnectorHandler],
+      { connectorName: 'primary' },
+    );
+
+    await bootstrap().catch(() => undefined);
+
+    expect(subscribe).not.toHaveBeenCalled();
+  });
+
+  it('releases the Kafka connections when a handler names an unknown connector', async () => {
+    const { releaseConnections, bootstrap } = harness(
+      [PrimaryHandler, MistypedConnectorHandler],
+      { connectorName: 'primary' },
+    );
+
+    await bootstrap().catch(() => undefined);
+
+    expect(releaseConnections).toHaveBeenCalledTimes(1);
+  });
+
+  it('logs the error it fails bootstrap with when a handler names an unknown connector', async () => {
+    const { bootstrap } = harness([MistypedConnectorHandler], {
+      connectorName: 'primary',
+    });
+    const logError = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+
+    const thrown = await bootstrap().catch((error: unknown) => error);
+
+    expect(logError).toHaveBeenCalledWith(
+      'Failed to subscribe message handlers',
+      thrown,
+    );
+    logError.mockRestore();
+  });
+
+  it('subscribes nothing on another connector when a handler names an unknown connector', async () => {
+    const anotherPorts = connectorPorts();
+    const { bootstrap } = harness([SecondaryHandler, MistypedConnectorHandler], {
+      connectorName: 'primary',
+      imports: [anotherConnector('secondary', anotherPorts)],
+    });
+
+    await bootstrap().catch(() => undefined);
+
+    expect(anotherPorts.subscribe).not.toHaveBeenCalled();
+  });
+
+  it('releases the Kafka connections of another connector when a handler names an unknown connector', async () => {
+    const anotherPorts = connectorPorts();
+    const { bootstrap } = harness([MistypedConnectorHandler], {
+      connectorName: 'primary',
+      imports: [anotherConnector('secondary', anotherPorts)],
+    });
+
+    await bootstrap().catch(() => undefined);
+
+    expect(anotherPorts.releaseConnections).toHaveBeenCalled();
+  });
+
+  it('releases the Kafka connections of another connector when a subscription fails', async () => {
+    const anotherPorts = connectorPorts();
+    const { subscribe, bootstrap } = harness([PrimaryHandler], {
+      connectorName: 'primary',
+      imports: [anotherConnector('secondary', anotherPorts)],
+    });
+    subscribe.mockRejectedValue(new Error('broker unavailable'));
+
+    await bootstrap().catch(() => undefined);
+
+    expect(anotherPorts.releaseConnections).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases the Kafka connections of another connector when a handler is on a scoped provider', async () => {
+    const anotherPorts = connectorPorts();
+    const { bootstrap } = harness([RequestScopedAuditHandler], {
+      imports: [anotherConnector('secondary', anotherPorts)],
+    });
+
+    await bootstrap().catch(() => undefined);
+
+    expect(anotherPorts.releaseConnections).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the failure to the first connector when another connector finds a handler naming an unknown connector first', async () => {
+    const { releaseConnections, bootstrap } = harness([MistypedConnectorHandler], {
+      connectorName: 'primary',
+      imports: [anotherConnector('secondary', connectorPorts())],
+    });
+
+    await bootstrap().catch(() => undefined);
+
+    expect(releaseConnections).toHaveBeenCalledTimes(1);
+  });
+
+  it('subscribes each handler on its own connector when every connector name is registered', async () => {
+    const anotherPorts = connectorPorts();
+    const { subscribe, bootstrap } = harness(
+      [PrimaryHandler, SecondaryHandler, OrdersHandler],
+      {
+        connectorName: 'primary',
+        imports: [
+          anotherConnector('secondary', anotherPorts),
+          registeredConnectorName(undefined),
+        ],
+      },
+    );
+
+    await bootstrap();
+
+    expect({
+      primary: subscribedTopics(subscribe),
+      secondary: subscribedTopics(anotherPorts.subscribe),
+    }).toEqual({
+      primary: [['primary.events']],
+      secondary: [['secondary.events']],
+    });
   });
 });

@@ -1,9 +1,9 @@
-import { Abstract, DynamicModule, Inject, Injectable } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
+import { Abstract, DynamicModule, Inject, Injectable, Logger, Module } from '@nestjs/common';
+import { Test, TestingModuleOptions } from '@nestjs/testing';
 import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
 import { KafkaModule } from './kafka.module.js';
-import { KafkaModuleOptions } from './types/kafka-module-options.type.js';
+import { KafkaModuleOptions, KafkaModuleOptionsFactory } from './types/kafka-module-options.type.js';
 import { IReleaseConnections } from './interfaces/release-connections.interface.js';
 import { KAFKA_PRODUCER, KAFKA_CONNECTIONS, BATCH_CONSUMER, SHARED_GROUP_CONSUMER } from './tokens.js';
 import { ConsumerProxy } from './base/consumer-proxy.js';
@@ -12,6 +12,8 @@ import { MessageFormat } from './types/message-format.type.js';
 import { ProducerCompression } from './types/producer-config.type.js';
 import { KafkaMessageParseStrategyFactory } from './implementations/kafka/parse-strategies/kafka-message-parse-strategy.factory.js';
 import { NestKafkaLogger } from './implementations/kafka/nest-kafka-logger.js';
+import { KafkaConsumer } from './implementations/kafka/kafka-consumer.js';
+import { Message } from './decorators/message-handler.decorator.js';
 
 jest.mock('@kafkajs/confluent-schema-registry', () => ({
   SchemaRegistry: jest.fn(),
@@ -39,7 +41,84 @@ const compileAsyncWith = (options: KafkaModuleOptions) =>
     .useValue(producerStub())
     .compile();
 
+const optionsWithoutClient = {} as unknown as KafkaModuleOptions;
+
+class OptionsWithoutClientFactory implements KafkaModuleOptionsFactory {
+  createKafkaOptions(): KafkaModuleOptions {
+    return optionsWithoutClient;
+  }
+}
+
+@Module({
+  providers: [OptionsWithoutClientFactory],
+  exports: [OptionsWithoutClientFactory],
+})
+class OptionsWithoutClientModule {}
+
+const compileImporting = (imports: DynamicModule) =>
+  Test.createTestingModule({ imports: [imports] })
+    .overrideProvider(KAFKA_PRODUCER)
+    .useValue(producerStub())
+    .compile();
+
 describe('KafkaModule option validation', () => {
+  it('rejects registration without clientOptions', async () => {
+    await expect(
+      compileWith(optionsWithoutClient),
+    ).rejects.toThrow(/"clientOptions" must be an object/);
+  });
+
+  it('rejects a factory that returns no options', async () => {
+    await expect(
+      compileImporting(
+        KafkaModule.registerAsync({
+          useFactory: () => undefined as unknown as KafkaModuleOptions,
+        }),
+      ),
+    ).rejects.toThrow(/KafkaModule options must be an object, got undefined/);
+  });
+
+  it('rejects an async factory that resolves to no options', async () => {
+    await expect(
+      compileImporting(
+        KafkaModule.registerAsync({
+          useFactory: async () => undefined as unknown as KafkaModuleOptions,
+        }),
+      ),
+    ).rejects.toThrow(/KafkaModule options must be an object, got undefined/);
+  });
+
+  it('rejects options from a useClass factory without clientOptions', async () => {
+    await expect(
+      compileImporting(
+        KafkaModule.registerAsync({ useClass: OptionsWithoutClientFactory }),
+      ),
+    ).rejects.toThrow(/"clientOptions" must be an object/);
+  });
+
+  it('rejects options from a useExisting factory without clientOptions', async () => {
+    await expect(
+      compileImporting(
+        KafkaModule.registerAsync({
+          imports: [OptionsWithoutClientModule],
+          useExisting: OptionsWithoutClientFactory,
+        }),
+      ),
+    ).rejects.toThrow(/"clientOptions" must be an object/);
+  });
+
+  it('rejects a namespace that is not a string', async () => {
+    await expect(
+      compileWith({ clientOptions, namespace: 42 as unknown as string }),
+    ).rejects.toThrow(/"namespace" must be a string, got number/);
+  });
+
+  it('rejects a connector name that is not a string', async () => {
+    await expect(
+      compileAsyncWith({ clientOptions, connectorName: 42 as unknown as string }),
+    ).rejects.toThrow(/"connectorName" must be a string, got number/);
+  });
+
   it('rejects an empty namespace', async () => {
     await expect(
       compileWith({ clientOptions, namespace: '' }),
@@ -519,5 +598,191 @@ describe('KafkaModule message format', () => {
     expect(
       await consumedFormat({ clientOptions, messageFormat: MessageFormat.ENVELOPED_JSON }),
     ).toBe(MessageFormat.ENVELOPED_JSON);
+  });
+});
+
+describe('KafkaModule connector names', () => {
+  @Injectable()
+  class ClicksHandler {
+    @Message(['clicks.recorded'], {
+      groupId: 'clicks-service',
+      errorHandling: { type: 'ignore' },
+      connectorName: 'analytics',
+    })
+    async onClick(): Promise<void> {}
+  }
+
+  @Injectable()
+  class InvoicesHandler {
+    @Message(['invoices.issued'], {
+      groupId: 'invoices-service',
+      errorHandling: { type: 'ignore' },
+      connectorName: 'billing',
+    })
+    async onInvoice(): Promise<void> {}
+  }
+
+  @Injectable()
+  class OrdersHandler {
+    @Message(['orders.created'], {
+      groupId: 'orders-service',
+      errorHandling: { type: 'ignore' },
+    })
+    async onOrder(): Promise<void> {}
+  }
+
+  @Injectable()
+  class MistypedClicksHandler {
+    @Message(['clicks.recorded'], {
+      groupId: 'mistyped-clicks-service',
+      errorHandling: { type: 'ignore' },
+      connectorName: 'analytcs',
+    })
+    async onClick(): Promise<void> {}
+  }
+
+  @Injectable()
+  class PaymentsHandler {
+    @Message(['payments.settled'], {
+      groupId: 'payments-service',
+      errorHandling: { type: 'ignore' },
+      connectorName: 'payments',
+    })
+    async onPayment(): Promise<void> {}
+  }
+
+  @Injectable()
+  class ShipmentsHandler {
+    @Message(['shipments.dispatched'], {
+      groupId: 'shipments-service',
+      errorHandling: { type: 'ignore' },
+      connectorName: 'shipping',
+    })
+    async onShipment(): Promise<void> {}
+  }
+
+  const bootstrapWith = async (
+    imports: DynamicModule[],
+    handlers: Array<new () => object>,
+    options: TestingModuleOptions = {},
+  ) => {
+    const moduleRef = await Test.createTestingModule(
+      {
+        imports,
+        providers: handlers,
+      },
+      options,
+    )
+      .overrideProvider(KAFKA_PRODUCER)
+      .useValue(producerStub())
+      .compile();
+
+    return moduleRef.init();
+  };
+
+  beforeEach(() => {
+    jest.spyOn(KafkaConsumer.prototype, 'subscribe').mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('fails bootstrap naming a handler whose connector name no module registers', async () => {
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+
+    await expect(
+      bootstrapWith(
+        [
+          KafkaModule.register({ clientOptions, connectorName: 'analytics' }),
+          KafkaModule.register({ clientOptions, connectorName: 'billing' }),
+        ],
+        [ClicksHandler, InvoicesHandler, MistypedClicksHandler],
+      ),
+    ).rejects.toThrow(
+      'Message handlers name connectorNames that no KafkaModule registers:\n' +
+        '- "analytcs": MistypedClicksHandler.onClick\n' +
+        'Registered connectorNames: "analytics", "billing".',
+    );
+  });
+
+  it('bootstraps handlers on every registered connector', async () => {
+    const moduleRef = await bootstrapWith(
+      [
+        KafkaModule.register({ clientOptions }),
+        KafkaModule.register({ clientOptions, connectorName: 'analytics' }),
+        KafkaModule.registerAsync({
+          useFactory: () => ({ clientOptions, connectorName: 'billing' }),
+        }),
+      ],
+      [ClicksHandler, InvoicesHandler, OrdersHandler],
+    );
+
+    expect(jest.mocked(KafkaConsumer.prototype.subscribe)).toHaveBeenCalledTimes(3);
+
+    await moduleRef.close();
+  });
+
+  const producerPerModule = () => {
+    const producers: Array<ReturnType<typeof producerStub>> = [];
+    jest.spyOn(KafkaJS.Kafka.prototype, 'producer').mockImplementation(() => {
+      const producer = producerStub();
+      producers.push(producer);
+      return producer as unknown as KafkaJS.Producer;
+    });
+    return producers;
+  };
+
+  const bootstrapTwoConnectors = (handlers: Array<new () => object>) =>
+    Test.createTestingModule({
+      imports: [
+        KafkaModule.register({ clientOptions, connectorName: 'analytics' }),
+        KafkaModule.register({ clientOptions, connectorName: 'billing' }),
+      ],
+      providers: handlers,
+    })
+      .compile()
+      .then((moduleRef) => moduleRef.init());
+
+  it('disconnects the producer of every module once when a handler names an unknown connector', async () => {
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const producers = producerPerModule();
+
+    await bootstrapTwoConnectors([ClicksHandler, MistypedClicksHandler]).catch(() => undefined);
+
+    expect(producers.map((producer) => producer.disconnect.mock.calls.length)).toEqual([1, 1]);
+  });
+
+  it('disconnects the producer of every module once when a subscription fails', async () => {
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    jest
+      .spyOn(KafkaConsumer.prototype, 'subscribe')
+      .mockRejectedValue(new Error('broker unavailable'));
+    const producers = producerPerModule();
+
+    await bootstrapTwoConnectors([ClicksHandler, InvoicesHandler]).catch(() => undefined);
+
+    expect(producers.map((producer) => producer.disconnect.mock.calls.length)).toEqual([1, 1]);
+  });
+
+  it('bootstraps every named connector when modules are identified by deep hash', async () => {
+    const moduleRef = await bootstrapWith(
+      [
+        KafkaModule.register({ clientOptions, connectorName: 'analytics' }),
+        KafkaModule.register({ clientOptions, connectorName: 'billing' }),
+        KafkaModule.registerAsync({
+          useFactory: () => ({ clientOptions, connectorName: 'payments' }),
+        }),
+        KafkaModule.registerAsync({
+          useFactory: () => ({ clientOptions, connectorName: 'shipping' }),
+        }),
+      ],
+      [ClicksHandler, InvoicesHandler, PaymentsHandler, ShipmentsHandler],
+      { moduleIdGeneratorAlgorithm: 'deep-hash' },
+    );
+
+    expect(jest.mocked(KafkaConsumer.prototype.subscribe)).toHaveBeenCalledTimes(4);
+
+    await moduleRef.close();
   });
 });

@@ -21,9 +21,11 @@ import { toKafkaClientConfig } from './implementations/kafka/kafka-client-config
 import type { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
 import { MessageHandlersDiscoveryService } from './services/message-handlers.discovery-service.js';
 import { KafkaConnections } from './implementations/kafka/kafka-connections.js';
+import { validateKafkaModuleOptions } from './kafka-module-options.validation.js';
 import { IReleaseConnections } from './interfaces/release-connections.interface.js';
 import {
   KAFKA_MODULE_OPTIONS,
+  RAW_KAFKA_MODULE_OPTIONS,
   TRANSPORT_CONFIG,
   TRANSPORT_NAMESPACE,
   SCHEMA_REGISTRY_OPTIONS,
@@ -138,34 +140,6 @@ const kafkaConnectionsProvider: Provider<IReleaseConnections> = {
   inject: [ConsumerProxy, ProducerProxy],
 };
 
-function rejectEmptyString(
-  option: keyof KafkaModuleOptions,
-  value: string | undefined,
-  fix: string,
-): string | undefined {
-  if (value === '') {
-    throw new Error(
-      `KafkaModule "${option}" must not be an empty string. ${fix}`,
-    );
-  }
-
-  return value;
-}
-
-function rejectUnknownMessageFormat(
-  value: MessageFormat | undefined,
-): MessageFormat | undefined {
-  const formats: string[] = Object.values(MessageFormat);
-
-  if (value !== undefined && !formats.includes(value)) {
-    throw new Error(
-      `KafkaModule "messageFormat" must be one of ${formats.join(', ')}. Use a MessageFormat value.`,
-    );
-  }
-
-  return value;
-}
-
 function createDerivedProviders(): Provider[] {
   return [
     {
@@ -175,12 +149,7 @@ function createDerivedProviders(): Provider[] {
     },
     {
       provide: TRANSPORT_NAMESPACE,
-      useFactory: (opts: KafkaModuleOptions) =>
-        rejectEmptyString(
-          'namespace',
-          opts.namespace,
-          'Set a non-empty namespace, or leave it undefined to disable namespacing.',
-        ),
+      useFactory: (opts: KafkaModuleOptions) => opts.namespace,
       inject: [KAFKA_MODULE_OPTIONS],
     },
     {
@@ -190,12 +159,7 @@ function createDerivedProviders(): Provider[] {
     },
     {
       provide: CONNECTOR_NAME,
-      useFactory: (opts: KafkaModuleOptions) =>
-        rejectEmptyString(
-          'connectorName',
-          opts.connectorName,
-          'Set a non-empty connectorName matching @Message({ connectorName }), or leave it undefined for the unnamed connector.',
-        ),
+      useFactory: (opts: KafkaModuleOptions) => opts.connectorName,
       inject: [KAFKA_MODULE_OPTIONS],
     },
     {
@@ -215,12 +179,17 @@ function createDerivedProviders(): Provider[] {
     },
     {
       provide: MESSAGE_FORMAT,
-      useFactory: (opts: KafkaModuleOptions) =>
-        rejectUnknownMessageFormat(opts.messageFormat),
+      useFactory: (opts: KafkaModuleOptions) => opts.messageFormat,
       inject: [KAFKA_MODULE_OPTIONS],
     },
   ];
 }
+
+const validatedOptionsProvider: Provider<KafkaModuleOptions> = {
+  provide: KAFKA_MODULE_OPTIONS,
+  useFactory: validateKafkaModuleOptions,
+  inject: [RAW_KAFKA_MODULE_OPTIONS],
+};
 
 @Module({})
 export class KafkaModule {
@@ -232,9 +201,10 @@ export class KafkaModule {
       imports: [DiscoveryModule],
       providers: [
         {
-          provide: KAFKA_MODULE_OPTIONS,
+          provide: RAW_KAFKA_MODULE_OPTIONS,
           useValue: options,
         },
+        validatedOptionsProvider,
         ...createDerivedProviders(),
         kafkaProvider,
         kafkaProducerProvider,
@@ -259,6 +229,7 @@ export class KafkaModule {
       imports: [...(asyncOptions.imports || []), DiscoveryModule],
       providers: [
         ...this.createAsyncOptionsProviders(asyncOptions),
+        validatedOptionsProvider,
         ...createDerivedProviders(),
         kafkaProvider,
         kafkaProducerProvider,
@@ -281,7 +252,7 @@ export class KafkaModule {
     if (asyncOptions.useFactory) {
       return [
         {
-          provide: KAFKA_MODULE_OPTIONS,
+          provide: RAW_KAFKA_MODULE_OPTIONS,
           useFactory: asyncOptions.useFactory,
           inject: asyncOptions.inject || [],
         },
@@ -295,7 +266,7 @@ export class KafkaModule {
           useClass: asyncOptions.useClass,
         },
         {
-          provide: KAFKA_MODULE_OPTIONS,
+          provide: RAW_KAFKA_MODULE_OPTIONS,
           useFactory: (factory: KafkaModuleOptionsFactory) =>
             factory.createKafkaOptions(),
           inject: [asyncOptions.useClass],
@@ -306,7 +277,7 @@ export class KafkaModule {
     if (asyncOptions.useExisting) {
       return [
         {
-          provide: KAFKA_MODULE_OPTIONS,
+          provide: RAW_KAFKA_MODULE_OPTIONS,
           useFactory: (factory: KafkaModuleOptionsFactory) =>
             factory.createKafkaOptions(),
           inject: [asyncOptions.useExisting],

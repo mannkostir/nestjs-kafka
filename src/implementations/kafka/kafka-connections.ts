@@ -9,7 +9,15 @@ export class KafkaConnections implements IReleaseConnections {
     private readonly producer: KafkaProducer,
   ) {}
 
-  async releaseConnections(): Promise<void> {
+  private released?: Promise<void>;
+
+  releaseConnections(): Promise<void> {
+    this.released ??= this.release();
+
+    return this.released;
+  }
+
+  private async release(): Promise<void> {
     await this.consumer.disconnectAll();
     await this.producer.disconnect();
   }
