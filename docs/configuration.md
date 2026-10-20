@@ -30,7 +30,8 @@ the compatibility defaults instead of librdkafka's: `socket.timeout.ms` 30000 (l
 `retry.backoff.max.ms` 30000 (1000). The producer and the consumers already run in this mode. Set
 any of these as a librdkafka property in `clientOptions` to override it for every client.
 
-`ConsumerProxy` and `ProducerProxy` are the module's only exported providers.
+`ProducerProxy` is the module's only exported provider. Consumers are internal: handlers subscribe
+only through `@Message` and `@MessageBatch`.
 
 There is no `moduleName` option. Handlers are discovered application-wide regardless of which
 module declares `KafkaModule` or which module declares the handler provider.

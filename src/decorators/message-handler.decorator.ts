@@ -1,4 +1,3 @@
-import { ConsumerSubscriptionParameters } from '../types/consumer-subscription-parameters.type.js';
 import { MessageHandlerCallback } from '../types/message-handler-callback.type.js';
 import { MessageOptions } from '../types/message-options.type.js';
 import { MessageType } from '../types/message.type.js';
@@ -10,7 +9,7 @@ import {
 export const MessageHandlerKey = 'HANDLE_MESSAGE' as const;
 
 export function Message(
-  topicPattern: ConsumerSubscriptionParameters['topicPatterns'],
+  topicPattern: (string | RegExp)[],
   options: MessageOptions,
 ): <THandler extends MessageHandlerCallback<MessageType<never>>>(
   target: object,

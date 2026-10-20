@@ -1,5 +1,4 @@
 import { BatchMessageHandlerCallback } from '../types/batch-message-handler-callback.type.js';
-import { ConsumerSubscriptionParameters } from '../types/consumer-subscription-parameters.type.js';
 import { MessageOptions } from '../types/message-options.type.js';
 import { MessageType } from '../types/message.type.js';
 import {
@@ -10,7 +9,7 @@ import {
 export const MessageBatchHandlerKey = 'HANDLE_MESSAGE_BATCH' as const;
 
 export function MessageBatch(
-  topicPattern: ConsumerSubscriptionParameters['topicPatterns'],
+  topicPattern: (string | RegExp)[],
   options: MessageOptions,
 ): <TMessage extends MessageType>(
   target: object,

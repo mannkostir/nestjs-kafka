@@ -247,7 +247,7 @@ export class KafkaModule {
         kafkaConnectionsProvider,
         MessageHandlersDiscoveryService,
       ],
-      exports: [ConsumerProxy, ProducerProxy],
+      exports: [ProducerProxy],
     };
   }
 
@@ -271,7 +271,7 @@ export class KafkaModule {
         kafkaConnectionsProvider,
         MessageHandlersDiscoveryService,
       ],
-      exports: [ConsumerProxy, ProducerProxy],
+      exports: [ProducerProxy],
     };
   }
 

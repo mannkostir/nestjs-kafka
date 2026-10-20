@@ -1,4 +1,4 @@
-import { DynamicModule } from '@nestjs/common';
+import { Abstract, DynamicModule, Inject, Injectable } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
@@ -368,6 +368,56 @@ describe('KafkaModule connections', () => {
 
     await moduleRef.close();
     await asyncModuleRef.close();
+  });
+});
+
+const compileHostInjecting = (registration: DynamicModule, token: Abstract<unknown>) => {
+  @Injectable()
+  class HostService {
+    constructor(@Inject(token) readonly injected: unknown) {}
+  }
+
+  return Test.createTestingModule({
+    imports: [registration],
+    providers: [HostService],
+  })
+    .overrideProvider(KAFKA_PRODUCER)
+    .useValue(producerStub())
+    .compile();
+};
+
+describe('KafkaModule exported providers', () => {
+  it('lets a host inject the producer proxy', async () => {
+    const moduleRef = await compileHostInjecting(
+      KafkaModule.register({ clientOptions }),
+      ProducerProxy,
+    );
+
+    await moduleRef.close();
+  });
+
+  it('lets a host inject the producer proxy when registered asynchronously', async () => {
+    const moduleRef = await compileHostInjecting(
+      KafkaModule.registerAsync({ useFactory: () => ({ clientOptions }) }),
+      ProducerProxy,
+    );
+
+    await moduleRef.close();
+  });
+
+  it('keeps the consumer proxy out of a host\'s reach', async () => {
+    await expect(
+      compileHostInjecting(KafkaModule.register({ clientOptions }), ConsumerProxy),
+    ).rejects.toThrow(/argument ConsumerProxy at index \[0\] is available/);
+  });
+
+  it('keeps the consumer proxy out of a host\'s reach when registered asynchronously', async () => {
+    await expect(
+      compileHostInjecting(
+        KafkaModule.registerAsync({ useFactory: () => ({ clientOptions }) }),
+        ConsumerProxy,
+      ),
+    ).rejects.toThrow(/argument ConsumerProxy at index \[0\] is available/);
   });
 });
 

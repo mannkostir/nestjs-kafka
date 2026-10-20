@@ -1,11 +1,10 @@
 import 'reflect-metadata';
-import { ConsumerSubscriptionParameters } from '../types/consumer-subscription-parameters.type.js';
 import { MessageContext } from '../types/message-context.type.js';
 import { MessageOptions } from '../types/message-options.type.js';
 import { MessageType } from '../types/message.type.js';
 import { Message, MessageHandlerKey } from './message-handler.decorator.js';
 
-type TopicPatterns = ConsumerSubscriptionParameters['topicPatterns'];
+type TopicPatterns = (string | RegExp)[];
 
 const validOptions: MessageOptions = {
   groupId: 'orders-service',
