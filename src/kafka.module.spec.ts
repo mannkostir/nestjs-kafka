@@ -1,5 +1,5 @@
 import { DynamicModule, Injectable, Logger, Module } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
+import { Test, TestingModuleOptions } from '@nestjs/testing';
 import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
 import { KafkaModule } from './kafka.module.js';
@@ -536,14 +536,38 @@ describe('KafkaModule connector names', () => {
     async onClick(): Promise<void> {}
   }
 
+  @Injectable()
+  class PaymentsHandler {
+    @Message(['payments.settled'], {
+      groupId: 'payments-service',
+      errorHandling: { type: 'ignore' },
+      connectorName: 'payments',
+    })
+    async onPayment(): Promise<void> {}
+  }
+
+  @Injectable()
+  class ShipmentsHandler {
+    @Message(['shipments.dispatched'], {
+      groupId: 'shipments-service',
+      errorHandling: { type: 'ignore' },
+      connectorName: 'shipping',
+    })
+    async onShipment(): Promise<void> {}
+  }
+
   const bootstrapWith = async (
     imports: DynamicModule[],
     handlers: Array<new () => object>,
+    options: TestingModuleOptions = {},
   ) => {
-    const moduleRef = await Test.createTestingModule({
-      imports,
-      providers: handlers,
-    })
+    const moduleRef = await Test.createTestingModule(
+      {
+        imports,
+        providers: handlers,
+      },
+      options,
+    )
       .overrideProvider(KAFKA_PRODUCER)
       .useValue(producerStub())
       .compile();
@@ -590,6 +614,27 @@ describe('KafkaModule connector names', () => {
     );
 
     expect(jest.mocked(KafkaConsumer.prototype.subscribe)).toHaveBeenCalledTimes(3);
+
+    await moduleRef.close();
+  });
+
+  it('bootstraps every named connector when modules are identified by deep hash', async () => {
+    const moduleRef = await bootstrapWith(
+      [
+        KafkaModule.register({ clientOptions, connectorName: 'analytics' }),
+        KafkaModule.register({ clientOptions, connectorName: 'billing' }),
+        KafkaModule.registerAsync({
+          useFactory: () => ({ clientOptions, connectorName: 'payments' }),
+        }),
+        KafkaModule.registerAsync({
+          useFactory: () => ({ clientOptions, connectorName: 'shipping' }),
+        }),
+      ],
+      [ClicksHandler, InvoicesHandler, PaymentsHandler, ShipmentsHandler],
+      { moduleIdGeneratorAlgorithm: 'deep-hash' },
+    );
+
+    expect(jest.mocked(KafkaConsumer.prototype.subscribe)).toHaveBeenCalledTimes(4);
 
     await moduleRef.close();
   });

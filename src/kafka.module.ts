@@ -24,6 +24,7 @@ import { validateKafkaModuleOptions } from './kafka-module-options.validation.js
 import { IReleaseConnections } from './interfaces/release-connections.interface.js';
 import {
   KAFKA_MODULE_OPTIONS,
+  RAW_KAFKA_MODULE_OPTIONS,
   TRANSPORT_CONFIG,
   TRANSPORT_NAMESPACE,
   SCHEMA_REGISTRY_OPTIONS,
@@ -183,17 +184,11 @@ function createDerivedProviders(): Provider[] {
   ];
 }
 
-async function validatedOptionsOf(
-  factory: KafkaModuleOptionsFactory,
-): Promise<KafkaModuleOptions> {
-  return validateKafkaModuleOptions(await factory.createKafkaOptions());
-}
-
-function validatingFactory(
-  createOptions: (...args: unknown[]) => unknown,
-): (...args: unknown[]) => Promise<KafkaModuleOptions> {
-  return async (...args) => validateKafkaModuleOptions(await createOptions(...args));
-}
+const validatedOptionsProvider: Provider<KafkaModuleOptions> = {
+  provide: KAFKA_MODULE_OPTIONS,
+  useFactory: validateKafkaModuleOptions,
+  inject: [RAW_KAFKA_MODULE_OPTIONS],
+};
 
 @Module({})
 export class KafkaModule {
@@ -205,9 +200,10 @@ export class KafkaModule {
       imports: [DiscoveryModule],
       providers: [
         {
-          provide: KAFKA_MODULE_OPTIONS,
-          useFactory: () => validateKafkaModuleOptions(options),
+          provide: RAW_KAFKA_MODULE_OPTIONS,
+          useValue: options,
         },
+        validatedOptionsProvider,
         ...createDerivedProviders(),
         kafkaProvider,
         kafkaProducerProvider,
@@ -232,6 +228,7 @@ export class KafkaModule {
       imports: [...(asyncOptions.imports || []), DiscoveryModule],
       providers: [
         ...this.createAsyncOptionsProviders(asyncOptions),
+        validatedOptionsProvider,
         ...createDerivedProviders(),
         kafkaProvider,
         kafkaProducerProvider,
@@ -254,8 +251,8 @@ export class KafkaModule {
     if (asyncOptions.useFactory) {
       return [
         {
-          provide: KAFKA_MODULE_OPTIONS,
-          useFactory: validatingFactory(asyncOptions.useFactory),
+          provide: RAW_KAFKA_MODULE_OPTIONS,
+          useFactory: asyncOptions.useFactory,
           inject: asyncOptions.inject || [],
         },
       ];
@@ -268,8 +265,9 @@ export class KafkaModule {
           useClass: asyncOptions.useClass,
         },
         {
-          provide: KAFKA_MODULE_OPTIONS,
-          useFactory: validatedOptionsOf,
+          provide: RAW_KAFKA_MODULE_OPTIONS,
+          useFactory: (factory: KafkaModuleOptionsFactory) =>
+            factory.createKafkaOptions(),
           inject: [asyncOptions.useClass],
         },
       ];
@@ -278,8 +276,9 @@ export class KafkaModule {
     if (asyncOptions.useExisting) {
       return [
         {
-          provide: KAFKA_MODULE_OPTIONS,
-          useFactory: validatedOptionsOf,
+          provide: RAW_KAFKA_MODULE_OPTIONS,
+          useFactory: (factory: KafkaModuleOptionsFactory) =>
+            factory.createKafkaOptions(),
           inject: [asyncOptions.useExisting],
         },
       ];
