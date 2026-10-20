@@ -1,6 +1,8 @@
 import 'reflect-metadata';
 import { ConsumerSubscriptionParameters } from '../types/consumer-subscription-parameters.type.js';
+import { MessageContext } from '../types/message-context.type.js';
 import { MessageOptions } from '../types/message-options.type.js';
+import { MessageType } from '../types/message.type.js';
 import { Message, MessageHandlerKey } from './message-handler.decorator.js';
 
 type TopicPatterns = ConsumerSubscriptionParameters['topicPatterns'];
@@ -16,7 +18,7 @@ const asTopics = (value: unknown): TopicPatterns => value as TopicPatterns;
 function defineOrdersHandler(topics: TopicPatterns, options: MessageOptions) {
   class OrdersHandler {
     @Message(topics, options)
-    handle(): void {}
+    async handle(): Promise<void> {}
   }
   return OrdersHandler;
 }
@@ -141,7 +143,7 @@ describe('@Message', () => {
     expect(() => {
       class PaymentsHandler {
         @Message(['payments'], asOptions(undefined))
-        static handle(): void {}
+        static async handle(): Promise<void> {}
       }
       return PaymentsHandler;
     }).toThrow(/PaymentsHandler\.handle/);
@@ -181,5 +183,38 @@ describe('@Message', () => {
     ).toThrow(
       '@Message handler OrdersHandler.handle has an invalid "sharedGroup" option: yes. Set sharedGroup to true or false, or leave it unset.',
     );
+  });
+});
+
+describe('@Message handler signature', () => {
+  type OrderCreated = { orderId: string };
+
+  it('accepts an async method taking a typed message and its context', () => {
+    class OrdersHandler {
+      @Message(['orders'], validOptions)
+      async handle(_message: MessageType<OrderCreated>, _context: MessageContext): Promise<void> {}
+    }
+
+    expect(OrdersHandler).toBeDefined();
+  });
+
+  it('rejects a method that does not return a promise', () => {
+    class OrdersHandler {
+      // @ts-expect-error
+      @Message(['orders'], validOptions)
+      handle(_message: MessageType<OrderCreated>): void {}
+    }
+
+    expect(OrdersHandler).toBeDefined();
+  });
+
+  it('rejects a method whose first parameter is not a message', () => {
+    class OrdersHandler {
+      // @ts-expect-error
+      @Message(['orders'], validOptions)
+      async handle(_orderId: string): Promise<void> {}
+    }
+
+    expect(OrdersHandler).toBeDefined();
   });
 });
