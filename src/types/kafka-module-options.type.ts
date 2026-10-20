@@ -23,6 +23,7 @@ export type KafkaModuleOptions = {
   consumerDefaults?: ConsumerConfig;
   producer?: ProducerConfig;
   messageFormat?: MessageFormat;
+  shutdownTimeout?: number;
 };
 
 export interface KafkaModuleOptionsFactory {

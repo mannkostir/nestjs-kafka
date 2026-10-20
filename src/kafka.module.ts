@@ -39,6 +39,7 @@ import {
   MESSAGE_FORMAT,
   BATCH_CONSUMER,
   SHARED_GROUP_CONSUMER,
+  SHUTDOWN_TIMEOUT,
 } from './tokens.js';
 
 const kafkaProvider: Provider<KafkaJS.Kafka> = {
@@ -95,6 +96,7 @@ const consumerProxyProvider: Provider<ConsumerProxy> = {
     namespacer: TopicNamespacer,
     clientLogger: KafkaJS.Logger | undefined,
     messageFormat: MessageFormat | undefined,
+    shutdownTimeout: number | undefined,
   ) =>
     new KafkaConsumer(kafka, {
       schemaRegistry,
@@ -104,8 +106,9 @@ const consumerProxyProvider: Provider<ConsumerProxy> = {
       namespacer,
       clientLogger,
       messageFormat,
+      shutdownTimeout,
     }),
-  inject: [KafkaJS.Kafka, KAFKA_PRODUCER, SCHEMA_REGISTRY, TRANSPORT_NAMESPACE, CONSUMER_DEFAULTS, TopicNamespacer, CLIENT_LOGGER, MESSAGE_FORMAT],
+  inject: [KafkaJS.Kafka, KAFKA_PRODUCER, SCHEMA_REGISTRY, TRANSPORT_NAMESPACE, CONSUMER_DEFAULTS, TopicNamespacer, CLIENT_LOGGER, MESSAGE_FORMAT, SHUTDOWN_TIMEOUT],
 };
 
 const topicNamespacerProvider: Provider<TopicNamespacer> = {
@@ -180,6 +183,11 @@ function createDerivedProviders(): Provider[] {
     {
       provide: MESSAGE_FORMAT,
       useFactory: (opts: KafkaModuleOptions) => opts.messageFormat,
+      inject: [KAFKA_MODULE_OPTIONS],
+    },
+    {
+      provide: SHUTDOWN_TIMEOUT,
+      useFactory: (opts: KafkaModuleOptions) => opts.shutdownTimeout,
       inject: [KAFKA_MODULE_OPTIONS],
     },
   ];
