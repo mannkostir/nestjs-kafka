@@ -78,6 +78,34 @@ describe('KafkaProducer', () => {
     );
   });
 
+  it('resolves to the topic, partition and offset the broker reports', async () => {
+    const producer = producerStub();
+    (producer.send as jest.Mock).mockResolvedValue([
+      { topicName: 'dev.orders.created', partition: 2, errorCode: 0, baseOffset: '41', logAppendTime: '-1', logStartOffset: '0' },
+    ]);
+
+    const produced = await new KafkaProducer(producer, new TopicNamespacer('dev')).send(
+      'orders.created',
+      message(),
+    );
+
+    expect(produced).toEqual([{ topic: 'dev.orders.created', partition: 2, offset: '41' }]);
+  });
+
+  it('resolves to the client invalid offset when the broker reports none', async () => {
+    const producer = producerStub();
+    (producer.send as jest.Mock).mockResolvedValue([
+      { topicName: 'orders.created', partition: 0, errorCode: 0 },
+    ]);
+
+    const produced = await new KafkaProducer(producer, new TopicNamespacer()).send(
+      'orders.created',
+      message(),
+    );
+
+    expect(produced).toEqual([{ topic: 'orders.created', partition: 0, offset: '-1001' }]);
+  });
+
   it('sends a string message key unchanged', async () => {
     const producer = producerStub();
 

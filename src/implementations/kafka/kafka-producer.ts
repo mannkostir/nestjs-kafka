@@ -4,7 +4,9 @@ import { BeforeApplicationShutdown, Logger } from '@nestjs/common';
 import { ProducerProxy } from '../../base/producer-proxy.js';
 import { MessageFormat } from '../../types/message-format.type.js';
 import { MessageType } from '../../types/message.type.js';
+import { ProducedRecord } from '../../types/produced-record.type.js';
 import { ProducerSendOptions } from '../../types/producer-send-options.type.js';
+import { toProducedRecord } from './kafka-produced-record.js';
 import { encodeKey } from './serialize-strategies/encode-key.js';
 import { KafkaMessageSerializeStrategyFactory } from './serialize-strategies/kafka-message-serialize-strategy.factory.js';
 import { TopicNamespacer } from './topic-namespacer.js';
@@ -14,7 +16,7 @@ export interface KafkaProducerOptions {
   schemaRegistry?: SchemaRegistry;
 }
 
-export class KafkaProducer<TValue = unknown> extends ProducerProxy<TValue> implements BeforeApplicationShutdown {
+export class KafkaProducer extends ProducerProxy implements BeforeApplicationShutdown {
 
   private readonly logger = new Logger(KafkaProducer.name);
   private readonly messageFormat: MessageFormat;
@@ -34,11 +36,11 @@ export class KafkaProducer<TValue = unknown> extends ProducerProxy<TValue> imple
     return this.producer.connect();
   }
 
-  public async send(
+  public async send<TValue>(
     topic: string,
     message: MessageType<TValue>,
     options?: ProducerSendOptions,
-  ): Promise<KafkaJS.RecordMetadata[]> {
+  ): Promise<ProducedRecord[]> {
     const namespaced = options?.namespaced ?? true;
     const finalTopic = namespaced ? this.namespacer.apply(topic) : topic;
     const serializeStrategy = this.serializeStrategies.create(
@@ -46,7 +48,7 @@ export class KafkaProducer<TValue = unknown> extends ProducerProxy<TValue> imple
       { topic: finalTopic, schemaId: options?.schemaId, subject: options?.subject },
     );
 
-    return this.producer.send({
+    const delivered = await this.producer.send({
       topic: finalTopic,
       messages: [
         {
@@ -56,6 +58,8 @@ export class KafkaProducer<TValue = unknown> extends ProducerProxy<TValue> imple
         },
       ],
     });
+
+    return delivered.map(toProducedRecord);
   }
 
   async beforeApplicationShutdown(): Promise<void> {

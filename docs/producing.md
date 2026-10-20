@@ -7,7 +7,7 @@ Idempotence, compression and acks are producer-wide; see
 [`ProducerConfig`](configuration.md#producerconfig).
 
 ```ts
-send(
+send<TValue>(
   topic: string,
   message: MessageType<TValue>,
   options?: {
@@ -16,8 +16,11 @@ send(
     schemaId?: number;
     subject?: string;
   },
-): Promise<unknown>;
+): Promise<ProducedRecord[]>;
 ```
+
+`TValue` is chosen per call, so one injected `ProducerProxy` sends any value type. A test double
+extends `ProducerProxy` and implements this one method.
 
 ```ts
 await this.producer.send(
@@ -29,6 +32,22 @@ await this.producer.send(
   },
 );
 ```
+
+## Result
+
+`send` resolves when the client reports the record delivered, to an array holding its
+`ProducedRecord`:
+
+```ts
+type ProducedRecord = {
+  topic: string;
+  partition: number;
+  offset: string;
+};
+```
+
+`topic` is the topic the broker wrote to, after namespacing. `offset` is the record's offset as a
+decimal string; with `acks: 0` the broker reports none and it is `'-1001'`.
 
 ## Key
 
