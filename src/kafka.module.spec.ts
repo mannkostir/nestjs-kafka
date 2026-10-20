@@ -1,9 +1,9 @@
-import { DynamicModule } from '@nestjs/common';
+import { DynamicModule, Module } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
 import { KafkaModule } from './kafka.module.js';
-import { KafkaModuleOptions } from './types/kafka-module-options.type.js';
+import { KafkaModuleOptions, KafkaModuleOptionsFactory } from './types/kafka-module-options.type.js';
 import { IReleaseConnections } from './interfaces/release-connections.interface.js';
 import { KAFKA_PRODUCER, KAFKA_CONNECTIONS, BATCH_CONSUMER, SHARED_GROUP_CONSUMER } from './tokens.js';
 import { ConsumerProxy } from './base/consumer-proxy.js';
@@ -38,7 +38,84 @@ const compileAsyncWith = (options: KafkaModuleOptions) =>
     .useValue(producerStub())
     .compile();
 
+const optionsWithoutClient = {} as unknown as KafkaModuleOptions;
+
+class OptionsWithoutClientFactory implements KafkaModuleOptionsFactory {
+  createKafkaOptions(): KafkaModuleOptions {
+    return optionsWithoutClient;
+  }
+}
+
+@Module({
+  providers: [OptionsWithoutClientFactory],
+  exports: [OptionsWithoutClientFactory],
+})
+class OptionsWithoutClientModule {}
+
+const compileImporting = (imports: DynamicModule) =>
+  Test.createTestingModule({ imports: [imports] })
+    .overrideProvider(KAFKA_PRODUCER)
+    .useValue(producerStub())
+    .compile();
+
 describe('KafkaModule option validation', () => {
+  it('rejects registration without clientOptions', async () => {
+    await expect(
+      compileWith(optionsWithoutClient),
+    ).rejects.toThrow(/"clientOptions" must be an object/);
+  });
+
+  it('rejects a factory that returns no options', async () => {
+    await expect(
+      compileImporting(
+        KafkaModule.registerAsync({
+          useFactory: () => undefined as unknown as KafkaModuleOptions,
+        }),
+      ),
+    ).rejects.toThrow(/KafkaModule options must be an object, got undefined/);
+  });
+
+  it('rejects an async factory that resolves to no options', async () => {
+    await expect(
+      compileImporting(
+        KafkaModule.registerAsync({
+          useFactory: async () => undefined as unknown as KafkaModuleOptions,
+        }),
+      ),
+    ).rejects.toThrow(/KafkaModule options must be an object, got undefined/);
+  });
+
+  it('rejects options from a useClass factory without clientOptions', async () => {
+    await expect(
+      compileImporting(
+        KafkaModule.registerAsync({ useClass: OptionsWithoutClientFactory }),
+      ),
+    ).rejects.toThrow(/"clientOptions" must be an object/);
+  });
+
+  it('rejects options from a useExisting factory without clientOptions', async () => {
+    await expect(
+      compileImporting(
+        KafkaModule.registerAsync({
+          imports: [OptionsWithoutClientModule],
+          useExisting: OptionsWithoutClientFactory,
+        }),
+      ),
+    ).rejects.toThrow(/"clientOptions" must be an object/);
+  });
+
+  it('rejects a namespace that is not a string', async () => {
+    await expect(
+      compileWith({ clientOptions, namespace: 42 as unknown as string }),
+    ).rejects.toThrow(/"namespace" must be a string, got number/);
+  });
+
+  it('rejects a connector name that is not a string', async () => {
+    await expect(
+      compileAsyncWith({ clientOptions, connectorName: 42 as unknown as string }),
+    ).rejects.toThrow(/"connectorName" must be a string, got number/);
+  });
+
   it('rejects an empty namespace', async () => {
     await expect(
       compileWith({ clientOptions, namespace: '' }),

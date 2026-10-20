@@ -14,9 +14,15 @@
 | `producer` | `ProducerConfig` | no | Settings for the module's producer. See [`ProducerConfig`](#producerconfig). |
 | `messageFormat` | `MessageFormat` | no | Default format for every consumer and for the producer. Defaults to `MessageFormat.JSON`. A handler's `@Message({ messageFormat })` and a send's `{ messageFormat }` override it. See [Message formats](message-formats.md). |
 
-`namespace` and `connectorName` must not be empty strings: `''` fails module construction with an
-error saying so. Leave either option `undefined` to opt out of it; this matters most when the value
-comes from an environment variable that may be set but empty.
+The options are validated once, at module construction, for `register` and for every
+`registerAsync` form (`useFactory`, `useClass`, `useExisting`). `clientOptions` must be an object;
+`namespace` and `connectorName` must be non-empty strings when set; `schemaRegistry` must be an
+object with a non-empty `url` when set; `consumerDefaults` and `producer` must be objects when set;
+`messageFormat` must be a `MessageFormat` value when set. A factory that returns or resolves to
+anything other than an options object fails too. Every problem is reported in one error, each line
+saying how to fix it. Leave `namespace` or `connectorName` `undefined` to opt out of it rather than
+setting `''`; this matters most when the value comes from an environment variable that may be set
+but empty.
 
 Handler consumers, and the admin client each one uses to pin its start offsets, log through Nest's
 `Logger` with the context `KafkaClient`. The producer and the admin client that provisions topics
