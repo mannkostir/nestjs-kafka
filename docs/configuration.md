@@ -129,7 +129,7 @@ The same shape is used for module-wide `consumerDefaults` and per-handler `consu
 | `sessionTimeout` | `number` (ms) | unset — the client applies its own (currently `30000`) |
 | `rebalanceTimeout` | `number` (ms) | unset — the client applies its own (currently `300000`) |
 | `partitionsConsumedConcurrently` | `number` | `1` |
-| `retry` | `KafkaJS.RetryOptions` (`@confluentinc/kafka-javascript`) | see below |
+| `retry` | `ConsumerRetryOptions` | see below |
 
 `heartbeatInterval`, `sessionTimeout`, and `rebalanceTimeout` are left unset unless you set them,
 so the client's own defaults apply. Keep `heartbeatInterval` well below the effective
@@ -143,11 +143,11 @@ processes at the same time. It must be a positive integer; anything else fails b
 error saying so. The effective concurrency is capped by the number of partitions assigned to that
 consumer. See [Ordering and concurrency](delivery-semantics.md#ordering-and-concurrency).
 
-`retry` is `KafkaJS.RetryOptions`: `maxRetryTime`, `initialRetryTime`, `retries`. Defaults are
-`maxRetryTime: 30000` and `initialRetryTime: 300`. `factor`, `multiplier`, and `restartOnFailure`
-are not configurable — the client fixes them (`0.2`, `2`, and always-restart respectively) and
-throws if you set them. `retries` is read only for produce requests; setting it in a handler's or
-module's consumer `retry` has no effect on that consumer.
+`retry` is `ConsumerRetryOptions`, the client's backoff for retrying failed broker requests:
+`maxRetryTime` (ms, default `30000`) and `initialRetryTime` (ms, default `300`). These are the only
+retry settings the client applies to a consumer, and the only fields the library passes on to it.
+Retrying a failed handler is a separate concern, configured through
+[`errorHandling`](error-handling.md).
 
 `allowAutoTopicCreation` controls [topic provisioning](topics-and-namespacing.md#topic-provisioning):
 with `false`, bootstrap fails when a handler's topics, or its DLQ topic, do not exist; with `true`,
@@ -161,8 +161,8 @@ Configuration is resolved field by field, per handler:
 2. the module's `consumerDefaults`
 3. the built-in default from the table above
 
-`retry` is merged shallowly in the same order, so a handler that sets only `retries` keeps the
-default `initialRetryTime` and the rest.
+`retry` is merged shallowly in the same order, so a handler that sets only `maxRetryTime` keeps the
+`initialRetryTime` from `consumerDefaults` or the default.
 
 ```ts
 KafkaModule.register({
@@ -196,8 +196,8 @@ The module's `producer` option.
 | --- | --- | --- |
 | `allowAutoTopicCreation` | `boolean` | `false` |
 | `idempotent` | `boolean` | unset — the client applies its own (currently `false`) |
-| `compression` | `'none' \| 'gzip' \| 'snappy' \| 'lz4' \| 'zstd'` | unset — the client applies its own (currently `none`) |
-| `acks` | `number` | unset — the client applies its own (currently `-1`, all in-sync replicas) |
+| `compression` | `ProducerCompression`: `'none' \| 'gzip' \| 'snappy' \| 'lz4' \| 'zstd'` | unset — the client applies its own (currently `none`) |
+| `acks` | `-1 \| 0 \| 1` | unset — the client applies its own (currently `-1`, all in-sync replicas) |
 
 `allowAutoTopicCreation` maps to librdkafka's `allow.auto.create.topics` on the producer. See
 [Producing](producing.md#topic) for what a send to a missing topic does.

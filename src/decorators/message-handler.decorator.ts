@@ -1,4 +1,6 @@
+import { MessageHandlerCallback } from '../types/message-handler-callback.type.js';
 import { MessageOptions } from '../types/message-options.type.js';
+import { MessageType } from '../types/message.type.js';
 import {
   assertValidMessageArguments,
   describeHandler,
@@ -9,12 +11,16 @@ export const MessageHandlerKey = 'HANDLE_MESSAGE' as const;
 export function Message(
   topicPattern: (string | RegExp)[],
   options: MessageOptions,
-): MethodDecorator {
-  return (
+): <THandler extends MessageHandlerCallback<MessageType<never>>>(
+  target: object,
+  propertyKey: string | symbol,
+  descriptor: TypedPropertyDescriptor<THandler>,
+) => void {
+  return <THandler extends MessageHandlerCallback<MessageType<never>>>(
     target: object,
     propertyKey: string | symbol,
-    descriptor: PropertyDescriptor,
-  ) => {
+    descriptor: TypedPropertyDescriptor<THandler>,
+  ): void => {
     assertValidMessageArguments(
       'Message',
       describeHandler('Message', target, propertyKey),
@@ -24,7 +30,7 @@ export function Message(
     Reflect.defineMetadata(
       MessageHandlerKey,
       [topicPattern, options],
-      descriptor.value,
+      descriptor.value as object,
     );
   };
 }

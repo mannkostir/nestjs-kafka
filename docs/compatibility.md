@@ -16,6 +16,10 @@ CI runs the type check, unit tests, and build against both NestJS 11 and NestJS 
 integration tests against NestJS 12, checks that both entry points of the built package load on
 Node.js 20.19 and 22.12, and checks that the ES module entry loads on Node.js 20.18 and 22.11.
 
+The module's `clientOptions` is `KafkaJS.CommonConstructorConfig` from
+`@confluentinc/kafka-javascript`, passed to the client unchanged. Its shape follows the installed
+peer version, not this library's version. Every other option type is owned by this library.
+
 ## Module formats
 
 The package ships one implementation, compiled as ES modules, behind an `exports` map. `import`

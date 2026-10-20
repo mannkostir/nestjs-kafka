@@ -1,13 +1,13 @@
 import type { KafkaJS } from '@confluentinc/kafka-javascript';
+import { HandlerRetryTopics } from './handler-retry-topics.js';
 import { PausedPartitions } from './paused-partitions.js';
 import { RetryHeaders } from './retry-headers.js';
-import { RetryTopics } from './retry-topics.js';
 
 export class RetryDelayGate {
   private static readonly LONGEST_TIMER_DELAY_MS = 2147483647;
 
   constructor(
-    private readonly topics: RetryTopics,
+    private readonly topics: HandlerRetryTopics,
     private readonly partitions: PausedPartitions,
     private readonly clock: () => number = Date.now,
   ) {}

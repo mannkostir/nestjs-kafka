@@ -1,5 +1,6 @@
 import type { KafkaJS } from '@confluentinc/kafka-javascript';
 import { ConsumerConfig } from '../../types/consumer-config.type.js';
+import { ConsumerRetryOptions } from '../../types/consumer-retry-options.type.js';
 
 type SharedGroupMember = { handlerName: string; config: ResolvedConsumerConfig };
 
@@ -16,7 +17,7 @@ export class ResolvedConsumerConfig {
     private readonly heartbeatInterval: number | undefined,
     private readonly sessionTimeout: number | undefined,
     private readonly rebalanceTimeout: number | undefined,
-    private readonly retry: KafkaJS.RetryOptions,
+    private readonly retry: ConsumerRetryOptions,
   ) {}
 
   static resolve(handlerConfig?: ConsumerConfig, moduleDefaults?: ConsumerConfig): ResolvedConsumerConfig {
@@ -38,8 +39,12 @@ export class ResolvedConsumerConfig {
       overrides.heartbeatInterval ?? defaults.heartbeatInterval,
       overrides.sessionTimeout ?? defaults.sessionTimeout,
       overrides.rebalanceTimeout ?? defaults.rebalanceTimeout,
-      { ...defaults.retry, ...overrides.retry },
+      ResolvedConsumerConfig.consumerRetry({ ...defaults.retry, ...overrides.retry }),
     );
+  }
+
+  private static consumerRetry({ maxRetryTime, initialRetryTime }: ConsumerRetryOptions): ConsumerRetryOptions {
+    return ResolvedConsumerConfig.withoutUndefined({ maxRetryTime, initialRetryTime });
   }
 
   clientConfig(groupId: string): KafkaJS.ConsumerConfig {

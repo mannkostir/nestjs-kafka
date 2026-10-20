@@ -8,7 +8,7 @@ on:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -31,7 +31,7 @@ jobs:
       - run: npm run build
 
   load:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     strategy:
       fail-fast: false
@@ -49,7 +49,7 @@ jobs:
       - run: node scripts/check-entry-points.js
 
   esm-floor:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     strategy:
       fail-fast: false
@@ -68,7 +68,7 @@ jobs:
           node --input-type=module -e "import 'reflect-metadata'; const { KafkaModule } = await import('nestjs-kafka-connector'); if (typeof KafkaModule.register !== 'function') process.exit(1);"
 
   integration:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7

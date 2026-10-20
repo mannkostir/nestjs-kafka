@@ -1,3 +1,5 @@
+import { LibrdkafkaTopicPattern } from './librdkafka-topic-pattern.js';
+
 type NamedRoute = { handlerName: string };
 
 export type RouteClaim<TRoute extends NamedRoute> = {
@@ -5,10 +7,19 @@ export type RouteClaim<TRoute extends NamedRoute> = {
   route: TRoute;
 };
 
+export type RouteResolution<TRoute> =
+  | { kind: 'owned'; route: TRoute }
+  | { kind: 'unroutable'; reason: string };
+
+type PatternClaim<TRoute> = { matcher: RegExp; route: TRoute };
+
 export class KafkaHandlerRoutes<TRoute extends NamedRoute> {
+  private readonly resolved = new Map<string, RouteResolution<TRoute>>();
+
   private constructor(
     private readonly groupId: string,
     private readonly owners: ReadonlyMap<string, TRoute>,
+    private readonly patterns: readonly PatternClaim<TRoute>[],
   ) {}
 
   static claim<TRoute extends NamedRoute>(
@@ -16,40 +27,63 @@ export class KafkaHandlerRoutes<TRoute extends NamedRoute> {
     claims: readonly RouteClaim<TRoute>[],
   ): KafkaHandlerRoutes<TRoute> {
     const owners = new Map<string, TRoute>();
+    const patterns: PatternClaim<TRoute>[] = [];
 
     for (const { topics, route } of claims) {
       for (const topic of topics) {
-        KafkaHandlerRoutes.assertConcrete(groupId, route, topic);
-        KafkaHandlerRoutes.assertUnclaimed(groupId, owners.get(topic), route, topic);
-        owners.set(topic, route);
+        if (topic instanceof RegExp) {
+          patterns.push({ matcher: LibrdkafkaTopicPattern.matcher(topic), route });
+        } else {
+          KafkaHandlerRoutes.assertUnclaimed(groupId, owners.get(topic), route, topic);
+          owners.set(topic, route);
+        }
       }
     }
 
-    return new KafkaHandlerRoutes(groupId, owners);
+    return new KafkaHandlerRoutes(groupId, owners, patterns);
   }
 
-  handlerFor(topic: string): TRoute {
+  resolve(topic: string): RouteResolution<TRoute> {
+    const cached = this.resolved.get(topic);
+
+    if (cached) {
+      return cached;
+    }
+
+    const resolution = this.resolveUncached(topic);
+    this.resolved.set(topic, resolution);
+    return resolution;
+  }
+
+  private resolveUncached(topic: string): RouteResolution<TRoute> {
     const owner = this.owners.get(topic);
 
-    if (!owner) {
-      throw new Error(
-        `Received a batch from topic "${topic}", which no handler of shared group "${this.groupId}" consumes.`,
-      );
+    if (owner) {
+      return { kind: 'owned', route: owner };
     }
 
-    return owner;
+    const matching = [...new Set(this.patterns.filter(({ matcher }) => matcher.test(topic)).map(({ route }) => route))];
+
+    if (matching.length === 1) {
+      return { kind: 'owned', route: matching[0] };
+    }
+
+    return { kind: 'unroutable', reason: this.unroutableReason(topic, matching) };
   }
 
-  private static assertConcrete(
-    groupId: string,
-    route: NamedRoute,
-    topic: string | RegExp,
-  ): asserts topic is string {
-    if (topic instanceof RegExp) {
-      throw new Error(
-        `Message handler ${route.handlerName} subscribes to a RegExp pattern in shared group "${groupId}". Handlers in a shared group must list concrete topic names.`,
-      );
+  private unroutableReason(topic: string, matching: readonly TRoute[]): string {
+    if (matching.length === 0) {
+      return `Topic "${topic}" matches no handler of shared group "${this.groupId}".`;
     }
+
+    const names = matching.map(({ handlerName }) => handlerName);
+    const listed = `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+
+    return (
+      `Topic "${topic}" matches the patterns of message handlers ${listed} in shared group "${this.groupId}". ` +
+      'Each topic in a shared group must belong to exactly one handler: rename the topic, narrow the patterns, ' +
+      'or list the topic by name on the handler that should consume it.'
+    );
   }
 
   private static assertUnclaimed(
