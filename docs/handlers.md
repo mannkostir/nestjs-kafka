@@ -18,6 +18,11 @@ async handleOrderCreated(
 
 The full option list is in [Configuration](configuration.md#message-options).
 
+TypeScript checks the decorated method against `MessageHandlerCallback`: it must return a
+`Promise<void>`, its first parameter, if any, must accept a `MessageType`, and its second, if any, a
+`MessageContext`. A method that does not fit, such as a synchronous one, fails to compile at the
+decorator. `@MessageBatch` checks its method against `BatchMessageHandlerCallback` the same way.
+
 ## Required options
 
 Every handler needs an array of topics holding at least one non-empty topic name or `RegExp`, a
