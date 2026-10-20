@@ -18,10 +18,10 @@
 error saying so. Leave either option `undefined` to opt out of it; this matters most when the value
 comes from an environment variable that may be set but empty.
 
-Handler consumers, and the admin client each one uses to pin its start offsets, log through Nest's
-`Logger` with the context `KafkaClient`. The producer and the admin client that provisions topics
-log through the client's own default logger. Pass `clientOptions.kafkaJS.logger` to route all of
-them elsewhere.
+Every Kafka client the module creates (handler consumers, the producer, and the admin clients that
+provision topics and pin start offsets) logs through Nest's `Logger` with the context `KafkaClient`,
+so the client's lines follow the host's Nest log format and log levels. Pass
+`clientOptions.kafkaJS.logger` to route all of them elsewhere.
 
 `ConsumerProxy` and `ProducerProxy` are the module's only exported providers.
 
