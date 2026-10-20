@@ -23,6 +23,11 @@ import {
   HandlerGroup,
   SubscriptionFailures,
 } from '../errors/subscription-failures.js';
+import {
+  ConnectorName,
+  UnknownConnector,
+  UnknownConnectorNames,
+} from '../errors/unknown-connector-names.js';
 import { SharedGroupRoute, RouteDelivery } from '../types/shared-group-route.type.js';
 import { IConsumeMessageBatches } from '../interfaces/consume-message-batches.interface.js';
 import { IConsumeSharedGroups } from '../interfaces/consume-shared-groups.interface.js';
@@ -55,6 +60,11 @@ type AnnotatedMethod = {
   method: HandlerMethod;
   metadata: HandlerMetadata;
   kind: HandlerKind;
+};
+
+type NamedHandler = {
+  name: string;
+  metadata: HandlerMetadata;
 };
 
 type DiscoveredHandler = {
@@ -136,14 +146,87 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
 
   private async startSubscriptions(): Promise<GroupSubscription[]> {
     try {
+      this.assertEveryConnectorNameRegistered();
+
       return this.subscribableGroups().map((group) => ({
         group,
         subscribed: this.subscribeGroup(group),
       }));
     } catch (error) {
       await this.releaseConnections();
+
+      if (error instanceof UnknownConnectorNames) {
+        return this.reportOnceForTheApplication(error);
+      }
+
       throw error;
     }
+  }
+
+  private reportOnceForTheApplication(
+    error: UnknownConnectorNames,
+  ): GroupSubscription[] {
+    if (!this.isApplicationReporter()) {
+      return [];
+    }
+
+    this.logger.error('Failed to subscribe message handlers', error);
+    throw error;
+  }
+
+  private isApplicationReporter(): boolean {
+    const reporter = this.discoveryService
+      .getProviders()
+      .find((wrapper) => wrapper.instance instanceof MessageHandlersDiscoveryService);
+
+    return reporter?.instance === this;
+  }
+
+  private assertEveryConnectorNameRegistered(): void {
+    const registered = this.registeredConnectorNames();
+    const unknown = this.unknownConnectors(registered);
+
+    if (unknown.length > 0) {
+      throw new UnknownConnectorNames(unknown, registered);
+    }
+  }
+
+  private registeredConnectorNames(): ConnectorName[] {
+    const connectorNames = this.discoveryService
+      .getProviders()
+      .filter((wrapper) => wrapper.token === CONNECTOR_NAME)
+      .map((wrapper): ConnectorName => wrapper.instance);
+
+    return [...new Set(connectorNames)];
+  }
+
+  private unknownConnectors(registered: ConnectorName[]): UnknownConnector[] {
+    const handlerNamesByConnector = new Map<ConnectorName, Set<string>>();
+
+    for (const { name, metadata } of this.applicationHandlers()) {
+      const connectorName = this.connectorNameOf(metadata);
+
+      if (!registered.includes(connectorName)) {
+        handlerNamesByConnector.set(
+          connectorName,
+          (handlerNamesByConnector.get(connectorName) ?? new Set()).add(name),
+        );
+      }
+    }
+
+    return [...handlerNamesByConnector].map(([connectorName, handlerNames]) => ({
+      connectorName,
+      handlerNames: [...handlerNames],
+    }));
+  }
+
+  private applicationHandlers(): NamedHandler[] {
+    const scopedHandlers = this.discoveryService
+      .getProviders()
+      .filter((wrapper) => !this.isSingleton(wrapper))
+      .flatMap((wrapper) => this.scopedHandlersOf(wrapper));
+
+    return [...this.discoverHandlers(), ...scopedHandlers];
   }
 
   private async releaseConnections(): Promise<void> {
@@ -275,6 +358,18 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
   }
 
   private scopedHandlerViolations(wrapper: ProviderWrapper): string[] {
+    const scope = this.scopeDescription(wrapper);
+
+    return this.scopedHandlersOf(wrapper)
+      .filter(({ metadata }) => this.belongsToThisConnector(metadata))
+      .map(
+        ({ name }) =>
+          `Message handler ${name} is on ${scope}, so it can never be subscribed. ` +
+          'Make the provider and every provider it injects singleton-scoped.',
+      );
+  }
+
+  private scopedHandlersOf(wrapper: ProviderWrapper): NamedHandler[] {
     const { metatype } = wrapper;
 
     if (!metatype || wrapper.isFactory) {
@@ -282,15 +377,11 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
     }
 
     const prototype: Record<string, HandlerMethod> | null = metatype.prototype;
-    const scope = this.scopeDescription(wrapper);
 
-    return this.annotatedMethodsOf(prototype)
-      .filter(({ metadata }) => this.belongsToThisConnector(metadata))
-      .map(
-        ({ methodName }) =>
-          `Message handler ${metatype.name}.${methodName} is on ${scope}, so it can never be subscribed. ` +
-          'Make the provider and every provider it injects singleton-scoped.',
-      );
+    return this.annotatedMethodsOf(prototype).map(({ methodName, metadata }) => ({
+      name: `${metatype.name}.${methodName}`,
+      metadata,
+    }));
   }
 
   private scopeDescription(wrapper: ProviderWrapper): string {
@@ -417,6 +508,10 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
   }
 
   private belongsToThisConnector(metadata: HandlerMetadata): boolean {
-    return (metadata[1]?.connectorName ?? undefined) === this.connectorName;
+    return this.connectorNameOf(metadata) === this.connectorName;
+  }
+
+  private connectorNameOf(metadata: HandlerMetadata): ConnectorName {
+    return metadata[1]?.connectorName ?? undefined;
   }
 }

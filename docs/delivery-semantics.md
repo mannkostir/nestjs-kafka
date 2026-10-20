@@ -89,9 +89,10 @@ Failed to subscribe message handlers:
 Aborted after another handler failed: PaymentsHandler.handle (groupId "payments")
 ```
 
-A configuration error found before any handler subscribes — a handler on a scoped provider, a
-`groupId` shared without `sharedGroup: true`, a handler provided more than once — fails bootstrap
-with its own message instead, and also releases every connection.
+A configuration error found before any handler subscribes — a handler naming a `connectorName` no
+module registers, a handler on a scoped provider, a `groupId` shared without `sharedGroup: true`, a
+handler provided more than once — fails bootstrap with its own message instead, and also releases
+every connection.
 
 Nest's `app.close()` on a context whose `init()` failed rethrows that same error without running
 shutdown hooks (on both Nest 11 and 12), so a host or test that catches the bootstrap error should

@@ -1,4 +1,4 @@
-import { DynamicModule, Module } from '@nestjs/common';
+import { DynamicModule, Injectable, Logger, Module } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
@@ -11,6 +11,8 @@ import { ProducerProxy } from './base/producer-proxy.js';
 import { MessageFormat } from './types/message-format.type.js';
 import { ProducerCompression } from './types/producer-config.type.js';
 import { KafkaMessageParseStrategyFactory } from './implementations/kafka/parse-strategies/kafka-message-parse-strategy.factory.js';
+import { KafkaConsumer } from './implementations/kafka/kafka-consumer.js';
+import { Message } from './decorators/message-handler.decorator.js';
 
 jest.mock('@kafkajs/confluent-schema-registry', () => ({
   SchemaRegistry: jest.fn(),
@@ -491,5 +493,104 @@ describe('KafkaModule message format', () => {
     expect(
       await consumedFormat({ clientOptions, messageFormat: MessageFormat.ENVELOPED_JSON }),
     ).toBe(MessageFormat.ENVELOPED_JSON);
+  });
+});
+
+describe('KafkaModule connector names', () => {
+  @Injectable()
+  class ClicksHandler {
+    @Message(['clicks.recorded'], {
+      groupId: 'clicks-service',
+      errorHandling: { type: 'ignore' },
+      connectorName: 'analytics',
+    })
+    async onClick(): Promise<void> {}
+  }
+
+  @Injectable()
+  class InvoicesHandler {
+    @Message(['invoices.issued'], {
+      groupId: 'invoices-service',
+      errorHandling: { type: 'ignore' },
+      connectorName: 'billing',
+    })
+    async onInvoice(): Promise<void> {}
+  }
+
+  @Injectable()
+  class OrdersHandler {
+    @Message(['orders.created'], {
+      groupId: 'orders-service',
+      errorHandling: { type: 'ignore' },
+    })
+    async onOrder(): Promise<void> {}
+  }
+
+  @Injectable()
+  class MistypedClicksHandler {
+    @Message(['clicks.recorded'], {
+      groupId: 'mistyped-clicks-service',
+      errorHandling: { type: 'ignore' },
+      connectorName: 'analytcs',
+    })
+    async onClick(): Promise<void> {}
+  }
+
+  const bootstrapWith = async (
+    imports: DynamicModule[],
+    handlers: Array<new () => object>,
+  ) => {
+    const moduleRef = await Test.createTestingModule({
+      imports,
+      providers: handlers,
+    })
+      .overrideProvider(KAFKA_PRODUCER)
+      .useValue(producerStub())
+      .compile();
+
+    return moduleRef.init();
+  };
+
+  beforeEach(() => {
+    jest.spyOn(KafkaConsumer.prototype, 'subscribe').mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('fails bootstrap naming a handler whose connector name no module registers', async () => {
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+
+    await expect(
+      bootstrapWith(
+        [
+          KafkaModule.register({ clientOptions, connectorName: 'analytics' }),
+          KafkaModule.register({ clientOptions, connectorName: 'billing' }),
+        ],
+        [ClicksHandler, InvoicesHandler, MistypedClicksHandler],
+      ),
+    ).rejects.toThrow(
+      'Message handlers name connectorNames that no KafkaModule registers:\n' +
+        '- "analytcs": MistypedClicksHandler.onClick\n' +
+        'Registered connectorNames: "analytics", "billing".',
+    );
+  });
+
+  it('bootstraps handlers on every registered connector', async () => {
+    const moduleRef = await bootstrapWith(
+      [
+        KafkaModule.register({ clientOptions }),
+        KafkaModule.register({ clientOptions, connectorName: 'analytics' }),
+        KafkaModule.registerAsync({
+          useFactory: () => ({ clientOptions, connectorName: 'billing' }),
+        }),
+      ],
+      [ClicksHandler, InvoicesHandler, OrdersHandler],
+    );
+
+    expect(jest.mocked(KafkaConsumer.prototype.subscribe)).toHaveBeenCalledTimes(3);
+
+    await moduleRef.close();
   });
 });

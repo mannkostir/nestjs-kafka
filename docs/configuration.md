@@ -57,6 +57,18 @@ KafkaModule.register({
 })
 ```
 
+A handler whose `connectorName` no registered module declares, or a handler without one when every
+module is registered with a `connectorName`, would never be subscribed. Bootstrap fails instead,
+before any handler subscribes, with one error naming each unknown `connectorName` with its handlers
+and listing the registered ones:
+
+```
+Message handlers name connectorNames that no KafkaModule registers:
+- "analytcs": ClicksHandler.onClick
+Registered connectorNames: the unnamed connector, "analytics-cluster".
+Set each handler's connectorName to a registered one, or register a KafkaModule with that connectorName.
+```
+
 If you only ever register `KafkaModule` once, omit `connectorName` on both the module and every
 handler.
 
