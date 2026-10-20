@@ -983,6 +983,146 @@ describe('KafkaConsumer fail error handling', () => {
   });
 });
 
+describe('KafkaConsumer when a dead letter or retry publish fails', () => {
+  const failingMessage = (offset: string) => ({
+    key: null,
+    value: Buffer.from(JSON.stringify({ payload: {} })),
+    timestamp: '0',
+    size: 0,
+    attributes: 0,
+    offset,
+  });
+
+  const failingBatch = (resume: () => void = jest.fn()) => ({
+    batch: { topic: 'orders.created', partition: 0, messages: [failingMessage('7')] },
+    isRunning: () => true,
+    isStale: () => false,
+    resolveOffset: jest.fn(),
+    pause: jest.fn(() => resume),
+  });
+
+  const eachBatchOf = (consumer: ReturnType<typeof consumerStub>, call = 0) =>
+    (consumer.run as jest.Mock).mock.calls[call][0].eachBatch;
+
+  const failingHandler = () => jest.fn().mockRejectedValue(new Error('handler exploded'));
+
+  const publishFailure = new Error('broker unreachable');
+
+  const rejectingProducer = () =>
+    ({ send: jest.fn().mockRejectedValue(publishFailure) }) as unknown as KafkaJS.Producer;
+
+  const consumerWithRejectingProducer = (consumer: ReturnType<typeof consumerStub>) =>
+    new KafkaConsumer(kafkaStub(consumer), {
+      producer: rejectingProducer(),
+      topicProvisioner: provisionerStub() as unknown as KafkaTopicProvisioner,
+    });
+
+  const dlqSubscription = () => ({ ...subscription(), errorHandling: { type: 'dlq' as const } });
+
+  const retrySubscription = () => ({ ...subscription(), errorHandling: { type: 'retry' as const, attempts: 2 } });
+
+  const subscribeFailing = async (subscribed: ReturnType<typeof dlqSubscription> | ReturnType<typeof retrySubscription>) => {
+    const consumer = consumerStub();
+    const kafkaConsumer = consumerWithRejectingProducer(consumer);
+    await kafkaConsumer.subscribe(subscribed, failingHandler(), 'orders-service');
+    return { consumer, kafkaConsumer };
+  };
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('rejects with the dead letter publish error', async () => {
+    const { consumer } = await subscribeFailing(dlqSubscription());
+
+    await expect(eachBatchOf(consumer)(failingBatch())).rejects.toBe(publishFailure);
+  });
+
+  it('pauses the partition when the dead letter publish fails', async () => {
+    const { consumer } = await subscribeFailing(dlqSubscription());
+    const batch = failingBatch();
+
+    await eachBatchOf(consumer)(batch).catch(() => undefined);
+
+    expect(batch.pause).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the offset unresolved when the dead letter publish fails', async () => {
+    const { consumer } = await subscribeFailing(dlqSubscription());
+    const batch = failingBatch();
+
+    await eachBatchOf(consumer)(batch).catch(() => undefined);
+
+    expect(batch.resolveOffset).not.toHaveBeenCalled();
+  });
+
+  it('rejects with the republish error', async () => {
+    const { consumer } = await subscribeFailing(retrySubscription());
+
+    await expect(eachBatchOf(consumer)(failingBatch())).rejects.toBe(publishFailure);
+  });
+
+  it('pauses the partition when the republish fails', async () => {
+    const { consumer } = await subscribeFailing(retrySubscription());
+    const batch = failingBatch();
+
+    await eachBatchOf(consumer)(batch).catch(() => undefined);
+
+    expect(batch.pause).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the offset unresolved when the republish fails', async () => {
+    const { consumer } = await subscribeFailing(retrySubscription());
+    const batch = failingBatch();
+
+    await eachBatchOf(consumer)(batch).catch(() => undefined);
+
+    expect(batch.resolveOffset).not.toHaveBeenCalled();
+  });
+
+  it('keeps publish failure attempts independent between dead letter subscriptions', async () => {
+    const consumer = consumerStub();
+    const kafkaConsumer = consumerWithRejectingProducer(consumer);
+    await kafkaConsumer.subscribe(dlqSubscription(), failingHandler(), 'orders-service');
+    await kafkaConsumer.subscribe(dlqSubscription(), failingHandler(), 'audit-service');
+    await eachBatchOf(consumer, 0)(failingBatch()).catch(() => undefined);
+    const resume = jest.fn();
+
+    await eachBatchOf(consumer, 1)(failingBatch(resume)).catch(() => undefined);
+    await jest.advanceTimersByTimeAsync(300);
+
+    expect(resume).toHaveBeenCalledTimes(1);
+  });
+
+  it('never resumes a partition paused by a failed dead letter publish after every consumer is disconnected', async () => {
+    const { consumer, kafkaConsumer } = await subscribeFailing(dlqSubscription());
+    const resume = jest.fn();
+    await eachBatchOf(consumer)(failingBatch(resume)).catch(() => undefined);
+
+    await kafkaConsumer.disconnectAll();
+    await jest.advanceTimersByTimeAsync(30000);
+
+    expect(resume).not.toHaveBeenCalled();
+  });
+
+  it('stops the dead letter publish backoff before disconnecting the consumer', async () => {
+    const { consumer, kafkaConsumer } = await subscribeFailing(dlqSubscription());
+    const eachBatch = eachBatchOf(consumer);
+    const batch = failingBatch();
+    consumer.disconnect.mockImplementation(async () => {
+      await eachBatch(batch).catch(() => undefined);
+    });
+
+    await kafkaConsumer.disconnectAll();
+
+    expect(batch.pause).not.toHaveBeenCalled();
+  });
+});
+
 describe('KafkaConsumer message format precedence', () => {
   afterEach(() => {
     jest.restoreAllMocks();
