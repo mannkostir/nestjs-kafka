@@ -1,4 +1,3 @@
-import { ConsumerSubscriptionParameters } from '../types/consumer-subscription-parameters.type.js';
 import { MessageOptions } from '../types/message-options.type.js';
 import {
   assertValidMessageArguments,
@@ -8,7 +7,7 @@ import {
 export const MessageHandlerKey = 'HANDLE_MESSAGE' as const;
 
 export function Message(
-  topicPattern: ConsumerSubscriptionParameters['topicPatterns'],
+  topicPattern: (string | RegExp)[],
   options: MessageOptions,
 ): MethodDecorator {
   return (

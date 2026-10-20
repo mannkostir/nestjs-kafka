@@ -3,7 +3,6 @@ export { KafkaModule } from "./kafka.module.js";
 export { Message } from "./decorators/message-handler.decorator.js";
 export { MessageBatch } from "./decorators/message-batch-handler.decorator.js";
 
-export { ConsumerProxy } from "./base/consumer-proxy.js";
 export { ProducerProxy } from "./base/producer-proxy.js";
 
 export { MessageType, MessageKey, MessageHeaders } from "./types/message.type.js";
@@ -12,7 +11,6 @@ export { MessageFormat } from "./types/message-format.type.js";
 export { MessageErrorHandlingConfig, FailBackoffOptions } from "./types/message-error-handling.type.js";
 export { ConsumerConfig } from "./types/consumer-config.type.js";
 export { ProducerConfig } from "./types/producer-config.type.js";
-export { ConsumerSubscriptionParameters } from "./types/consumer-subscription-parameters.type.js";
 export { MessageHandlerCallback } from "./types/message-handler-callback.type.js";
 export { MessageContext } from "./types/message-context.type.js";
 export { ReceivedMessage } from "./types/received-message.type.js";

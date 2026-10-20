@@ -21,7 +21,7 @@ Node.js 20.19 and 22.12, and checks that the ES module entry loads on Node.js 20
 The package ships one implementation, compiled as ES modules, behind an `exports` map. `import`
 resolves to the ES module build; `require` resolves to a CommonJS entry that loads that same build.
 Both hand out the same classes, so a host that reaches the package through both still has a single
-`ConsumerProxy` and `ProducerProxy`. Only the package root is exported: deep imports such as
+`ProducerProxy`. Only the package root is exported: deep imports such as
 `nestjs-kafka-connector/dist/...` are not available.
 
 ## Node.js versions

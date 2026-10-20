@@ -23,7 +23,8 @@ Handler consumers, and the admin client each one uses to pin its start offsets, 
 log through the client's own default logger. Pass `clientOptions.kafkaJS.logger` to route all of
 them elsewhere.
 
-`ConsumerProxy` and `ProducerProxy` are the module's only exported providers.
+`ProducerProxy` is the module's only exported provider. Consumers are internal: handlers subscribe
+only through `@Message` and `@MessageBatch`.
 
 There is no `moduleName` option. Handlers are discovered application-wide regardless of which
 module declares `KafkaModule` or which module declares the handler provider.
