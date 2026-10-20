@@ -2,6 +2,7 @@ import type { KafkaJS } from '@confluentinc/kafka-javascript';
 import { Logger } from '@nestjs/common';
 import { KafkaGroupMember } from './kafka-group-member.js';
 import { JoinFailureDetector } from './join-failure-detector.js';
+import { SubscriptionAborted } from '../../errors/subscription-aborted.js';
 
 const adminStub = () => ({
   connect: jest.fn().mockResolvedValue(undefined),
@@ -77,7 +78,7 @@ describe('KafkaGroupMember.joined', () => {
 
     await rebalanceCallback(kafka)({ code: -175 }, [{ topic: 't', partition: 0 }]);
 
-    await expect(member.joined(1000)).resolves.toBeUndefined();
+    await expect(member.joined(1000, new AbortController().signal)).resolves.toBeUndefined();
   });
 
   it('resolves joined on an empty first assignment', async () => {
@@ -86,13 +87,13 @@ describe('KafkaGroupMember.joined', () => {
 
     await rebalanceCallback(kafka)({ code: -175 }, []);
 
-    await expect(member.joined(1000)).resolves.toBeUndefined();
+    await expect(member.joined(1000, new AbortController().signal)).resolves.toBeUndefined();
   });
 
   it('rejects naming the group and the reason as soon as group authorization fails', async () => {
     const kafka = kafkaStub(adminStub());
     const member = new KafkaGroupMember(kafka, config(), false, clientLoggerStub());
-    const joining = member.joined(60000);
+    const joining = member.joined(60000, new AbortController().signal);
 
     consumerLogger(kafka).error('[Consumer] Broker: Group authorization failed');
 
@@ -109,7 +110,7 @@ describe('KafkaGroupMember.joined', () => {
     await rebalanceCallback(kafka)({ code: -175 }, [{ topic: 't', partition: 0 }]);
     consumerLogger(kafka).error('Broker: Group authorization failed');
 
-    await expect(member.joined(60000)).resolves.toBeUndefined();
+    await expect(member.joined(60000, new AbortController().signal)).resolves.toBeUndefined();
   });
 
   it('explains the timeout without blaming authorization', async () => {
@@ -117,7 +118,7 @@ describe('KafkaGroupMember.joined', () => {
     const kafka = kafkaStub(adminStub());
     const member = new KafkaGroupMember(kafka, config(), false, clientLoggerStub());
 
-    const assertion = expect(member.joined(1000)).rejects.toThrow(
+    const assertion = expect(member.joined(1000, new AbortController().signal)).rejects.toThrow(
       'Consumer group "g" received no partition assignment within 1000 ms. ' +
         'Check that the brokers are reachable and that every other member of the group is still polling. ' +
         'Raising rebalanceTimeout extends this wait but also raises max.poll.interval.ms.',
@@ -133,7 +134,7 @@ describe('KafkaGroupMember.joined', () => {
 
     await rebalanceCallback(kafka)({ code: -174 }, [{ topic: 't', partition: 0 }]);
 
-    const assertion = expect(member.joined(1000)).rejects.toThrow(
+    const assertion = expect(member.joined(1000, new AbortController().signal)).rejects.toThrow(
       /Consumer group "g" received no partition assignment within 1000 ms/,
     );
     jest.advanceTimersByTime(1000);
@@ -145,11 +146,60 @@ describe('KafkaGroupMember.joined', () => {
     const kafka = kafkaStub(adminStub());
     const member = new KafkaGroupMember(kafka, config(), false, clientLoggerStub());
 
-    const assertion = expect(member.joined(1000)).rejects.toThrow(
+    const assertion = expect(member.joined(1000, new AbortController().signal)).rejects.toThrow(
       /Consumer group "g" received no partition assignment within 1000 ms/,
     );
     jest.advanceTimersByTime(1000);
     await assertion;
+  });
+});
+
+describe('KafkaGroupMember.joined when aborted', () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('rejects naming the group when the signal aborts while waiting', async () => {
+    const kafka = kafkaStub(adminStub());
+    const member = new KafkaGroupMember(kafka, config(), false, clientLoggerStub());
+    const release = new AbortController();
+    const joining = member.joined(60000, release.signal);
+
+    release.abort();
+
+    await expect(joining).rejects.toThrow(new SubscriptionAborted('g'));
+  });
+
+  it('rejects at once when the signal has already aborted', async () => {
+    const kafka = kafkaStub(adminStub());
+    const member = new KafkaGroupMember(kafka, config(), false, clientLoggerStub());
+
+    await expect(member.joined(60000, AbortSignal.abort())).rejects.toBeInstanceOf(
+      SubscriptionAborted,
+    );
+  });
+
+  it('leaves no timer pending once aborted', async () => {
+    jest.useFakeTimers();
+    const kafka = kafkaStub(adminStub());
+    const member = new KafkaGroupMember(kafka, config(), false, clientLoggerStub());
+    const release = new AbortController();
+    const joining = member.joined(60000, release.signal);
+
+    release.abort();
+    await joining.catch(() => undefined);
+
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it('still resolves on the first assignment when the signal never aborts', async () => {
+    const kafka = kafkaStub(adminStub());
+    const member = new KafkaGroupMember(kafka, config(), false, clientLoggerStub());
+    const joining = member.joined(60000, new AbortController().signal);
+
+    await rebalanceCallback(kafka)({ code: -175 }, []);
+
+    await expect(joining).resolves.toBeUndefined();
   });
 });
 
@@ -316,7 +366,7 @@ describe('KafkaGroupMember pin failure fallback', () => {
 
     await rebalanceCallback(kafka)({ code: -175 }, [{ topic: 't', partition: 0 }]);
 
-    await expect(member.joined(1000)).resolves.toBeUndefined();
+    await expect(member.joined(1000, new AbortController().signal)).resolves.toBeUndefined();
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('Consumer group "g"'));
   });
 
@@ -329,7 +379,7 @@ describe('KafkaGroupMember pin failure fallback', () => {
     await rebalanceCallback(kafka)({ code: -175 }, [{ topic: 't', partition: 0 }]);
 
     expect(admin.disconnect).toHaveBeenCalledTimes(1);
-    await expect(member.joined(1000)).resolves.toBeUndefined();
+    await expect(member.joined(1000, new AbortController().signal)).resolves.toBeUndefined();
   });
 
   it('falls back to the client default when a log end is unknown', async () => {
@@ -345,7 +395,7 @@ describe('KafkaGroupMember pin failure fallback', () => {
 
     expect(result).toBeUndefined();
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('t:0'));
-    await expect(member.joined(1000)).resolves.toBeUndefined();
+    await expect(member.joined(1000, new AbortController().signal)).resolves.toBeUndefined();
   });
 
   it('falls back to the client default when pinning outlasts the pin timeout', async () => {
@@ -357,7 +407,7 @@ describe('KafkaGroupMember pin failure fallback', () => {
     const result = await rebalanceCallback(kafka)({ code: -175 }, [{ topic: 't', partition: 0 }]);
 
     expect(result).toBeUndefined();
-    await expect(member.joined(1000)).resolves.toBeUndefined();
+    await expect(member.joined(1000, new AbortController().signal)).resolves.toBeUndefined();
   });
 
   it('warns naming the group and the pin timeout when pinning outlasts it', async () => {

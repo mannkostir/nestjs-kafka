@@ -2,6 +2,7 @@ import { KafkaJS } from '@confluentinc/kafka-javascript';
 import type { RdKafka } from '@confluentinc/kafka-javascript';
 import { Logger } from '@nestjs/common';
 import { JoinFailureDetector } from './join-failure-detector.js';
+import { SubscriptionAborted } from '../../errors/subscription-aborted.js';
 
 type RebalanceEvent = { code: number };
 
@@ -64,7 +65,7 @@ export class KafkaGroupMember {
     });
   }
 
-  public async joined(timeoutMs: number): Promise<void> {
+  public async joined(timeoutMs: number, abort: AbortSignal): Promise<void> {
     let timer: NodeJS.Timeout | undefined;
 
     const expiry = new Promise<never>((_, reject) => {
@@ -88,10 +89,21 @@ export class KafkaGroupMember {
       );
     });
 
+    let onAbort: () => void = () => undefined;
+
+    const aborted = new Promise<never>((_, reject) => {
+      onAbort = () => reject(new SubscriptionAborted(this.groupId));
+      abort.addEventListener('abort', onAbort, { once: true });
+      if (abort.aborted) {
+        onAbort();
+      }
+    });
+
     try {
-      await Promise.race([this.firstAssignment, refusal, expiry]);
+      await Promise.race([this.firstAssignment, refusal, expiry, aborted]);
     } finally {
       clearTimeout(timer);
+      abort.removeEventListener('abort', onAbort);
     }
   }
 

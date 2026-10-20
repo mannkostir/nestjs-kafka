@@ -42,6 +42,26 @@ class StrictTopicHandler {
 }
 
 @Injectable()
+class StrictCreditsHandler {
+  @Message(['credits.created'], {
+    groupId: 'strict-credits',
+    errorHandling: { type: 'fail' },
+    consumer: { allowAutoTopicCreation: false },
+  })
+  async handle(_message: MessageType): Promise<void> {}
+}
+
+@Injectable()
+class StrictRebatesHandler {
+  @Message(['rebates.created'], {
+    groupId: 'strict-rebates',
+    errorHandling: { type: 'fail' },
+    consumer: { allowAutoTopicCreation: false },
+  })
+  async handle(_message: MessageType): Promise<void> {}
+}
+
+@Injectable()
 class HealthyNeighbourHandler {
   @Message(['payouts.created'], {
     groupId: 'healthy-neighbour',
@@ -171,6 +191,28 @@ describe('topic provisioning', () => {
     });
   });
 
+  describe('two handlers that forbid topic creation on distinct missing topics', () => {
+    it('fails bootstrap with one error naming both handlers and both topics', async () => {
+      @Module({
+        imports: [
+          KafkaModule.register({
+            clientOptions: { kafkaJS: { clientId: 'strict-pair', brokers: broker.brokers } },
+          }),
+        ],
+        providers: [StrictCreditsHandler, StrictRebatesHandler],
+      })
+      class StrictPairModule {}
+
+      const moduleRef = await Test.createTestingModule({
+        imports: [StrictPairModule],
+      }).compile();
+
+      await expect(moduleRef.init()).rejects.toThrow(
+        /StrictCreditsHandler\.handle \(groupId "strict-credits"\): Topic\(s\) credits\.created do not exist[\s\S]*StrictRebatesHandler\.handle \(groupId "strict-rebates"\): Topic\(s\) rebates\.created do not exist/,
+      );
+    });
+  });
+
   describe('a handler on a missing topic without opting in to creation', () => {
     it('fails bootstrap and leaves the topic uncreated', async () => {
       @Module({
@@ -246,7 +288,7 @@ describe('topic provisioning', () => {
   });
 
   describe('a healthy handler next to one that forbids topic creation', () => {
-    it('releases the healthy handler\'s consumer once bootstrap fails', async () => {
+    it('leaves the healthy handler without group membership once bootstrap fails', async () => {
       await broker.createTopics(['payouts.created']);
 
       @Module({
@@ -262,7 +304,10 @@ describe('topic provisioning', () => {
 
       const moduleRef = await Test.createTestingModule({ imports: [MixedModule] }).compile();
 
-      await expect(moduleRef.init()).rejects.toThrow(/refunds\.created/);
+      const bootstrap = moduleRef.init();
+
+      await expect(bootstrap).rejects.toThrow(/^- StrictTopicHandler\.handle \(groupId "strict-topic"\): .*refunds\.created/m);
+      await expect(bootstrap).rejects.not.toThrow(/^- HealthyNeighbourHandler/m);
 
       const admin = new KafkaJS.Kafka({
         kafkaJS: { clientId: 'release-observer', brokers: broker.brokers },
@@ -274,12 +319,9 @@ describe('topic provisioning', () => {
           const { groups } = await admin.describeGroups(['healthy-neighbour']);
 
           expect(groups).toEqual([
-            expect.objectContaining({
-              groupId: 'healthy-neighbour',
-              state: KafkaJS.ConsumerGroupStates.EMPTY,
-              members: [],
-            }),
+            expect.objectContaining({ groupId: 'healthy-neighbour', members: [] }),
           ]);
+          expect([KafkaJS.ConsumerGroupStates.EMPTY, KafkaJS.ConsumerGroupStates.DEAD]).toContain(groups[0].state);
         });
       } finally {
         await admin.disconnect();

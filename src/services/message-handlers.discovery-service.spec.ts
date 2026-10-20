@@ -21,6 +21,7 @@ import {
   KAFKA_CONNECTIONS,
   SHARED_GROUP_CONSUMER,
 } from '../tokens.js';
+import { SubscriptionAborted } from '../errors/subscription-aborted.js';
 import { MessageHandlersDiscoveryService } from './message-handlers.discovery-service.js';
 
 @Injectable()
@@ -523,21 +524,56 @@ describe('MessageHandlersDiscoveryService', () => {
     expect(subscribe).not.toHaveBeenCalled();
   });
 
-  it('logs and rethrows when a subscription fails', async () => {
-    const failure = new Error('broker unavailable');
+  it('logs the error it fails bootstrap with when a subscription fails', async () => {
     const { subscribe, bootstrap } = harness([OrdersHandler]);
-    subscribe.mockRejectedValue(failure);
+    subscribe.mockRejectedValue(new Error('broker unavailable'));
     const logError = jest
       .spyOn(Logger.prototype, 'error')
       .mockImplementation(() => undefined);
 
-    await expect(bootstrap()).rejects.toBe(failure);
+    const thrown = await bootstrap().catch((error: unknown) => error);
 
     expect(logError).toHaveBeenCalledWith(
       'Failed to subscribe message handlers',
-      failure,
+      thrown,
     );
     logError.mockRestore();
+  });
+
+  it('fails bootstrap with one error naming every failed handler and its cause', async () => {
+    const { subscribe, bootstrap } = harness([
+      OrdersHandler,
+      AvroNonNamespacedHandler,
+    ]);
+    subscribe.mockImplementation((_subscription, _cb, groupId) =>
+      Promise.reject(new Error(`${groupId} unavailable`)),
+    );
+
+    await expect(bootstrap()).rejects.toThrow(
+      'Failed to subscribe message handlers:\n' +
+        '- OrdersHandler.onOrderCreated (groupId "orders-service"): orders-service unavailable\n' +
+        '- AvroNonNamespacedHandler.onPaymentSettled (groupId "payments-service"): payments-service unavailable',
+    );
+  });
+
+  it('lists a handler aborted by another handler\'s failure as aborted rather than failed', async () => {
+    const { subscribe, bootstrap } = harness([
+      OrdersHandler,
+      AvroNonNamespacedHandler,
+    ]);
+    subscribe.mockImplementation((_subscription, _cb, groupId) =>
+      Promise.reject(
+        groupId === 'orders-service'
+          ? new Error('broker unavailable')
+          : new SubscriptionAborted(groupId),
+      ),
+    );
+
+    await expect(bootstrap()).rejects.toThrow(
+      'Failed to subscribe message handlers:\n' +
+        '- OrdersHandler.onOrderCreated (groupId "orders-service"): broker unavailable\n' +
+        'Aborted after another handler failed: AvroNonNamespacedHandler.onPaymentSettled (groupId "payments-service")',
+    );
   });
 
   it('rejects bootstrap naming the group id and both handlers when two handlers share a group id', async () => {
@@ -758,44 +794,35 @@ describe('MessageHandlersDiscoveryService', () => {
     expect(subscribedTopics(subscribe)).toEqual([['primary.events']]);
   });
 
-  it('releases the Kafka connections and rethrows when a handler fails to subscribe', async () => {
-    const failure = new Error('broker unavailable');
+  it('releases the Kafka connections once when a handler fails to subscribe', async () => {
     const { subscribe, releaseConnections, bootstrap } = harness([OrdersHandler]);
-    subscribe.mockRejectedValue(failure);
+    subscribe.mockRejectedValue(new Error('broker unavailable'));
 
-    await expect(bootstrap()).rejects.toBe(failure);
+    await expect(bootstrap()).rejects.toThrow('broker unavailable');
 
     expect(releaseConnections).toHaveBeenCalledTimes(1);
   });
 
-  it('waits for in-flight subscriptions to settle before releasing', async () => {
-    const failure = new Error('broker unavailable');
+  it('releases the Kafka connections on the first failure while another subscription is still pending', async () => {
     const { subscribe, releaseConnections, bootstrap } = harness([
       OrdersHandler,
       AvroNonNamespacedHandler,
     ]);
-    let resolveSecond!: () => void;
+    let abortPending!: (reason: unknown) => void;
     subscribe.mockImplementation((_subscription, _cb, groupId) =>
       groupId === 'orders-service'
-        ? Promise.reject(failure)
-        : new Promise<void>((resolve) => {
-            resolveSecond = resolve;
+        ? Promise.reject(new Error('broker unavailable'))
+        : new Promise<void>((_resolve, reject) => {
+            abortPending = reject;
           }),
     );
+    releaseConnections.mockImplementation(async () =>
+      abortPending(new SubscriptionAborted('payments-service')),
+    );
 
-    const bootstrapPromise = bootstrap();
-
-    for (let tick = 0; tick < 50 && subscribe.mock.calls.length < 2; tick++) {
-      await new Promise((resolve) => setImmediate(resolve));
-    }
-
-    expect(subscribe.mock.calls.length).toBe(2);
-    expect(releaseConnections).not.toHaveBeenCalled();
-
-    resolveSecond();
-
-    await expect(bootstrapPromise).rejects.toBe(failure);
-    expect(releaseConnections).toHaveBeenCalledTimes(1);
+    await expect(bootstrap()).rejects.toThrow(
+      'Aborted after another handler failed: AvroNonNamespacedHandler.onPaymentSettled (groupId "payments-service")',
+    );
   });
 
   it('releases the Kafka connections when bootstrap fails on duplicate group ids', async () => {
@@ -817,22 +844,50 @@ describe('MessageHandlersDiscoveryService', () => {
     expect(releaseConnections).not.toHaveBeenCalled();
   });
 
-  it('rethrows the original bootstrap error when releasing connections also fails', async () => {
-    const subscribeFailure = new Error('broker unavailable');
+  it('logs a release failure after a failed bootstrap', async () => {
     const releaseFailure = new Error('disconnect failed');
     const { subscribe, releaseConnections, bootstrap } = harness([OrdersHandler]);
-    subscribe.mockRejectedValue(subscribeFailure);
+    subscribe.mockRejectedValue(new Error('broker unavailable'));
     releaseConnections.mockRejectedValue(releaseFailure);
     const logError = jest
       .spyOn(Logger.prototype, 'error')
       .mockImplementation(() => undefined);
 
-    await expect(bootstrap()).rejects.toBe(subscribeFailure);
+    await bootstrap().catch(() => undefined);
 
     expect(logError).toHaveBeenCalledWith(
       'Failed to release Kafka connections after a failed bootstrap',
       releaseFailure,
     );
+    logError.mockRestore();
+  });
+
+  it('still fails bootstrap with every subscription failure when releasing connections also fails', async () => {
+    const { subscribe, releaseConnections, bootstrap } = harness([OrdersHandler]);
+    subscribe.mockRejectedValue(new Error('broker unavailable'));
+    releaseConnections.mockRejectedValue(new Error('disconnect failed'));
+    const logError = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+
+    await expect(bootstrap()).rejects.toThrow(
+      'Failed to subscribe message handlers:\n' +
+        '- OrdersHandler.onOrderCreated (groupId "orders-service"): broker unavailable',
+    );
+    logError.mockRestore();
+  });
+
+  it('releases the Kafka connections once when releasing them fails', async () => {
+    const { subscribe, releaseConnections, bootstrap } = harness([OrdersHandler]);
+    subscribe.mockRejectedValue(new Error('broker unavailable'));
+    releaseConnections.mockRejectedValue(new Error('disconnect failed'));
+    const logError = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+
+    await bootstrap().catch(() => undefined);
+
+    expect(releaseConnections).toHaveBeenCalledTimes(1);
     logError.mockRestore();
   });
 });
@@ -1024,5 +1079,17 @@ describe('MessageHandlersDiscoveryService shared groups', () => {
 
     await expect(bootstrap()).rejects.toThrow('group subscribe failed');
     expect(releaseConnections).toHaveBeenCalledTimes(1);
+  });
+
+  it('names every member of a shared group that fails to subscribe', async () => {
+    const { subscribeGroup, bootstrap } = harness([
+      SharedOrdersHandler,
+      SharedRefundsIndexer,
+    ]);
+    subscribeGroup.mockRejectedValue(new Error('group subscribe failed'));
+
+    await expect(bootstrap()).rejects.toThrow(
+      '- SharedOrdersHandler.onOrder, SharedRefundsIndexer.index (groupId "billing"): group subscribe failed',
+    );
   });
 });
