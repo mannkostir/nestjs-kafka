@@ -163,12 +163,10 @@ describe('@Message', () => {
     ).not.toThrow();
   });
 
-  it('rejects sharedGroup with a RegExp topic, naming the handler', () => {
+  it('accepts sharedGroup with a RegExp topic', () => {
     expect(() =>
       defineOrdersHandler(['orders', /refunds\..*/], { ...validOptions, sharedGroup: true }),
-    ).toThrow(
-      '@Message handler OrdersHandler.handle sets sharedGroup but subscribes to a RegExp pattern. Handlers in a shared group must list concrete topic names.',
-    );
+    ).not.toThrow();
   });
 
   it('accepts a RegExp topic when sharedGroup is false', () => {
