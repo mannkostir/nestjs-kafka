@@ -15,7 +15,7 @@ class LateTopicHandler {
   @Message(['shipments.created'], {
     groupId: 'late-topic',
     errorHandling: { type: 'fail' },
-    consumer: { allowAutoTopicCreation: true },
+    consumer: { createMissingTopics: true },
   })
   async handle(message: MessageType): Promise<void> {
     shipped.push(message);
@@ -36,7 +36,7 @@ class StrictTopicHandler {
   @Message(['refunds.created'], {
     groupId: 'strict-topic',
     errorHandling: { type: 'fail' },
-    consumer: { allowAutoTopicCreation: false },
+    consumer: { createMissingTopics: false },
   })
   async handle(_message: MessageType): Promise<void> {}
 }
@@ -46,7 +46,7 @@ class StrictCreditsHandler {
   @Message(['credits.created'], {
     groupId: 'strict-credits',
     errorHandling: { type: 'fail' },
-    consumer: { allowAutoTopicCreation: false },
+    consumer: { createMissingTopics: false },
   })
   async handle(_message: MessageType): Promise<void> {}
 }
@@ -56,7 +56,7 @@ class StrictRebatesHandler {
   @Message(['rebates.created'], {
     groupId: 'strict-rebates',
     errorHandling: { type: 'fail' },
-    consumer: { allowAutoTopicCreation: false },
+    consumer: { createMissingTopics: false },
   })
   async handle(_message: MessageType): Promise<void> {}
 }
@@ -93,7 +93,7 @@ class CreatedDeadLetterHandler {
   @Message(['disputes.created'], {
     groupId: 'created-dead-letter',
     errorHandling: { type: 'dlq' },
-    consumer: { allowAutoTopicCreation: true },
+    consumer: { createMissingTopics: true },
   })
   async handle(_message: MessageType): Promise<void> {}
 }
@@ -182,7 +182,7 @@ describe('topic provisioning', () => {
       }).compile();
 
       await expect(moduleRef.init()).rejects.toThrow(
-        /Topic\(s\) refunds\.created do not exist and allowAutoTopicCreation is false/,
+        /Topic\(s\) refunds\.created do not exist and createMissingTopics is false/,
       );
 
       await expect(
@@ -230,7 +230,7 @@ describe('topic provisioning', () => {
       }).compile();
 
       await expect(moduleRef.init()).rejects.toThrow(
-        /Topic\(s\) returns\.created do not exist and allowAutoTopicCreation is false/,
+        /Topic\(s\) returns\.created do not exist and createMissingTopics is false/,
       );
       expect(await broker.listTopics()).not.toContain('returns.created');
     });
@@ -255,7 +255,7 @@ describe('topic provisioning', () => {
       }).compile();
 
       await expect(moduleRef.init()).rejects.toThrow(
-        /Topic\(s\) chargebacks\.created\.dlq do not exist and allowAutoTopicCreation is false/,
+        /Topic\(s\) chargebacks\.created\.dlq do not exist and createMissingTopics is false/,
       );
       expect(await broker.listTopics()).not.toContain('chargebacks.created.dlq');
     });

@@ -12,7 +12,7 @@ const sharedOptions = {
   groupId: 'shared-patterns',
   sharedGroup: true,
   errorHandling: { type: 'fail' as const },
-  consumer: { fromBeginning: true, allowAutoTopicCreation: true },
+  consumer: { fromBeginning: true, createMissingTopics: true },
 };
 
 const seen: Array<{ handler: string; topic: string; key: string }> = [];
@@ -67,7 +67,7 @@ describe('shared consumer groups with pattern subscriptions', () => {
             kafkaJS: { clientId: 'shared-group-patterns', brokers: broker.brokers },
             'topic.metadata.refresh.interval.ms': 1000,
           },
-          consumerDefaults: { rebalanceTimeout: 20000, sessionTimeout: 10000, allowAutoTopicCreation: true },
+          consumerDefaults: { rebalanceTimeout: 20000, sessionTimeout: 10000, createMissingTopics: true },
         }),
       ],
       providers: [SpecialHandler, OrdersHandler, EuHandler],

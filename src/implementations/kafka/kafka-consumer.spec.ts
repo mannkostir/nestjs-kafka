@@ -770,7 +770,7 @@ describe('KafkaConsumer topic provisioning', () => {
       {
         ...subscription(),
         topicPatterns: ['orders.created', /^audit\..+/],
-        consumer: { allowAutoTopicCreation: true },
+        consumer: { createMissingTopics: true },
       },
       jest.fn(),
       'orders-service',
@@ -807,7 +807,7 @@ describe('KafkaConsumer topic provisioning', () => {
         ...subscription(),
         topicPatterns: ['orders.created', /^audit\..+/],
         errorHandling: { type: 'dlq' as const },
-        consumer: { allowAutoTopicCreation: true },
+        consumer: { createMissingTopics: true },
       },
       jest.fn(),
       'orders-service',
@@ -909,7 +909,7 @@ describe('KafkaConsumer topic provisioning', () => {
     await new KafkaConsumer(kafka, {
       topicProvisioner: topicProvisioner as unknown as KafkaTopicProvisioner,
     }).subscribe(
-      { ...subscription(), consumer: { allowAutoTopicCreation: false } },
+      { ...subscription(), consumer: { createMissingTopics: false } },
       jest.fn(),
       'orders-service',
     );
@@ -928,7 +928,7 @@ describe('KafkaConsumer topic provisioning', () => {
       new KafkaConsumer(kafka, {
         topicProvisioner: topicProvisioner as unknown as KafkaTopicProvisioner,
       }).subscribe(
-        { ...subscription(), consumer: { allowAutoTopicCreation: false } },
+        { ...subscription(), consumer: { createMissingTopics: false } },
         jest.fn(),
         'orders-service',
       ),

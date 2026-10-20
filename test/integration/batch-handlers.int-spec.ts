@@ -87,7 +87,7 @@ class RetryingIndexer {
   @MessageBatch(['batch.retry'], {
     groupId: 'batch-retry',
     errorHandling: { type: 'retry', attempts: 1, backoff: { initialMs: 500 } },
-    consumer: { fromBeginning: true, allowAutoTopicCreation: true },
+    consumer: { fromBeginning: true, createMissingTopics: true },
   })
   async index(batch: ReceivedMessage[]): Promise<void> {
     const target = batch.findIndex(({ message }) => message.key === 'retry-me');

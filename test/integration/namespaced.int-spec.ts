@@ -60,7 +60,7 @@ describe('namespaced round trip', () => {
         KafkaModule.register({
           clientOptions: { kafkaJS: { clientId: 'namespaced', brokers: broker.brokers } },
           namespace: 'dev',
-          consumerDefaults: { allowAutoTopicCreation: true },
+          consumerDefaults: { createMissingTopics: true },
         }),
       ],
       providers: [NamespacedHandler, AuditHandler],

@@ -167,7 +167,7 @@ export class KafkaConsumer<
     const sharedRetryTopics = [...new Set(prepared.flatMap((route) => route.sharedRetryTopics))];
     const requiredTopics = [...new Set(prepared.flatMap((route) => route.requiredTopics))];
 
-    if (config.allowAutoTopicCreation) {
+    if (config.createMissingTopics) {
       await this.topicProvisioner.createMissing(requiredTopics);
     } else {
       await this.topicProvisioner.assertExisting(requiredTopics);

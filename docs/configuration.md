@@ -150,7 +150,7 @@ The same shape is used for module-wide `consumerDefaults` and per-handler `consu
 | Field | Type | Default |
 | --- | --- | --- |
 | `fromBeginning` | `boolean` | `false` |
-| `allowAutoTopicCreation` | `boolean` | `false` |
+| `createMissingTopics` | `boolean` | `false` |
 | `heartbeatInterval` | `number` (ms) | unset — the client applies its own (currently `3000`) |
 | `sessionTimeout` | `number` (ms) | unset — the client applies its own (currently `30000`) |
 | `rebalanceTimeout` | `number` (ms) | unset — the client applies its own (currently `300000`) |
@@ -175,9 +175,10 @@ retry settings the client applies to a consumer, and the only fields the library
 Retrying a failed handler is a separate concern, configured through
 [`errorHandling`](error-handling.md).
 
-`allowAutoTopicCreation` controls [topic provisioning](topics-and-namespacing.md#topic-provisioning):
+`createMissingTopics` controls [topic provisioning](topics-and-namespacing.md#topic-provisioning):
 with `false`, bootstrap fails when a handler's topics, or its DLQ topic, do not exist; with `true`,
-the library creates them.
+the library creates them through the admin API, whatever the broker's `auto.create.topics.enable`
+says. It is unrelated to the producer's [`allowAutoTopicCreation`](#producerconfig).
 
 ## Precedence
 
@@ -212,7 +213,7 @@ KafkaModule.register({
 ```
 
 That handler runs with `fromBeginning: true`, `heartbeatInterval: 10000`,
-`maxRetryTime: 20000`, `initialRetryTime: 300`, and `allowAutoTopicCreation: false`.
+`maxRetryTime: 20000`, `initialRetryTime: 300`, and `createMissingTopics: false`.
 
 ## `ProducerConfig`
 

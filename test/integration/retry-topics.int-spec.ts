@@ -71,7 +71,7 @@ describe('retry topics', () => {
           consumerDefaults: {
             rebalanceTimeout: 20000,
             sessionTimeout: 10000,
-            allowAutoTopicCreation: true,
+            createMissingTopics: true,
           },
         }),
       ],
@@ -182,7 +182,7 @@ describe('retry topic provisioning', () => {
           consumerDefaults: {
             rebalanceTimeout: 20000,
             sessionTimeout: 10000,
-            allowAutoTopicCreation: false,
+            createMissingTopics: false,
           },
         }),
       ],

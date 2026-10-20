@@ -125,18 +125,18 @@ Before each handler's consumer is created, the library lists the broker's topics
 the handler's plain-string topics exist, along with its DLQ topic when it uses
 `errorHandling: { type: 'dlq' }`, and its retry topics and DLQ topic when it uses
 `errorHandling: { type: 'retry' }`. What happens to a missing topic is governed by the handler's
-resolved `allowAutoTopicCreation` (see [Configuration](configuration.md#consumerconfig)). `RegExp`
+resolved `createMissingTopics` (see [Configuration](configuration.md#consumerconfig)). `RegExp`
 subscriptions are never provisioned — a pattern matches whatever topics already exist, or come to
 exist later. The group retry topics of a pattern handler with `retry` are concrete names and are
 provisioned.
 
-With the default `allowAutoTopicCreation: false`, bootstrap fails if any of them is missing:
+With the default `createMissingTopics: false`, bootstrap fails if any of them is missing:
 
 ```
-Topic(s) orders.created do not exist and allowAutoTopicCreation is false. Create them before the application starts, or enable allowAutoTopicCreation.
+Topic(s) orders.created do not exist and createMissingTopics is false. Create them before the application starts, or enable createMissingTopics.
 ```
 
-With `allowAutoTopicCreation: true`, the library creates the missing topics itself through the
+With `createMissingTopics: true`, the library creates the missing topics itself through the
 admin API, using the broker's default partition count and replication factor, with a 30 second
 create timeout. This happens even when the broker has `auto.create.topics.enable=false`, and needs
 Create permission on those topics for the application's Kafka principal. The client's consumer does
@@ -159,7 +159,7 @@ otherwise `<source topic>.dlq` for each plain-string source topic. A handler on 
 with the default destination therefore needs `orders.created.dlq` as well:
 
 ```
-Topic(s) orders.created.dlq do not exist and allowAutoTopicCreation is false. Create them before the application starts, or enable allowAutoTopicCreation.
+Topic(s) orders.created.dlq do not exist and createMissingTopics is false. Create them before the application starts, or enable createMissingTopics.
 ```
 
 A `RegExp` source has no topic name to derive a destination from at bootstrap, so its default
@@ -173,7 +173,7 @@ A `retry` handler's retry topics are checked or created in the same step. A hand
 dead-letter topic `orders.created.dlq`:
 
 ```
-Topic(s) orders.created.orders-service.retry.1, orders.created.orders-service.retry.2, orders.created.dlq do not exist and allowAutoTopicCreation is false. Create them before the application starts, or enable allowAutoTopicCreation.
+Topic(s) orders.created.orders-service.retry.1, orders.created.orders-service.retry.2, orders.created.dlq do not exist and createMissingTopics is false. Create them before the application starts, or enable createMissingTopics.
 ```
 
 A pattern handler with `retry` has its group retry topics checked or created in the same step, so it

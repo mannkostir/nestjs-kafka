@@ -43,8 +43,8 @@ export class KafkaTopicProvisioner {
 
       if (missing.length > 0) {
         throw new Error(
-          `Topic(s) ${missing.join(', ')} do not exist and allowAutoTopicCreation is false. ` +
-          'Create them before the application starts, or enable allowAutoTopicCreation.',
+          `Topic(s) ${missing.join(', ')} do not exist and createMissingTopics is false. ` +
+          'Create them before the application starts, or enable createMissingTopics.',
         );
       }
     });

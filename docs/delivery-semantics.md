@@ -88,8 +88,8 @@ one failed are not reported as failures; they are listed on a final line:
 
 ```
 Failed to subscribe message handlers:
-- OrdersHandler.handle (groupId "orders-service"): Topic(s) orders.created do not exist and allowAutoTopicCreation is false. Create them before the application starts, or enable allowAutoTopicCreation.
-- BillingHandler.onInvoice, BillingHandler.onRefund (groupId "billing"): Topic(s) billing.invoices.dlq, billing.refunds.dlq do not exist and allowAutoTopicCreation is false. Create them before the application starts, or enable allowAutoTopicCreation.
+- OrdersHandler.handle (groupId "orders-service"): Topic(s) orders.created do not exist and createMissingTopics is false. Create them before the application starts, or enable createMissingTopics.
+- BillingHandler.onInvoice, BillingHandler.onRefund (groupId "billing"): Topic(s) billing.invoices.dlq, billing.refunds.dlq do not exist and createMissingTopics is false. Create them before the application starts, or enable createMissingTopics.
 Aborted after another handler failed: PaymentsHandler.handle (groupId "payments")
 ```
 
