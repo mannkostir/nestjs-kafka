@@ -44,7 +44,7 @@ describe('retry on a pattern subscription', () => {
             kafkaJS: { clientId: 'pattern-retry', brokers: broker.brokers },
             'topic.metadata.refresh.interval.ms': 1000,
           },
-          consumerDefaults: { rebalanceTimeout: 20000, sessionTimeout: 10000, allowAutoTopicCreation: true },
+          consumerDefaults: { rebalanceTimeout: 20000, sessionTimeout: 10000, createMissingTopics: true },
         }),
       ],
       providers: [AuditHandler],

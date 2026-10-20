@@ -10,7 +10,7 @@ import { ReceivedMessage } from '../../src/types/received-message.type.js';
 import { startBroker, StartedBroker } from './kafka-broker.js';
 import { eventually, waitFor } from './wait.js';
 
-const sharedConsumer = { fromBeginning: true, allowAutoTopicCreation: true };
+const sharedConsumer = { fromBeginning: true, createMissingTopics: true };
 
 const ordersSeen: Array<{ key: string; topic: string }> = [];
 const refundsSeen: Array<{ key: string; topic: string }> = [];

@@ -12,7 +12,7 @@ export class ResolvedConsumerConfig {
 
   private constructor(
     readonly fromBeginning: boolean,
-    readonly allowAutoTopicCreation: boolean,
+    readonly createMissingTopics: boolean,
     readonly partitionsConsumedConcurrently: number,
     private readonly heartbeatInterval: number | undefined,
     private readonly sessionTimeout: number | undefined,
@@ -34,7 +34,7 @@ export class ResolvedConsumerConfig {
 
     return new ResolvedConsumerConfig(
       overrides.fromBeginning ?? defaults.fromBeginning ?? false,
-      overrides.allowAutoTopicCreation ?? defaults.allowAutoTopicCreation ?? false,
+      overrides.createMissingTopics ?? defaults.createMissingTopics ?? false,
       partitionsConsumedConcurrently,
       overrides.heartbeatInterval ?? defaults.heartbeatInterval,
       overrides.sessionTimeout ?? defaults.sessionTimeout,
@@ -51,7 +51,7 @@ export class ResolvedConsumerConfig {
     return ResolvedConsumerConfig.withoutUndefined({
       groupId,
       fromBeginning: this.fromBeginning,
-      allowAutoTopicCreation: this.allowAutoTopicCreation,
+      allowAutoTopicCreation: this.createMissingTopics,
       heartbeatInterval: this.heartbeatInterval,
       sessionTimeout: this.sessionTimeout,
       rebalanceTimeout: this.rebalanceTimeout,
@@ -97,7 +97,7 @@ export class ResolvedConsumerConfig {
   private options(): Record<string, unknown> {
     return {
       fromBeginning: this.fromBeginning,
-      allowAutoTopicCreation: this.allowAutoTopicCreation,
+      createMissingTopics: this.createMissingTopics,
       partitionsConsumedConcurrently: this.partitionsConsumedConcurrently,
       heartbeatInterval: this.heartbeatInterval,
       sessionTimeout: this.sessionTimeout,
