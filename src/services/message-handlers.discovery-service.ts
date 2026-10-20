@@ -83,6 +83,11 @@ type GroupSubscription = {
 const isObject = (value: unknown): value is object =>
   typeof value === 'object' && value !== null;
 
+const isReleasable = (value: unknown): value is IReleaseConnections =>
+  isObject(value) &&
+  'releaseConnections' in value &&
+  typeof value.releaseConnections === 'function';
+
 @Injectable()
 export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
   private readonly logger = new Logger(MessageHandlersDiscoveryService.name);
@@ -137,7 +142,7 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
     try {
       await Promise.all(subscriptions.map(({ subscribed }) => subscribed));
     } catch {
-      await this.releaseConnections();
+      await this.releaseApplicationConnections();
       const failures = await this.failuresOf(subscriptions);
       this.logger.error('Failed to subscribe message handlers', failures);
       throw failures;
@@ -153,25 +158,23 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
         subscribed: this.subscribeGroup(group),
       }));
     } catch (error) {
-      await this.releaseConnections();
+      if (this.leavesFailureToReporter(error)) {
+        await this.releaseOwnConnections();
+        return [];
+      }
+
+      await this.releaseApplicationConnections();
 
       if (error instanceof UnknownConnectorNames) {
-        return this.reportOnceForTheApplication(error);
+        this.logger.error('Failed to subscribe message handlers', error);
       }
 
       throw error;
     }
   }
 
-  private reportOnceForTheApplication(
-    error: UnknownConnectorNames,
-  ): GroupSubscription[] {
-    if (!this.isApplicationReporter()) {
-      return [];
-    }
-
-    this.logger.error('Failed to subscribe message handlers', error);
-    throw error;
+  private leavesFailureToReporter(error: unknown): boolean {
+    return error instanceof UnknownConnectorNames && !this.isApplicationReporter();
   }
 
   private isApplicationReporter(): boolean {
@@ -229,14 +232,36 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
     return [...this.discoverHandlers(), ...scopedHandlers];
   }
 
-  private async releaseConnections(): Promise<void> {
-    try {
-      await this.connections.releaseConnections();
-    } catch (releaseError) {
-      this.logger.error(
-        'Failed to release Kafka connections after a failed bootstrap',
-        releaseError,
-      );
+  private async releaseOwnConnections(): Promise<void> {
+    await this.release([this.connections]);
+  }
+
+  private async releaseApplicationConnections(): Promise<void> {
+    await this.release(this.applicationConnections());
+  }
+
+  private applicationConnections(): IReleaseConnections[] {
+    const discovered = this.discoveryService
+      .getProviders()
+      .filter((wrapper) => wrapper.token === KAFKA_CONNECTIONS)
+      .map((wrapper): unknown => wrapper.instance)
+      .filter(isReleasable);
+
+    return [...new Set([this.connections, ...discovered])];
+  }
+
+  private async release(connections: IReleaseConnections[]): Promise<void> {
+    const results = await Promise.allSettled(
+      connections.map((connection) => connection.releaseConnections()),
+    );
+
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        this.logger.error(
+          'Failed to release Kafka connections after a failed bootstrap',
+          result.reason,
+        );
+      }
     }
   }
 

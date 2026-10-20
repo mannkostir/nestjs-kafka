@@ -1245,6 +1245,30 @@ describe('MessageHandlersDiscoveryService connector names', () => {
 
     await bootstrap().catch(() => undefined);
 
+    expect(anotherPorts.releaseConnections).toHaveBeenCalled();
+  });
+
+  it('releases the Kafka connections of another connector when a subscription fails', async () => {
+    const anotherPorts = connectorPorts();
+    const { subscribe, bootstrap } = harness([PrimaryHandler], {
+      connectorName: 'primary',
+      imports: [anotherConnector('secondary', anotherPorts)],
+    });
+    subscribe.mockRejectedValue(new Error('broker unavailable'));
+
+    await bootstrap().catch(() => undefined);
+
+    expect(anotherPorts.releaseConnections).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases the Kafka connections of another connector when a handler is on a scoped provider', async () => {
+    const anotherPorts = connectorPorts();
+    const { bootstrap } = harness([RequestScopedAuditHandler], {
+      imports: [anotherConnector('secondary', anotherPorts)],
+    });
+
+    await bootstrap().catch(() => undefined);
+
     expect(anotherPorts.releaseConnections).toHaveBeenCalledTimes(1);
   });
 

@@ -75,8 +75,10 @@ not set it yourself.
 
 Handlers subscribe concurrently. As soon as one subscription fails, the module stops waiting on the
 others: it disconnects every consumer it had already opened — not only the one that failed — and
-the producer, and stops the subscriptions still in progress. No Kafka connection from this module
-is left open.
+the producer, and stops the subscriptions still in progress. It does the same for every other
+`KafkaModule` registered in the application, whether its bootstrap already ran or not, so no Kafka
+connection from any of them is left open. Each connection is released once, however many modules
+fail.
 
 Bootstrap then fails with one error naming every handler that failed and its cause, one line per
 handler, or per shared group with all of its members named. Handlers stopped only because another
@@ -92,7 +94,7 @@ Aborted after another handler failed: PaymentsHandler.handle (groupId "payments"
 A configuration error found before any handler subscribes — a handler naming a `connectorName` no
 module registers, a handler on a scoped provider, a `groupId` shared without `sharedGroup: true`, a
 handler provided more than once — fails bootstrap with its own message instead, and also releases
-every connection.
+every connection of every `KafkaModule` in the application.
 
 Nest's `app.close()` on a context whose `init()` failed rethrows that same error without running
 shutdown hooks (on both Nest 11 and 12), so a host or test that catches the bootstrap error should

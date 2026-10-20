@@ -618,6 +618,48 @@ describe('KafkaModule connector names', () => {
     await moduleRef.close();
   });
 
+  const producerPerModule = () => {
+    const producers: Array<ReturnType<typeof producerStub>> = [];
+    jest.spyOn(KafkaJS.Kafka.prototype, 'producer').mockImplementation(() => {
+      const producer = producerStub();
+      producers.push(producer);
+      return producer as unknown as KafkaJS.Producer;
+    });
+    return producers;
+  };
+
+  const bootstrapTwoConnectors = (handlers: Array<new () => object>) =>
+    Test.createTestingModule({
+      imports: [
+        KafkaModule.register({ clientOptions, connectorName: 'analytics' }),
+        KafkaModule.register({ clientOptions, connectorName: 'billing' }),
+      ],
+      providers: handlers,
+    })
+      .compile()
+      .then((moduleRef) => moduleRef.init());
+
+  it('disconnects the producer of every module once when a handler names an unknown connector', async () => {
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const producers = producerPerModule();
+
+    await bootstrapTwoConnectors([ClicksHandler, MistypedClicksHandler]).catch(() => undefined);
+
+    expect(producers.map((producer) => producer.disconnect.mock.calls.length)).toEqual([1, 1]);
+  });
+
+  it('disconnects the producer of every module once when a subscription fails', async () => {
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    jest
+      .spyOn(KafkaConsumer.prototype, 'subscribe')
+      .mockRejectedValue(new Error('broker unavailable'));
+    const producers = producerPerModule();
+
+    await bootstrapTwoConnectors([ClicksHandler, InvoicesHandler]).catch(() => undefined);
+
+    expect(producers.map((producer) => producer.disconnect.mock.calls.length)).toEqual([1, 1]);
+  });
+
   it('bootstraps every named connector when modules are identified by deep hash', async () => {
     const moduleRef = await bootstrapWith(
       [
