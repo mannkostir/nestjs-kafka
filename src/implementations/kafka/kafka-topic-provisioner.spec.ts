@@ -191,7 +191,7 @@ describe('KafkaTopicProvisioner.assertExisting', () => {
         'payments.created',
       ]),
     ).rejects.toThrow(
-      /Topic\(s\) payments\.created do not exist and allowAutoTopicCreation is false/,
+      /Topic\(s\) payments\.created do not exist and createMissingTopics is false/,
     );
   });
 

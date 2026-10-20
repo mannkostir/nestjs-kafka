@@ -12,10 +12,10 @@ describe('ResolvedConsumerConfig', () => {
     });
   });
 
-  it('does not allow automatic topic creation unless opted in', () => {
+  it('does not create missing topics unless opted in', () => {
     const config = ResolvedConsumerConfig.resolve({ fromBeginning: true }, { sessionTimeout: 45000 });
 
-    expect(config.allowAutoTopicCreation).toBe(false);
+    expect(config.createMissingTopics).toBe(false);
   });
 
   it('omits unset fields from the client config', () => {
@@ -33,7 +33,7 @@ describe('ResolvedConsumerConfig', () => {
   it('lets module defaults beat built-in defaults', () => {
     const config = ResolvedConsumerConfig.resolve(undefined, {
       fromBeginning: true,
-      allowAutoTopicCreation: false,
+      createMissingTopics: false,
       heartbeatInterval: 3000,
       sessionTimeout: 45000,
       rebalanceTimeout: 60000,
@@ -54,14 +54,14 @@ describe('ResolvedConsumerConfig', () => {
     const config = ResolvedConsumerConfig.resolve(
       {
         fromBeginning: false,
-        allowAutoTopicCreation: true,
+        createMissingTopics: true,
         heartbeatInterval: 1000,
         sessionTimeout: 10000,
         rebalanceTimeout: 20000,
       },
       {
         fromBeginning: true,
-        allowAutoTopicCreation: false,
+        createMissingTopics: false,
         heartbeatInterval: 3000,
         sessionTimeout: 45000,
         rebalanceTimeout: 60000,
@@ -79,13 +79,13 @@ describe('ResolvedConsumerConfig', () => {
     });
   });
 
-  it('exposes the resolved fromBeginning and allowAutoTopicCreation', () => {
+  it('exposes the resolved fromBeginning and createMissingTopics', () => {
     const config = ResolvedConsumerConfig.resolve(
       { fromBeginning: true },
-      { allowAutoTopicCreation: false },
+      { createMissingTopics: false },
     );
 
-    expect([config.fromBeginning, config.allowAutoTopicCreation]).toEqual([true, false]);
+    expect([config.fromBeginning, config.createMissingTopics]).toEqual([true, false]);
   });
 
   it('merges retry shallowly with handler fields winning', () => {
@@ -218,6 +218,15 @@ describe('ResolvedConsumerConfig.agreed', () => {
         member('B.y', ResolvedConsumerConfig.resolve()),
       ]),
     ).toThrow('resolve consumer option "retry" differently ({"maxRetryTime":2000} vs {})');
+  });
+
+  it('reports differing topic creation under the host-facing option name', () => {
+    expect(() =>
+      ResolvedConsumerConfig.agreed('billing', [
+        member('A.x', ResolvedConsumerConfig.resolve({ createMissingTopics: true })),
+        member('B.y', ResolvedConsumerConfig.resolve()),
+      ]),
+    ).toThrow('resolve consumer option "createMissingTopics" differently (true vs false)');
   });
 
   it('reports differing concurrency', () => {
