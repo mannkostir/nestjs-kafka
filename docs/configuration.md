@@ -6,7 +6,7 @@
 
 | Option | Type | Required | Description |
 | --- | --- | --- | --- |
-| `clientOptions` | `KafkaJS.CommonConstructorConfig` (`@confluentinc/kafka-javascript`) | yes | Passed straight to `new KafkaJS.Kafka(...)`. KafkaJS-compatible options — `brokers`, `clientId`, `ssl`, `sasl`, and the rest — go under `kafkaJS`: `{ kafkaJS: { brokers, clientId, ssl, sasl } }`. librdkafka properties (e.g. `'socket.keepalive.enable'`) sit alongside `kafkaJS`, outside that block. |
+| `clientOptions` | `KafkaJS.CommonConstructorConfig` (`@confluentinc/kafka-javascript`) | yes | Passed to `new KafkaJS.Kafka(...)`, with a Nest-backed `kafkaJS.logger` added when none is set (see below). KafkaJS-compatible options — `brokers`, `clientId`, `ssl`, `sasl`, and the rest — go under `kafkaJS`: `{ kafkaJS: { brokers, clientId, ssl, sasl } }`. librdkafka properties (e.g. `'socket.keepalive.enable'`) sit alongside `kafkaJS`, outside that block. |
 | `namespace` | `string` | no | Prefixes produced and consumed topics and consumer group ids. See [Topics and namespacing](topics-and-namespacing.md). |
 | `connectorName` | `string` | no | Scopes handler discovery when `KafkaModule` is registered more than once in the same app. See [Registering more than once](#registering-more-than-once). |
 | `schemaRegistry` | `{ url: string }` | no | Enables Avro. Constructs a `SchemaRegistry` against `url`. |
@@ -22,6 +22,13 @@ Every Kafka client the module creates (handler consumers, the producer, and the 
 provision topics and pin start offsets) logs through Nest's `Logger` with the context `KafkaClient`,
 so the client's lines follow the host's Nest log format and log levels. Pass
 `clientOptions.kafkaJS.logger` to route all of them elsewhere.
+
+The logger travels in the client's `kafkaJS` block, which puts every client in KafkaJS
+compatibility mode. When `clientOptions` has no `kafkaJS` block, the admin clients therefore run with
+the compatibility defaults instead of librdkafka's: `socket.timeout.ms` 30000 (librdkafka 60000),
+`socket.connection.setup.timeout.ms` 11000 (30000), `retry.backoff.ms` 300 (100) and
+`retry.backoff.max.ms` 30000 (1000). The producer and the consumers already run in this mode. Set
+any of these as a librdkafka property in `clientOptions` to override it for every client.
 
 `ConsumerProxy` and `ProducerProxy` are the module's only exported providers.
 
