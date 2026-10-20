@@ -18,10 +18,12 @@ async handleOrderCreated(
 
 The full option list is in [Configuration](configuration.md#message-options).
 
-TypeScript checks the decorated method against `MessageHandlerCallback`: it must return a
-`Promise<void>`, its first parameter, if any, must accept a `MessageType`, and its second, if any, a
-`MessageContext`. A method that does not fit, such as a synchronous one, fails to compile at the
-decorator. `@MessageBatch` checks its method against `BatchMessageHandlerCallback` the same way.
+TypeScript checks the decorated method against `MessageHandlerCallback`. It must return a
+`Promise<void>`. Its first parameter, if any, must accept any `MessageType<T>`, including a `null`
+key and a `null` value, so a parameter that narrows `key` to a string or `value` to non-null is
+rejected. Its second parameter, if any, must accept a `MessageContext`. A method that does not fit,
+such as a synchronous one, fails to compile at the decorator. `@Message` returns a typed decorator,
+not a plain `MethodDecorator`, and cannot be assigned to one.
 
 ## Required options
 
