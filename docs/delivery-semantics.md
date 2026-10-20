@@ -73,9 +73,25 @@ not set it yourself.
 
 ## Failed bootstrap
 
-If any handler's subscription fails, the module disconnects every consumer it had already opened —
-not only the one that failed — and the producer, then rethrows the original error, which fails Nest
-application bootstrap. No Kafka connection from this module is left open.
+Handlers subscribe concurrently. As soon as one subscription fails, the module stops waiting on the
+others: it disconnects every consumer it had already opened — not only the one that failed — and
+the producer, and stops the subscriptions still in progress. No Kafka connection from this module
+is left open.
+
+Bootstrap then fails with one error naming every handler that failed and its cause, one line per
+handler, or per shared group with all of its members named. Handlers stopped only because another
+one failed are not reported as failures; they are listed on a final line:
+
+```
+Failed to subscribe message handlers:
+- OrdersHandler.handle (groupId "orders-service"): Topic(s) orders.created do not exist and allowAutoTopicCreation is false. Create them before the application starts, or enable allowAutoTopicCreation.
+- BillingHandler.onInvoice, BillingHandler.onRefund (groupId "billing"): Topic(s) billing.invoices.dlq, billing.refunds.dlq do not exist and allowAutoTopicCreation is false. Create them before the application starts, or enable allowAutoTopicCreation.
+Aborted after another handler failed: PaymentsHandler.handle (groupId "payments")
+```
+
+A configuration error found before any handler subscribes — a handler on a scoped provider, a
+`groupId` shared without `sharedGroup: true`, a handler provided more than once — fails bootstrap
+with its own message instead, and also releases every connection.
 
 Nest's `app.close()` on a context whose `init()` failed rethrows that same error without running
 shutdown hooks (on both Nest 11 and 12), so a host or test that catches the bootstrap error should

@@ -18,6 +18,11 @@ import { BatchMessageHandlerCallback } from '../types/batch-message-handler-call
 import { ConsumerSubscriptionParameters } from '../types/consumer-subscription-parameters.type.js';
 import { MessageHandlerCallback } from '../types/message-handler-callback.type.js';
 import { MessageType } from '../types/message.type.js';
+import { SubscriptionAborted } from '../errors/subscription-aborted.js';
+import {
+  HandlerGroup,
+  SubscriptionFailures,
+} from '../errors/subscription-failures.js';
 import { SharedGroupRoute, RouteDelivery } from '../types/shared-group-route.type.js';
 import { IConsumeMessageBatches } from '../interfaces/consume-message-batches.interface.js';
 import { IConsumeSharedGroups } from '../interfaces/consume-shared-groups.interface.js';
@@ -58,6 +63,11 @@ type DiscoveredHandler = {
   metadata: HandlerMetadata;
   kind: HandlerKind;
   handle: HandlerMethod;
+};
+
+type GroupSubscription = {
+  group: DiscoveredHandler[];
+  subscribed: Promise<void>;
 };
 
 const isObject = (value: unknown): value is object =>
@@ -112,22 +122,71 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
+    const subscriptions = await this.startSubscriptions();
+
     try {
-      await this.mapEventsToHandlers();
+      await Promise.all(subscriptions.map(({ subscribed }) => subscribed));
+    } catch {
+      await this.releaseConnections();
+      const failures = await this.failuresOf(subscriptions);
+      this.logger.error('Failed to subscribe message handlers', failures);
+      throw failures;
+    }
+  }
+
+  private async startSubscriptions(): Promise<GroupSubscription[]> {
+    try {
+      return this.subscribableGroups().map((group) => ({
+        group,
+        subscribed: this.subscribeGroup(group),
+      }));
     } catch (error) {
-      try {
-        await this.connections.releaseConnections();
-      } catch (releaseError) {
-        this.logger.error(
-          'Failed to release Kafka connections after a failed bootstrap',
-          releaseError,
-        );
-      }
+      await this.releaseConnections();
       throw error;
     }
   }
 
-  private async mapEventsToHandlers(): Promise<void> {
+  private async releaseConnections(): Promise<void> {
+    try {
+      await this.connections.releaseConnections();
+    } catch (releaseError) {
+      this.logger.error(
+        'Failed to release Kafka connections after a failed bootstrap',
+        releaseError,
+      );
+    }
+  }
+
+  private async failuresOf(
+    subscriptions: GroupSubscription[],
+  ): Promise<SubscriptionFailures> {
+    const results = await Promise.allSettled(
+      subscriptions.map(({ subscribed }) => subscribed),
+    );
+    const rejections = results.flatMap((result, index) =>
+      result.status === 'rejected'
+        ? [{ group: this.handlerGroupOf(subscriptions[index].group), reason: result.reason }]
+        : [],
+    );
+
+    return new SubscriptionFailures(
+      rejections
+        .filter(({ reason }) => !(reason instanceof SubscriptionAborted))
+        .map(({ group, reason }) => ({ ...group, cause: reason })),
+      rejections
+        .filter(({ reason }) => reason instanceof SubscriptionAborted)
+        .map(({ group }) => group),
+    );
+  }
+
+  private handlerGroupOf(group: DiscoveredHandler[]): HandlerGroup {
+    return {
+      handlerNames: group.map((handler) => handler.name),
+      groupId: group[0].metadata[1].groupId,
+    };
+  }
+
+  private subscribableGroups(): DiscoveredHandler[][] {
     this.assertNoScopedHandlers();
 
     const handlers = this.discoverHandlers().filter((handler) =>
@@ -138,17 +197,7 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
 
     groups.forEach((group) => this.assertMayShareGroup(group));
 
-    const results = await Promise.allSettled(
-      groups.map((group) => this.subscribeGroup(group)),
-    );
-    const failure = results.find(
-      (result): result is PromiseRejectedResult => result.status === 'rejected',
-    );
-
-    if (failure) {
-      this.logger.error('Failed to subscribe message handlers', failure.reason);
-      throw failure.reason;
-    }
+    return groups;
   }
 
   private discoverHandlers(): DiscoveredHandler[] {

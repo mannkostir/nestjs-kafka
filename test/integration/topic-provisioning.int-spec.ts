@@ -42,6 +42,26 @@ class StrictTopicHandler {
 }
 
 @Injectable()
+class StrictCreditsHandler {
+  @Message(['credits.created'], {
+    groupId: 'strict-credits',
+    errorHandling: { type: 'fail' },
+    consumer: { allowAutoTopicCreation: false },
+  })
+  async handle(_message: MessageType): Promise<void> {}
+}
+
+@Injectable()
+class StrictRebatesHandler {
+  @Message(['rebates.created'], {
+    groupId: 'strict-rebates',
+    errorHandling: { type: 'fail' },
+    consumer: { allowAutoTopicCreation: false },
+  })
+  async handle(_message: MessageType): Promise<void> {}
+}
+
+@Injectable()
 class HealthyNeighbourHandler {
   @Message(['payouts.created'], {
     groupId: 'healthy-neighbour',
@@ -168,6 +188,28 @@ describe('topic provisioning', () => {
       await expect(
         moduleRef.get(ProducerProxy).send('refunds.created', { key: null, value: {} }),
       ).rejects.toThrow(/connect/);
+    });
+  });
+
+  describe('two handlers that forbid topic creation on distinct missing topics', () => {
+    it('fails bootstrap with one error naming both handlers and both topics', async () => {
+      @Module({
+        imports: [
+          KafkaModule.register({
+            clientOptions: { kafkaJS: { clientId: 'strict-pair', brokers: broker.brokers } },
+          }),
+        ],
+        providers: [StrictCreditsHandler, StrictRebatesHandler],
+      })
+      class StrictPairModule {}
+
+      const moduleRef = await Test.createTestingModule({
+        imports: [StrictPairModule],
+      }).compile();
+
+      await expect(moduleRef.init()).rejects.toThrow(
+        /StrictCreditsHandler\.handle \(groupId "strict-credits"\): Topic\(s\) credits\.created do not exist[\s\S]*StrictRebatesHandler\.handle \(groupId "strict-rebates"\): Topic\(s\) rebates\.created do not exist/,
+      );
     });
   });
 
