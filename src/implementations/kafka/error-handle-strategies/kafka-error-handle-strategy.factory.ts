@@ -9,14 +9,17 @@ import { KafkaErrorHandleFailStrategy } from './kafka-error-handle-fail.strategy
 import { ExponentialBackoff } from './exponential-backoff.js';
 import { RedeliveryBackoff } from './redelivery-backoff.js';
 import { KafkaErrorHandleRetryStrategy } from './kafka-error-handle-retry.strategy.js';
-import { RetryTopics } from './retry-topics.js';
+import { HandlerRetryTopics } from './handler-retry-topics.js';
+import { SourceRetryTopics } from './source-retry-topics.js';
+import { GroupRetryTopics } from './group-retry-topics.js';
 import { RetryDelayGate } from './retry-delay-gate.js';
 import { PausedPartitions } from './paused-partitions.js';
 
 export type ErrorStrategyScope = {
   namespaced: boolean;
   groupId: string;
-  topicPatterns: readonly (string | RegExp)[];
+  concreteTopics: readonly string[];
+  subscribesToPatterns: boolean;
 };
 
 export class KafkaErrorHandleStrategyFactory {
@@ -91,15 +94,11 @@ export class KafkaErrorHandleStrategyFactory {
       );
     }
 
-    if (scope.topicPatterns.some((pattern) => pattern instanceof RegExp)) {
-      throw new Error(
-        'Retry error handling derives retry topics from concrete topic names, ' +
-        'but the handler subscribes to a pattern. ' +
-        "List the topics explicitly, or use { type: 'dlq' } or { type: 'fail' } for pattern handlers.",
-      );
-    }
-
-    const topics = RetryTopics.for(scope.groupId, config.attempts);
+    const topics = new HandlerRetryTopics(
+      SourceRetryTopics.for(scope.groupId, config.attempts),
+      new Set(scope.concreteTopics),
+      scope.subscribesToPatterns ? GroupRetryTopics.for(scope.groupId, config.attempts) : undefined,
+    );
     const schedule = ExponentialBackoff.from(config.backoff ?? {}, 'retry');
     const gate = new RetryDelayGate(topics, new PausedPartitions(new Logger(RetryDelayGate.name)));
     const deadLetters = new KafkaErrorHandleDlqStrategy(

@@ -6,7 +6,7 @@
 
 | Option | Type | Required | Description |
 | --- | --- | --- | --- |
-| `clientOptions` | `KafkaJS.CommonConstructorConfig` (`@confluentinc/kafka-javascript`) | yes | Passed straight to `new KafkaJS.Kafka(...)`. KafkaJS-compatible options — `brokers`, `clientId`, `ssl`, `sasl`, and the rest — go under `kafkaJS`: `{ kafkaJS: { brokers, clientId, ssl, sasl } }`. librdkafka properties (e.g. `'socket.keepalive.enable'`) sit alongside `kafkaJS`, outside that block. |
+| `clientOptions` | `KafkaJS.CommonConstructorConfig` (`@confluentinc/kafka-javascript`) | yes | Passed to `new KafkaJS.Kafka(...)`, with a Nest-backed `kafkaJS.logger` added when none is set (see below). KafkaJS-compatible options — `brokers`, `clientId`, `ssl`, `sasl`, and the rest — go under `kafkaJS`: `{ kafkaJS: { brokers, clientId, ssl, sasl } }`. librdkafka properties (e.g. `'socket.keepalive.enable'`) sit alongside `kafkaJS`, outside that block. |
 | `namespace` | `string` | no | Prefixes produced and consumed topics and consumer group ids. See [Topics and namespacing](topics-and-namespacing.md). |
 | `connectorName` | `string` | no | Scopes handler discovery when `KafkaModule` is registered more than once in the same app. See [Registering more than once](#registering-more-than-once). |
 | `schemaRegistry` | `{ url: string }` | no | Enables Avro. Constructs a `SchemaRegistry` against `url`. |
@@ -24,12 +24,20 @@ saying how to fix it. Leave `namespace` or `connectorName` `undefined` to opt ou
 setting `''`; this matters most when the value comes from an environment variable that may be set
 but empty.
 
-Handler consumers, and the admin client each one uses to pin its start offsets, log through Nest's
-`Logger` with the context `KafkaClient`. The producer and the admin client that provisions topics
-log through the client's own default logger. Pass `clientOptions.kafkaJS.logger` to route all of
-them elsewhere.
+Every Kafka client the module creates (handler consumers, the producer, and the admin clients that
+provision topics and pin start offsets) logs through Nest's `Logger` with the context `KafkaClient`,
+so the client's lines follow the host's Nest log format and log levels. Pass
+`clientOptions.kafkaJS.logger` to route all of them elsewhere.
 
-`ConsumerProxy` and `ProducerProxy` are the module's only exported providers.
+The logger travels in the client's `kafkaJS` block, which puts every client in KafkaJS
+compatibility mode. When `clientOptions` has no `kafkaJS` block, the admin clients therefore run with
+the compatibility defaults instead of librdkafka's: `socket.timeout.ms` 30000 (librdkafka 60000),
+`socket.connection.setup.timeout.ms` 11000 (30000), `retry.backoff.ms` 300 (100) and
+`retry.backoff.max.ms` 30000 (1000). The producer and the consumers already run in this mode. Set
+any of these as a librdkafka property in `clientOptions` to override it for every client.
+
+`ProducerProxy` is the module's only exported provider. Consumers are internal: handlers subscribe
+only through `@Message` and `@MessageBatch`.
 
 There is no `moduleName` option. Handlers are discovered application-wide regardless of which
 module declares `KafkaModule` or which module declares the handler provider.
@@ -146,7 +154,7 @@ The same shape is used for module-wide `consumerDefaults` and per-handler `consu
 | `sessionTimeout` | `number` (ms) | unset — the client applies its own (currently `30000`) |
 | `rebalanceTimeout` | `number` (ms) | unset — the client applies its own (currently `300000`) |
 | `partitionsConsumedConcurrently` | `number` | `1` |
-| `retry` | `KafkaJS.RetryOptions` (`@confluentinc/kafka-javascript`) | see below |
+| `retry` | `ConsumerRetryOptions` | see below |
 
 `heartbeatInterval`, `sessionTimeout`, and `rebalanceTimeout` are left unset unless you set them,
 so the client's own defaults apply. Keep `heartbeatInterval` well below the effective
@@ -160,11 +168,11 @@ processes at the same time. It must be a positive integer; anything else fails b
 error saying so. The effective concurrency is capped by the number of partitions assigned to that
 consumer. See [Ordering and concurrency](delivery-semantics.md#ordering-and-concurrency).
 
-`retry` is `KafkaJS.RetryOptions`: `maxRetryTime`, `initialRetryTime`, `retries`. Defaults are
-`maxRetryTime: 30000` and `initialRetryTime: 300`. `factor`, `multiplier`, and `restartOnFailure`
-are not configurable — the client fixes them (`0.2`, `2`, and always-restart respectively) and
-throws if you set them. `retries` is read only for produce requests; setting it in a handler's or
-module's consumer `retry` has no effect on that consumer.
+`retry` is `ConsumerRetryOptions`, the client's backoff for retrying failed broker requests:
+`maxRetryTime` (ms, default `30000`) and `initialRetryTime` (ms, default `300`). These are the only
+retry settings the client applies to a consumer, and the only fields the library passes on to it.
+Retrying a failed handler is a separate concern, configured through
+[`errorHandling`](error-handling.md).
 
 `allowAutoTopicCreation` controls [topic provisioning](topics-and-namespacing.md#topic-provisioning):
 with `false`, bootstrap fails when a handler's topics, or its DLQ topic, do not exist; with `true`,
@@ -178,8 +186,8 @@ Configuration is resolved field by field, per handler:
 2. the module's `consumerDefaults`
 3. the built-in default from the table above
 
-`retry` is merged shallowly in the same order, so a handler that sets only `retries` keeps the
-default `initialRetryTime` and the rest.
+`retry` is merged shallowly in the same order, so a handler that sets only `maxRetryTime` keeps the
+`initialRetryTime` from `consumerDefaults` or the default.
 
 ```ts
 KafkaModule.register({
@@ -213,8 +221,8 @@ The module's `producer` option.
 | --- | --- | --- |
 | `allowAutoTopicCreation` | `boolean` | `false` |
 | `idempotent` | `boolean` | unset — the client applies its own (currently `false`) |
-| `compression` | `'none' \| 'gzip' \| 'snappy' \| 'lz4' \| 'zstd'` | unset — the client applies its own (currently `none`) |
-| `acks` | `number` | unset — the client applies its own (currently `-1`, all in-sync replicas) |
+| `compression` | `ProducerCompression`: `'none' \| 'gzip' \| 'snappy' \| 'lz4' \| 'zstd'` | unset — the client applies its own (currently `none`) |
+| `acks` | `-1 \| 0 \| 1` | unset — the client applies its own (currently `-1`, all in-sync replicas) |
 
 `allowAutoTopicCreation` maps to librdkafka's `allow.auto.create.topics` on the producer. See
 [Producing](producing.md#topic) for what a send to a missing topic does.

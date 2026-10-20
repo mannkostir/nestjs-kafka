@@ -1,4 +1,4 @@
-import { DynamicModule, Injectable, Logger, Module } from '@nestjs/common';
+import { Abstract, DynamicModule, Inject, Injectable, Logger, Module } from '@nestjs/common';
 import { Test, TestingModuleOptions } from '@nestjs/testing';
 import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
@@ -11,6 +11,7 @@ import { ProducerProxy } from './base/producer-proxy.js';
 import { MessageFormat } from './types/message-format.type.js';
 import { ProducerCompression } from './types/producer-config.type.js';
 import { KafkaMessageParseStrategyFactory } from './implementations/kafka/parse-strategies/kafka-message-parse-strategy.factory.js';
+import { NestKafkaLogger } from './implementations/kafka/nest-kafka-logger.js';
 import { KafkaConsumer } from './implementations/kafka/kafka-consumer.js';
 import { Message } from './decorators/message-handler.decorator.js';
 
@@ -378,6 +379,60 @@ describe('KafkaModule avro', () => {
   });
 });
 
+describe('KafkaModule client logger', () => {
+  const clientLoggerOf = async (imports: DynamicModule) => {
+    const RealKafka = KafkaJS.Kafka;
+    const constructClient = jest
+      .spyOn(KafkaJS, 'Kafka')
+      .mockImplementation((config) => new RealKafka(config));
+
+    try {
+      const moduleRef = await Test.createTestingModule({ imports: [imports] })
+        .overrideProvider(KAFKA_PRODUCER)
+        .useValue(producerStub())
+        .compile();
+      await moduleRef.close();
+
+      return constructClient.mock.calls[0][0]?.kafkaJS?.logger;
+    } finally {
+      constructClient.mockRestore();
+    }
+  };
+
+  const hostLogger: KafkaJS.Logger = {
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+    namespace: jest.fn(),
+    setLogLevel: jest.fn(),
+  };
+
+  it('creates the client with a Nest logger when none is configured', async () => {
+    expect(
+      await clientLoggerOf(KafkaModule.register({ clientOptions })),
+    ).toBeInstanceOf(NestKafkaLogger);
+  });
+
+  it('creates the client with a Nest logger when none is configured asynchronously', async () => {
+    expect(
+      await clientLoggerOf(
+        KafkaModule.registerAsync({ useFactory: () => ({ clientOptions }) }),
+      ),
+    ).toBeInstanceOf(NestKafkaLogger);
+  });
+
+  it('creates the client with the configured logger', async () => {
+    expect(
+      await clientLoggerOf(
+        KafkaModule.register({
+          clientOptions: { kafkaJS: { ...clientOptions.kafkaJS, logger: hostLogger } },
+        }),
+      ),
+    ).toBe(hostLogger);
+  });
+});
+
 describe('KafkaModule connections', () => {
   it('provides the Kafka connections for bootstrap cleanup', async () => {
     const moduleRef = await compileWith({ clientOptions });
@@ -392,6 +447,56 @@ describe('KafkaModule connections', () => {
 
     await moduleRef.close();
     await asyncModuleRef.close();
+  });
+});
+
+const compileHostInjecting = (registration: DynamicModule, token: Abstract<unknown>) => {
+  @Injectable()
+  class HostService {
+    constructor(@Inject(token) readonly injected: unknown) {}
+  }
+
+  return Test.createTestingModule({
+    imports: [registration],
+    providers: [HostService],
+  })
+    .overrideProvider(KAFKA_PRODUCER)
+    .useValue(producerStub())
+    .compile();
+};
+
+describe('KafkaModule exported providers', () => {
+  it('lets a host inject the producer proxy', async () => {
+    const moduleRef = await compileHostInjecting(
+      KafkaModule.register({ clientOptions }),
+      ProducerProxy,
+    );
+
+    await moduleRef.close();
+  });
+
+  it('lets a host inject the producer proxy when registered asynchronously', async () => {
+    const moduleRef = await compileHostInjecting(
+      KafkaModule.registerAsync({ useFactory: () => ({ clientOptions }) }),
+      ProducerProxy,
+    );
+
+    await moduleRef.close();
+  });
+
+  it('keeps the consumer proxy out of a host\'s reach', async () => {
+    await expect(
+      compileHostInjecting(KafkaModule.register({ clientOptions }), ConsumerProxy),
+    ).rejects.toThrow(/argument ConsumerProxy at index \[0\] is available/);
+  });
+
+  it('keeps the consumer proxy out of a host\'s reach when registered asynchronously', async () => {
+    await expect(
+      compileHostInjecting(
+        KafkaModule.registerAsync({ useFactory: () => ({ clientOptions }) }),
+        ConsumerProxy,
+      ),
+    ).rejects.toThrow(/argument ConsumerProxy at index \[0\] is available/);
   });
 });
 

@@ -17,6 +17,7 @@ import { KafkaProducer } from './implementations/kafka/kafka-producer.js';
 import { ProducerProxy } from './base/producer-proxy.js';
 import { TopicNamespacer } from './implementations/kafka/topic-namespacer.js';
 import { toClientProducerConfig } from './implementations/kafka/kafka-producer-config.js';
+import { toKafkaClientConfig } from './implementations/kafka/kafka-client-config.js';
 import type { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
 import { MessageHandlersDiscoveryService } from './services/message-handlers.discovery-service.js';
 import { KafkaConnections } from './implementations/kafka/kafka-connections.js';
@@ -43,7 +44,7 @@ import {
 const kafkaProvider: Provider<KafkaJS.Kafka> = {
   provide: KafkaJS.Kafka,
   useFactory: (options: KafkaJS.CommonConstructorConfig) => {
-    return new KafkaJS.Kafka(options);
+    return new KafkaJS.Kafka(toKafkaClientConfig(options));
   },
   inject: [TRANSPORT_CONFIG],
 };
@@ -216,7 +217,7 @@ export class KafkaModule {
         kafkaConnectionsProvider,
         MessageHandlersDiscoveryService,
       ],
-      exports: [ConsumerProxy, ProducerProxy],
+      exports: [ProducerProxy],
     };
   }
 
@@ -241,7 +242,7 @@ export class KafkaModule {
         kafkaConnectionsProvider,
         MessageHandlersDiscoveryService,
       ],
-      exports: [ConsumerProxy, ProducerProxy],
+      exports: [ProducerProxy],
     };
   }
 

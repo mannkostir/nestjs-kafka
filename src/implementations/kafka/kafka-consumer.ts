@@ -24,6 +24,7 @@ import { BatchMessageHandlerCallback } from '../../types/batch-message-handler-c
 import { KafkaBatchDelivery } from './kafka-batch-delivery.js';
 import { IConsumeSharedGroups } from '../../interfaces/consume-shared-groups.interface.js';
 import { KafkaHandlerRoutes } from './kafka-handler-routes.js';
+import { KafkaSharedGroupDispatcher } from './kafka-shared-group-dispatcher.js';
 import { RouteDelivery, SharedGroupRoute } from '../../types/shared-group-route.type.js';
 import { SubscriptionAborted } from '../../errors/subscription-aborted.js';
 
@@ -47,6 +48,7 @@ type PreparedRoute = {
   topicPatterns: (string | RegExp)[];
   topicNames: string[];
   retryTopics: string[];
+  sharedRetryTopics: string[];
   requiredTopics: string[];
   eachBatch: EachBatchHandler;
 };
@@ -120,12 +122,15 @@ export class KafkaConsumer<
       return prepared[0].eachBatch;
     }
 
-    const routes = KafkaHandlerRoutes.claim(
-      consumerGroupId,
-      prepared.map((route) => ({ topics: [...route.topicPatterns, ...route.retryTopics], route })),
+    const dispatcher = new KafkaSharedGroupDispatcher(
+      KafkaHandlerRoutes.claim(
+        consumerGroupId,
+        prepared.map((route) => ({ topics: [...route.topicPatterns, ...route.retryTopics], route })),
+      ),
+      new Set(prepared.flatMap((route) => route.sharedRetryTopics)),
     );
 
-    return (payload) => routes.handlerFor(payload.batch.topic).eachBatch(payload);
+    return (payload) => dispatcher.dispatch(payload);
   }
 
   private async start(consumerGroupId: string, routes: SharedGroupRoute<TMessage>[]): Promise<void> {
@@ -150,6 +155,7 @@ export class KafkaConsumer<
     const topicPatterns = prepared.flatMap((route) => route.topicPatterns);
     const topicNames = prepared.flatMap((route) => route.topicNames);
     const retryTopics = prepared.flatMap((route) => route.retryTopics);
+    const sharedRetryTopics = [...new Set(prepared.flatMap((route) => route.sharedRetryTopics))];
     const requiredTopics = [...new Set(prepared.flatMap((route) => route.requiredTopics))];
 
     if (config.allowAutoTopicCreation) {
@@ -165,7 +171,7 @@ export class KafkaConsumer<
       config.clientConfig(groupId),
       !config.fromBeginning,
       this.clientLogger,
-      new Set(retryTopics),
+      new Set([...retryTopics, ...sharedRetryTopics]),
     );
     const consumer = member.consumer;
     const consumerSubscription: ConsumerSubscription = {
@@ -178,7 +184,7 @@ export class KafkaConsumer<
     try {
       await consumer.connect();
 
-      const topics: KafkaJS.ConsumerSubscribeTopics = { topics: [...topicPatterns, ...retryTopics] };
+      const topics: KafkaJS.ConsumerSubscribeTopics = { topics: [...topicPatterns, ...retryTopics, ...sharedRetryTopics] };
 
       await consumer.subscribe(topics);
 
@@ -186,7 +192,7 @@ export class KafkaConsumer<
 
       this.assertNotReleased(groupId);
 
-      if (topicNames.length > 0) {
+      if (topicNames.length > 0 || sharedRetryTopics.length > 0) {
         await member.joined(config.joinTimeoutMs(), this.released.signal);
       }
     } catch (error) {
@@ -210,23 +216,24 @@ export class KafkaConsumer<
     const requestedPatterns = subscription.topicPatterns.filter(Boolean);
     requestedPatterns.forEach((pattern) => LibrdkafkaTopicPattern.validate(pattern));
 
-    const errorStrategy = this.errorStrategies.create(subscription.errorHandling, {
-      namespaced,
-      groupId,
-      topicPatterns: requestedPatterns,
-    });
-
     const topicPatterns = requestedPatterns
       .map((pattern) =>
         namespaced ? this.namespacer.applyPattern(pattern) : pattern,
       )
       .map((pattern) => LibrdkafkaTopicPattern.anchor(pattern));
 
-    const config = ResolvedConsumerConfig.resolve(subscription.consumer, this.consumerDefaults);
-
     const topicNames = topicPatterns.filter(
       (pattern): pattern is string => typeof pattern === 'string',
     );
+
+    const errorStrategy = this.errorStrategies.create(subscription.errorHandling, {
+      namespaced,
+      groupId,
+      concreteTopics: topicNames,
+      subscribesToPatterns: topicPatterns.some((pattern) => pattern instanceof RegExp),
+    });
+
+    const config = ResolvedConsumerConfig.resolve(subscription.consumer, this.consumerDefaults);
 
     const retryTopics = errorStrategy.consumedTopics(topicNames);
 
@@ -237,6 +244,7 @@ export class KafkaConsumer<
       topicPatterns,
       topicNames,
       retryTopics,
+      sharedRetryTopics: errorStrategy.sharedConsumedTopics(),
       requiredTopics: [...topicNames, ...retryTopics, ...errorStrategy.destinationTopics(topicNames)],
       eachBatch: this.eachBatchFor(delivery, parseStrategy, errorStrategy, groupId),
     };

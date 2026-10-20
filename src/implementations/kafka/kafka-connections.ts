@@ -6,7 +6,7 @@ import { KafkaProducer } from './kafka-producer.js';
 export class KafkaConnections implements IReleaseConnections {
   constructor(
     private readonly consumer: KafkaConsumer<MessageType>,
-    private readonly producer: KafkaProducer<Record<string, unknown>>,
+    private readonly producer: KafkaProducer,
   ) {}
 
   private released?: Promise<void>;

@@ -44,7 +44,7 @@ export function assertValidMessageArguments(
   assertGroupId(handler, options.groupId);
   assertErrorHandling(handler, options.errorHandling);
   assertTopicPatterns(decorator, handler, topicPatterns);
-  assertSharedGroup(handler, options.sharedGroup, topicPatterns);
+  assertSharedGroup(handler, options.sharedGroup);
 }
 
 function assertGroupId(handler: string, groupId: unknown): void {
@@ -88,16 +88,10 @@ function assertTopicPatterns(
 function assertSharedGroup(
   handler: string,
   sharedGroup: unknown,
-  topicPatterns: unknown[],
 ): void {
   if (sharedGroup !== undefined && typeof sharedGroup !== 'boolean') {
     throw new Error(
       `${handler} has an invalid "sharedGroup" option: ${String(sharedGroup)}. Set sharedGroup to true or false, or leave it unset.`,
-    );
-  }
-  if (sharedGroup === true && topicPatterns.some((entry) => entry instanceof RegExp)) {
-    throw new Error(
-      `${handler} sets sharedGroup but subscribes to a RegExp pattern. Handlers in a shared group must list concrete topic names.`,
     );
   }
 }

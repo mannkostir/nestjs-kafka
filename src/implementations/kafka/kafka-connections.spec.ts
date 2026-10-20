@@ -15,7 +15,7 @@ describe('KafkaConnections', () => {
       disconnect: jest.fn(async () => {
         order.push('producer');
       }),
-    } as unknown as KafkaProducer<Record<string, unknown>>;
+    } as unknown as KafkaProducer;
 
     await new KafkaConnections(consumer, producer).releaseConnections();
 
@@ -27,7 +27,7 @@ describe('KafkaConnections', () => {
       disconnectAll: jest.fn().mockResolvedValue(undefined),
     } as unknown as KafkaConsumer<MessageType>;
     const disconnect = jest.fn().mockResolvedValue(undefined);
-    const producer = { disconnect } as unknown as KafkaProducer<Record<string, unknown>>;
+    const producer = { disconnect } as unknown as KafkaProducer;
     const connections = new KafkaConnections(consumer, producer);
 
     await connections.releaseConnections();
@@ -41,7 +41,7 @@ describe('KafkaConnections', () => {
     const consumer = { disconnectAll } as unknown as KafkaConsumer<MessageType>;
     const producer = {
       disconnect: jest.fn().mockResolvedValue(undefined),
-    } as unknown as KafkaProducer<Record<string, unknown>>;
+    } as unknown as KafkaProducer;
     const connections = new KafkaConnections(consumer, producer);
 
     await Promise.all([
