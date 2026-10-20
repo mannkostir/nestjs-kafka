@@ -72,7 +72,7 @@ export class KafkaConsumer<
   private readonly parseStrategies: KafkaMessageParseStrategyFactory;
   private readonly errorStrategies: KafkaErrorHandleStrategyFactory;
   private readonly subscriptions: ConsumerSubscription[] = [];
-  private readonly released = new AbortController();
+  private readonly stopping = new AbortController();
   private readonly startsInFlight = new Set<Promise<void>>();
 
   constructor(
@@ -146,7 +146,7 @@ export class KafkaConsumer<
 
   private async startConsumer(consumerGroupId: string, routes: SharedGroupRoute<TMessage>[]): Promise<void> {
     const groupId = [this.namespace, consumerGroupId].filter(Boolean).join('-');
-    this.assertNotReleased(groupId);
+    this.assertNotStopping(groupId);
 
     const prepared = routes.map((route) => this.prepare(route, groupId));
     const config = ResolvedConsumerConfig.agreed(consumerGroupId, prepared);
@@ -164,7 +164,7 @@ export class KafkaConsumer<
       await this.topicProvisioner.assertExisting(requiredTopics);
     }
 
-    this.assertNotReleased(groupId);
+    this.assertNotStopping(groupId);
 
     const member = new KafkaGroupMember(
       this.kafka,
@@ -190,10 +190,10 @@ export class KafkaConsumer<
 
       await this.run(consumer, eachBatch, config.partitionsConsumedConcurrently);
 
-      this.assertNotReleased(groupId);
+      this.assertNotStopping(groupId);
 
       if (topicNames.length > 0 || sharedRetryTopics.length > 0) {
-        await member.joined(config.joinTimeoutMs(), this.released.signal);
+        await member.joined(config.joinTimeoutMs(), this.stopping.signal);
       }
     } catch (error) {
       await this.closeFailedSubscription(consumerSubscription);
@@ -201,8 +201,8 @@ export class KafkaConsumer<
     }
   }
 
-  private assertNotReleased(groupId: string): void {
-    if (this.released.signal.aborted) {
+  private assertNotStopping(groupId: string): void {
+    if (this.stopping.signal.aborted) {
       throw new SubscriptionAborted(groupId);
     }
   }
@@ -315,8 +315,15 @@ export class KafkaConsumer<
     await consumer.run({
       eachBatchAutoResolve: false,
       partitionsConsumedConcurrently,
-      eachBatch,
+      eachBatch: (payload) => eachBatch(this.untilStopping(payload)),
     });
+  }
+
+  private untilStopping(payload: KafkaJS.EachBatchPayload): KafkaJS.EachBatchPayload {
+    return {
+      ...payload,
+      isRunning: () => payload.isRunning() && !this.stopping.signal.aborted,
+    };
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -324,7 +331,7 @@ export class KafkaConsumer<
   }
 
   public async disconnectAll(): Promise<void> {
-    this.released.abort();
+    this.stopping.abort();
     await Promise.allSettled([...this.startsInFlight]);
 
     const subscriptions = this.subscriptions.splice(0);

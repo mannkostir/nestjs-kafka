@@ -4,6 +4,7 @@ import { KafkaConsumer } from './kafka-consumer.js';
 import { KafkaTopicProvisioner } from './kafka-topic-provisioner.js';
 import { TopicNamespacer } from './topic-namespacer.js';
 import { MessageFormat } from '../../types/message-format.type.js';
+import { MessageType } from '../../types/message.type.js';
 import { KafkaMessageParseStrategyFactory } from './parse-strategies/kafka-message-parse-strategy.factory.js';
 import { SubscriptionAborted } from '../../errors/subscription-aborted.js';
 
@@ -2064,5 +2065,123 @@ describe('KafkaConsumer shared group', () => {
 
     expect(resume).not.toHaveBeenCalled();
     jest.useRealTimers();
+  });
+});
+
+describe('KafkaConsumer delivery once stopping', () => {
+  const eachBatchOf = (consumer: ReturnType<typeof consumerStub>) =>
+    (consumer.run as jest.Mock).mock.calls[0][0].eachBatch;
+
+  const record = (offset: string, headers: Record<string, string> = {}) => ({
+    key: null,
+    value: Buffer.from(JSON.stringify({ id: offset })),
+    timestamp: '0',
+    size: 0,
+    attributes: 0,
+    offset,
+    headers,
+  });
+
+  const payloadOf = (topic: string, messages: ReturnType<typeof record>[]) => ({
+    batch: { topic, partition: 0, messages },
+    isRunning: () => true,
+    isStale: () => false,
+    resolveOffset: jest.fn(),
+    pause: jest.fn(() => jest.fn()),
+  });
+
+  const threeRecords = () => [record('1'), record('2'), record('3')];
+
+  const stoppingOnFirstCall = (kafkaConsumer: Pick<KafkaConsumer<MessageType>, 'disconnectAll'>) => {
+    const stopped: Promise<void>[] = [];
+    const handler = jest.fn().mockResolvedValue(undefined);
+    handler.mockImplementationOnce(async () => {
+      stopped.push(kafkaConsumer.disconnectAll());
+    });
+    return { handler, stopped: () => Promise.all(stopped) };
+  };
+
+  it('hands a per-message handler no further message of the batch', async () => {
+    const consumer = consumerStub();
+    const kafkaConsumer = new KafkaConsumer(kafkaStub(consumer));
+    const { handler, stopped } = stoppingOnFirstCall(kafkaConsumer);
+    await kafkaConsumer.subscribe(subscription(), handler, 'orders-service');
+
+    await eachBatchOf(consumer)(payloadOf('orders.created', threeRecords()));
+    await stopped();
+
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('resolves only the offset of the message handled before stopping', async () => {
+    const consumer = consumerStub();
+    const kafkaConsumer = new KafkaConsumer(kafkaStub(consumer));
+    const { handler, stopped } = stoppingOnFirstCall(kafkaConsumer);
+    await kafkaConsumer.subscribe(subscription(), handler, 'orders-service');
+    const payload = payloadOf('orders.created', threeRecords());
+
+    await eachBatchOf(consumer)(payload);
+    await stopped();
+
+    expect(payload.resolveOffset.mock.calls).toEqual([['1']]);
+  });
+
+  it('hands a batch handler no later batch', async () => {
+    const consumer = consumerStub();
+    const kafkaConsumer = new KafkaConsumer(kafkaStub(consumer));
+    const { handler, stopped } = stoppingOnFirstCall(kafkaConsumer);
+    await kafkaConsumer.subscribeBatch(subscription(), handler, 'orders-indexer');
+    await eachBatchOf(consumer)(payloadOf('orders.created', threeRecords()));
+
+    await eachBatchOf(consumer)(payloadOf('orders.created', [record('4')]));
+    await stopped();
+
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('resolves nothing of a batch delivered after stopping', async () => {
+    const consumer = consumerStub();
+    const kafkaConsumer = new KafkaConsumer(kafkaStub(consumer));
+    const { handler, stopped } = stoppingOnFirstCall(kafkaConsumer);
+    await kafkaConsumer.subscribeBatch(subscription(), handler, 'orders-indexer');
+    await eachBatchOf(consumer)(payloadOf('orders.created', threeRecords()));
+    const later = payloadOf('orders.created', [record('4')]);
+
+    await eachBatchOf(consumer)(later);
+    await stopped();
+
+    expect(later.resolveOffset).not.toHaveBeenCalled();
+  });
+
+  it('hands a shared group retry record to no further route', async () => {
+    const consumer = consumerStub();
+    const kafkaConsumer = new KafkaConsumer(kafkaStub(consumer), {
+      producer: producerStub(),
+      topicProvisioner: provisionerStub() as unknown as KafkaTopicProvisioner,
+    });
+    const audit = stoppingOnFirstCall(kafkaConsumer);
+    const ledger = jest.fn().mockResolvedValue(undefined);
+    const retryRoute = (handlerName: string, pattern: RegExp, handle: jest.Mock) => ({
+      handlerName,
+      subscription: {
+        topicPatterns: [pattern],
+        messageFormat: MessageFormat.JSON,
+        errorHandling: { type: 'retry' as const, attempts: 1 },
+      },
+      delivery: { kind: 'message' as const, handle },
+    });
+    await kafkaConsumer.subscribeGroup('billing', [
+      retryRoute('A.x', /^audit\..+/, audit.handler),
+      retryRoute('B.y', /^ledger\..+/, ledger),
+    ]);
+    const retried = (offset: string, originalTopic: string) =>
+      record(offset, { 'retry.original.topic': originalTopic, 'retry.due': '1' });
+
+    await eachBatchOf(consumer)(
+      payloadOf('billing.retry.1', [retried('1', 'audit.eu'), retried('2', 'ledger.eu'), retried('3', 'audit.eu')]),
+    );
+    await audit.stopped();
+
+    expect(ledger).not.toHaveBeenCalled();
   });
 });
