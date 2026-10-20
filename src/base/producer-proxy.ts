@@ -1,14 +1,13 @@
 import { IProduceMessages } from "../interfaces/produce-messages.interface.js";
 import { MessageType } from "../types/message.type.js";
+import { ProducedRecord } from "../types/produced-record.type.js";
 import { ProducerSendOptions } from "../types/producer-send-options.type.js";
 
 
-export abstract class ProducerProxy<TValue = unknown>
-  implements IProduceMessages<MessageType<TValue>>
-{
-  public abstract send(
+export abstract class ProducerProxy implements IProduceMessages {
+  public abstract send<TValue>(
     topic: string,
     message: MessageType<TValue>,
     options?: ProducerSendOptions,
-  ): Promise<unknown>;
+  ): Promise<ProducedRecord[]>;
 }

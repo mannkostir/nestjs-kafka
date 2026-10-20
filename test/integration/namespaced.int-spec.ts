@@ -102,6 +102,19 @@ describe('namespaced round trip', () => {
     expect(audited[0].value).toEqual({ userId: 'u-1' });
   });
 
+  it('resolves to the namespaced topic, partition and offset of the record', async () => {
+    const producer = moduleRef.get(ProducerProxy);
+
+    const produced = await producer.send('orders.created', {
+      key: null,
+      value: { orderId: 'o-2' },
+    });
+
+    expect(produced).toEqual([
+      { topic: 'dev.orders.created', partition: expect.any(Number), offset: expect.stringMatching(/^\d+$/) },
+    ]);
+  });
+
   it('writes to the namespaced topic on the broker', async () => {
     const admin = new KafkaJS.Kafka({
       kafkaJS: { clientId: 'namespace-observer', brokers: broker.brokers },

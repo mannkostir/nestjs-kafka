@@ -4,5 +4,5 @@ export type ProducerConfig = {
   allowAutoTopicCreation?: boolean;
   idempotent?: boolean;
   compression?: ProducerCompression;
-  acks?: number;
+  acks?: -1 | 0 | 1;
 };
