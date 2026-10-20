@@ -283,7 +283,7 @@ const DoublyDecoratedHandler = (() => {
       groupId: 'orders-double-batch',
       errorHandling: { type: 'fail' },
     })
-    async handle(_batch: ReceivedMessage[]): Promise<void> {}
+    async handle(_payload: MessageType | ReceivedMessage[]): Promise<void> {}
   }
 
   return DoublyDecoratedHandler;

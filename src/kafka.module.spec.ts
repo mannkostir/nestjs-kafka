@@ -11,6 +11,7 @@ import { ProducerProxy } from './base/producer-proxy.js';
 import { MessageFormat } from './types/message-format.type.js';
 import { ProducerCompression } from './types/producer-config.type.js';
 import { KafkaMessageParseStrategyFactory } from './implementations/kafka/parse-strategies/kafka-message-parse-strategy.factory.js';
+import { NestKafkaLogger } from './implementations/kafka/nest-kafka-logger.js';
 
 jest.mock('@kafkajs/confluent-schema-registry', () => ({
   SchemaRegistry: jest.fn(),
@@ -296,6 +297,60 @@ describe('KafkaModule avro', () => {
     await expect(
       produce({ clientOptions, messageFormat: MessageFormat.AVRO }),
     ).rejects.toThrow('Avro message format requires a Schema Registry.');
+  });
+});
+
+describe('KafkaModule client logger', () => {
+  const clientLoggerOf = async (imports: DynamicModule) => {
+    const RealKafka = KafkaJS.Kafka;
+    const constructClient = jest
+      .spyOn(KafkaJS, 'Kafka')
+      .mockImplementation((config) => new RealKafka(config));
+
+    try {
+      const moduleRef = await Test.createTestingModule({ imports: [imports] })
+        .overrideProvider(KAFKA_PRODUCER)
+        .useValue(producerStub())
+        .compile();
+      await moduleRef.close();
+
+      return constructClient.mock.calls[0][0]?.kafkaJS?.logger;
+    } finally {
+      constructClient.mockRestore();
+    }
+  };
+
+  const hostLogger: KafkaJS.Logger = {
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+    namespace: jest.fn(),
+    setLogLevel: jest.fn(),
+  };
+
+  it('creates the client with a Nest logger when none is configured', async () => {
+    expect(
+      await clientLoggerOf(KafkaModule.register({ clientOptions })),
+    ).toBeInstanceOf(NestKafkaLogger);
+  });
+
+  it('creates the client with a Nest logger when none is configured asynchronously', async () => {
+    expect(
+      await clientLoggerOf(
+        KafkaModule.registerAsync({ useFactory: () => ({ clientOptions }) }),
+      ),
+    ).toBeInstanceOf(NestKafkaLogger);
+  });
+
+  it('creates the client with the configured logger', async () => {
+    expect(
+      await clientLoggerOf(
+        KafkaModule.register({
+          clientOptions: { kafkaJS: { ...clientOptions.kafkaJS, logger: hostLogger } },
+        }),
+      ),
+    ).toBe(hostLogger);
   });
 });
 

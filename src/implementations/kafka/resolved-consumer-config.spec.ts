@@ -90,14 +90,33 @@ describe('ResolvedConsumerConfig', () => {
 
   it('merges retry shallowly with handler fields winning', () => {
     const config = ResolvedConsumerConfig.resolve(
-      { retry: { retries: 2 } },
-      { retry: { retries: 5, initialRetryTime: 100 } },
+      { retry: { maxRetryTime: 2000 } },
+      { retry: { maxRetryTime: 5000, initialRetryTime: 100 } },
     );
 
     expect(config.clientConfig('group').retry).toEqual({
-      retries: 2,
+      maxRetryTime: 2000,
       initialRetryTime: 100,
     });
+  });
+
+  it('passes only the consumer retry fields to the client', () => {
+    const untypedRetry = { maxRetryTime: 2000, retries: 5, factor: 0.5, restartOnFailure: true };
+
+    const config = ResolvedConsumerConfig.resolve({ retry: untypedRetry });
+
+    expect(config.clientConfig('group').retry).toEqual({ maxRetryTime: 2000 });
+  });
+
+  it('ignores fields outside the consumer retry options when comparing shared group members', () => {
+    const untypedRetry = { maxRetryTime: 2000, retries: 5 };
+
+    expect(() =>
+      ResolvedConsumerConfig.agreed('billing', [
+        { handlerName: 'A.x', config: ResolvedConsumerConfig.resolve({ retry: untypedRetry }) },
+        { handlerName: 'B.y', config: ResolvedConsumerConfig.resolve({ retry: { maxRetryTime: 2000 } }) },
+      ]),
+    ).not.toThrow();
   });
 
   it('computes the join timeout from the default rebalance and session timeouts', () => {

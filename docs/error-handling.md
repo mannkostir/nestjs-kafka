@@ -117,6 +117,8 @@ errorHandling: { type: 'retry', attempts: 3, backoff: { initialMs: 1000, multipl
 | `backoff` | `FailBackoffOptions` | see below | same fields and constraints as `fail` |
 | `dlqTopic` | `string` | `<source topic>.dlq` | same as `dlq`'s `topic` |
 
+For a pattern source, `<source topic>` is the topic the pattern matched.
+
 Retry `n` waits `min(initialMs * multiplier ^ (n - 1), maxMs)`. The `backoff` fields and their
 defaults (`300`, `30000`, `2`) are those of the [`fail`](#-type-fail-) table; `backoff: false` is not
 accepted. An invalid value fails application bootstrap with an error naming the field.
@@ -138,8 +140,11 @@ Each hop adds these headers to the record, keeping the original headers:
 | `retry.error.name` | `error.name`, or `Error` |
 | `retry.error.message` | `error.message`, or `Unknown error`; `String(value)` for a thrown value that is not an `Error` |
 
-Routing never reads the headers: the attempt and the original topic come from the name of the topic
-the record was consumed from. `retry.due` sets when the record is consumed.
+For a record first consumed from a concrete topic, routing never reads the headers: the attempt and
+the original topic come from the name of the retry topic. A record first consumed through a `RegExp`
+pattern retries through the group's retry topics, and its original topic comes from
+`retry.original.topic` (see [Retry topics](topics-and-namespacing.md#retry-topics)). `retry.due` sets
+when the record is consumed.
 
 When the last retry fails, the record goes to the dead-letter topic with the `dlq.*` headers described
 under [`dlq`](#-type-dlq-topic-string-), where `dlq.original.topic` is the topic the record was first
@@ -154,7 +159,6 @@ key are processed. Use `fail` when order matters.
 
 Bootstrap fails, with a message saying how to fix it, when the handler:
 
-- subscribes to a `RegExp` pattern, because retry topics are derived from concrete topic names;
 - has an effective group id (the `groupId` joined to the namespace) containing characters other than
   letters, digits, `.`, `_` and `-`;
 - would need a retry topic name longer than 249 characters.

@@ -1,11 +1,13 @@
 import type { KafkaJS } from '@confluentinc/kafka-javascript';
 import type { Logger } from '@nestjs/common';
 import { ExponentialBackoff } from './exponential-backoff.js';
+import { GroupRetryTopics } from './group-retry-topics.js';
+import { HandlerRetryTopics } from './handler-retry-topics.js';
 import { KafkaErrorHandleDlqStrategy } from './kafka-error-handle-dlq.strategy.js';
 import { KafkaErrorHandleRetryStrategy } from './kafka-error-handle-retry.strategy.js';
 import { PausedPartitions } from './paused-partitions.js';
 import { RetryDelayGate } from './retry-delay-gate.js';
-import { RetryTopics } from './retry-topics.js';
+import { SourceRetryTopics } from './source-retry-topics.js';
 
 const stubLogger = () => ({ warn: jest.fn() }) as unknown as Logger;
 
@@ -28,15 +30,21 @@ const payloadOn = (topic: string) =>
 
 const producerStub = () => ({ send: jest.fn().mockResolvedValue([]) }) as unknown as KafkaJS.Producer;
 
+const retryTopics = () =>
+  new HandlerRetryTopics(SourceRetryTopics.for('svc', 2), new Set(['orders.created']), GroupRetryTopics.for('svc', 2));
+
 const strategy = (producer: KafkaJS.Producer, dlqTopic?: string) =>
   new KafkaErrorHandleRetryStrategy(
     producer,
-    RetryTopics.for('svc', 2),
+    retryTopics(),
     ExponentialBackoff.from({ initialMs: 1000 }, 'retry'),
-    new RetryDelayGate(RetryTopics.for('svc', 2), new PausedPartitions(stubLogger()), () => 5000),
+    new RetryDelayGate(retryTopics(), new PausedPartitions(stubLogger()), () => 5000),
     new KafkaErrorHandleDlqStrategy(producer, dlqTopic),
     () => 5000,
   );
+
+const withOriginalTopic = (originalTopic: string) =>
+  ({ ...record(), headers: { trace: 'abc', 'retry.original.topic': originalTopic } }) as unknown as KafkaJS.KafkaMessage;
 
 const sent = (producer: KafkaJS.Producer) => (producer.send as jest.Mock).mock.calls[0][0];
 
@@ -123,10 +131,12 @@ describe('KafkaErrorHandleRetryStrategy', () => {
     ]);
   });
 
-  it('needs its retry topics and dead letter topics to exist', () => {
+  it('needs its retry topics, group retry topics and dead letter topics to exist', () => {
     expect(strategy(producerStub()).destinationTopics(['orders.created'])).toEqual([
       'orders.created.svc.retry.1',
       'orders.created.svc.retry.2',
+      'svc.retry.1',
+      'svc.retry.2',
       'orders.created.dlq',
     ]);
   });
@@ -134,5 +144,27 @@ describe('KafkaErrorHandleRetryStrategy', () => {
   it('holds a retry message that is not due yet', () => {
     const message = { ...record(), headers: { 'retry.due': '9000' } } as KafkaJS.KafkaMessage;
     expect(strategy(producerStub()).holdUntilDue(payloadOn('orders.created.svc.retry.1'), message)).toBe(true);
+  });
+
+  it('republishes a failed pattern source message to the first group retry topic', async () => {
+    const producer = producerStub();
+    await strategy(producer).handle(new Error('boom'), payloadOn('audit.eu'), record());
+    expect(sent(producer).topic).toBe('svc.retry.1');
+  });
+
+  it('carries the pattern source through a group retry hop', async () => {
+    const producer = producerStub();
+    await strategy(producer).handle(new Error('boom'), payloadOn('svc.retry.1'), withOriginalTopic('audit.eu'));
+    expect([sent(producer).topic, sent(producer).messages[0].headers['retry.original.topic']]).toEqual(['svc.retry.2', 'audit.eu']);
+  });
+
+  it('dead-letters a failed last group retry under its original topic', async () => {
+    const producer = producerStub();
+    await strategy(producer).handle(new Error('boom'), payloadOn('svc.retry.2'), withOriginalTopic('audit.eu'));
+    expect(sent(producer).topic).toBe('audit.eu.dlq');
+  });
+
+  it('lists the group retry topics as shared consumed topics', () => {
+    expect(strategy(producerStub()).sharedConsumedTopics()).toEqual(['svc.retry.1', 'svc.retry.2']);
   });
 });
