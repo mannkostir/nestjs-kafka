@@ -27,6 +27,7 @@ import { KafkaHandlerRoutes } from './kafka-handler-routes.js';
 import { KafkaSharedGroupDispatcher } from './kafka-shared-group-dispatcher.js';
 import { RouteDelivery, SharedGroupRoute } from '../../types/shared-group-route.type.js';
 import { SubscriptionAborted } from '../../errors/subscription-aborted.js';
+import { DEFAULT_SHUTDOWN_TIMEOUT_MS, DrainingGroups, settlesWithin } from './shutdown-drain.js';
 
 export interface KafkaConsumerOptions {
   namespace?: string;
@@ -37,6 +38,7 @@ export interface KafkaConsumerOptions {
   topicProvisioner?: KafkaTopicProvisioner;
   clientLogger?: KafkaJS.Logger;
   messageFormat?: MessageFormat;
+  shutdownTimeout?: number;
 }
 
 type EachBatchHandler = (payload: KafkaJS.EachBatchPayload) => Promise<void>;
@@ -54,6 +56,7 @@ type PreparedRoute = {
 };
 
 type ConsumerSubscription = {
+  groupId: string;
   consumer: KafkaJS.Consumer;
   errorStrategies: KafkaErrorHandleStrategy[];
 };
@@ -72,8 +75,9 @@ export class KafkaConsumer<
   private readonly parseStrategies: KafkaMessageParseStrategyFactory;
   private readonly errorStrategies: KafkaErrorHandleStrategyFactory;
   private readonly subscriptions: ConsumerSubscription[] = [];
-  private readonly released = new AbortController();
-  private readonly startsInFlight = new Set<Promise<void>>();
+  private readonly stopping = new AbortController();
+  private readonly startsInFlight = new Map<Promise<void>, string>();
+  private readonly shutdownTimeoutMs: number;
 
   constructor(
     private readonly kafka: KafkaJS.Kafka,
@@ -86,6 +90,7 @@ export class KafkaConsumer<
     this.topicProvisioner = options?.topicProvisioner ?? new KafkaTopicProvisioner(kafka);
     this.clientLogger = options?.clientLogger ?? new NestKafkaLogger();
     this.messageFormat = options?.messageFormat ?? MessageFormat.JSON;
+    this.shutdownTimeoutMs = options?.shutdownTimeout ?? DEFAULT_SHUTDOWN_TIMEOUT_MS;
     this.parseStrategies = new KafkaMessageParseStrategyFactory(options?.schemaRegistry);
     this.errorStrategies = new KafkaErrorHandleStrategyFactory(this.namespacer, options?.producer);
   }
@@ -134,8 +139,9 @@ export class KafkaConsumer<
   }
 
   private async start(consumerGroupId: string, routes: SharedGroupRoute<TMessage>[]): Promise<void> {
-    const starting = this.startConsumer(consumerGroupId, routes);
-    this.startsInFlight.add(starting);
+    const groupId = [this.namespace, consumerGroupId].filter(Boolean).join('-');
+    const starting = this.startConsumer(consumerGroupId, groupId, routes);
+    this.startsInFlight.set(starting, groupId);
 
     try {
       await starting;
@@ -144,9 +150,12 @@ export class KafkaConsumer<
     }
   }
 
-  private async startConsumer(consumerGroupId: string, routes: SharedGroupRoute<TMessage>[]): Promise<void> {
-    const groupId = [this.namespace, consumerGroupId].filter(Boolean).join('-');
-    this.assertNotReleased(groupId);
+  private async startConsumer(
+    consumerGroupId: string,
+    groupId: string,
+    routes: SharedGroupRoute<TMessage>[],
+  ): Promise<void> {
+    this.assertNotStopping(groupId);
 
     const prepared = routes.map((route) => this.prepare(route, groupId));
     const config = ResolvedConsumerConfig.agreed(consumerGroupId, prepared);
@@ -164,7 +173,7 @@ export class KafkaConsumer<
       await this.topicProvisioner.assertExisting(requiredTopics);
     }
 
-    this.assertNotReleased(groupId);
+    this.assertNotStopping(groupId);
 
     const member = new KafkaGroupMember(
       this.kafka,
@@ -175,6 +184,7 @@ export class KafkaConsumer<
     );
     const consumer = member.consumer;
     const consumerSubscription: ConsumerSubscription = {
+      groupId,
       consumer,
       errorStrategies: prepared.map((route) => route.errorStrategy),
     };
@@ -190,10 +200,10 @@ export class KafkaConsumer<
 
       await this.run(consumer, eachBatch, config.partitionsConsumedConcurrently);
 
-      this.assertNotReleased(groupId);
+      this.assertNotStopping(groupId);
 
       if (topicNames.length > 0 || sharedRetryTopics.length > 0) {
-        await member.joined(config.joinTimeoutMs(), this.released.signal);
+        await member.joined(config.joinTimeoutMs(), this.stopping.signal);
       }
     } catch (error) {
       await this.closeFailedSubscription(consumerSubscription);
@@ -201,8 +211,8 @@ export class KafkaConsumer<
     }
   }
 
-  private assertNotReleased(groupId: string): void {
-    if (this.released.signal.aborted) {
+  private assertNotStopping(groupId: string): void {
+    if (this.stopping.signal.aborted) {
       throw new SubscriptionAborted(groupId);
     }
   }
@@ -315,8 +325,15 @@ export class KafkaConsumer<
     await consumer.run({
       eachBatchAutoResolve: false,
       partitionsConsumedConcurrently,
-      eachBatch,
+      eachBatch: (payload) => eachBatch(this.untilStopping(payload)),
     });
+  }
+
+  private untilStopping(payload: KafkaJS.EachBatchPayload): KafkaJS.EachBatchPayload {
+    return {
+      ...payload,
+      isRunning: () => payload.isRunning() && !this.stopping.signal.aborted,
+    };
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -324,15 +341,30 @@ export class KafkaConsumer<
   }
 
   public async disconnectAll(): Promise<void> {
-    this.released.abort();
-    await Promise.allSettled([...this.startsInFlight]);
+    this.stopping.abort();
+
+    const draining = new DrainingGroups();
+
+    if (!(await settlesWithin(this.drain(draining), this.shutdownTimeoutMs))) {
+      this.logger.warn(
+        `Consumer group(s) ${draining.groupIds.join(', ')} still draining after the ${this.shutdownTimeoutMs} ms shutdown timeout; shutting down without waiting for them.`,
+      );
+    }
+  }
+
+  private async drain(draining: DrainingGroups): Promise<void> {
+    await Promise.allSettled(
+      [...this.startsInFlight].map(([starting, groupId]) => draining.track(groupId, starting)),
+    );
 
     const subscriptions = this.subscriptions.splice(0);
 
     this.logger.log(`Disconnecting ${subscriptions.length} consumer(s)...`);
 
     const results = await Promise.allSettled(
-      subscriptions.map((subscription) => KafkaConsumer.close(subscription)),
+      subscriptions.map((subscription) =>
+        draining.track(subscription.groupId, KafkaConsumer.close(subscription)),
+      ),
     );
 
     for (const result of results) {

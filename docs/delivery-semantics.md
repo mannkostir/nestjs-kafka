@@ -17,8 +17,9 @@ the handler, and only then is its offset resolved. A failing message never has i
 by the framework — that decision belongs to the
 [error policy](error-handling.md).
 
-When the consumer is stopping or its assignment has been revoked, the batch stops early and the
-remaining messages are left unresolved for redelivery.
+When the consumer is stopping or its assignment has been revoked, delivery stops after the message
+in flight, or for a batch handler after its current call. The rest of the fetched batch is left
+unresolved and is redelivered to the group.
 
 A [batch handler](handlers.md#batch-handlers) is called once per batch; all of its messages are
 resolved after it returns, and on failure the policy decides per message; see
@@ -109,6 +110,15 @@ every consumer and logs any that fail;
 `beforeApplicationShutdown`, which Nest runs after every destroy hook, then disconnects the
 producer. DLQ publishes and producer calls made from handlers therefore still have a connected
 producer while the consumers stop.
+
+Once shutdown starts, each handler finishes the message it is handling, or a batch handler its
+current call, and receives nothing more; the rest of its fetched batch is redelivered to the group
+on restart. `onModuleDestroy` waits for the consumers to disconnect for at most the module's
+`shutdownTimeout` (default `10000` ms, see [Configuration](configuration.md#module-options)). Past
+it, it logs a warning naming the consumer groups still draining, `Consumer group(s) ... still
+draining after the ... ms shutdown timeout`, and shutdown continues: `beforeApplicationShutdown`
+still disconnects the producer. A handler still running keeps running in the background, and its
+group's disconnect is not awaited.
 
 Call `app.enableShutdownHooks()` in the host application so these run on `SIGTERM` and `SIGINT`.
 

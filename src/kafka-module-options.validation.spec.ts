@@ -117,6 +117,42 @@ describe('validateKafkaModuleOptions', () => {
     );
   });
 
+  it('rejects a negative shutdown timeout and says how to fix it', () => {
+    expect(validating({ clientOptions, shutdownTimeout: -1 })).toThrow(
+      '- "shutdownTimeout" must be a non-negative finite number of milliseconds, got -1. Set shutdownTimeout to how long shutdown waits for consumers to disconnect, or leave it undefined for 10000.',
+    );
+  });
+
+  it('rejects a shutdown timeout that is not a number', () => {
+    expect(validating({ clientOptions, shutdownTimeout: '5000' })).toThrow(
+      '- "shutdownTimeout" must be a non-negative finite number of milliseconds, got string.',
+    );
+  });
+
+  it('rejects a NaN shutdown timeout', () => {
+    expect(validating({ clientOptions, shutdownTimeout: NaN })).toThrow(
+      '- "shutdownTimeout" must be a non-negative finite number of milliseconds, got NaN.',
+    );
+  });
+
+  it('rejects an infinite shutdown timeout', () => {
+    expect(validating({ clientOptions, shutdownTimeout: Infinity })).toThrow(
+      '- "shutdownTimeout" must be a non-negative finite number of milliseconds, got Infinity.',
+    );
+  });
+
+  it('accepts a zero shutdown timeout', () => {
+    const options = { clientOptions, shutdownTimeout: 0 };
+
+    expect(validateKafkaModuleOptions(options)).toBe(options);
+  });
+
+  it('accepts an omitted shutdown timeout', () => {
+    const options = { clientOptions, shutdownTimeout: undefined };
+
+    expect(validateKafkaModuleOptions(options)).toBe(options);
+  });
+
   it('reports every problem in one error', () => {
     expect(validating({ namespace: '', messageFormat: 'Json' })).toThrow(
       [

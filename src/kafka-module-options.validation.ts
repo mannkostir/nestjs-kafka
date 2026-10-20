@@ -1,5 +1,6 @@
 import { KafkaModuleOptions } from './types/kafka-module-options.type.js';
 import { MessageFormat } from './types/message-format.type.js';
+import { DEFAULT_SHUTDOWN_TIMEOUT_MS } from './implementations/kafka/shutdown-drain.js';
 
 type OptionsCheck = (options: Record<string, unknown>) => string | undefined;
 
@@ -59,6 +60,19 @@ const messageFormatCheck: OptionsCheck = (options) =>
     ? undefined
     : `"messageFormat" must be one of ${messageFormats.join(', ')}. Use a MessageFormat value, or leave it undefined for ${MessageFormat.JSON}.`;
 
+const isNonNegativeFiniteNumber = (value: unknown): boolean =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0;
+
+const shutdownTimeoutCheck: OptionsCheck = (options) =>
+  options.shutdownTimeout === undefined ||
+  isNonNegativeFiniteNumber(options.shutdownTimeout)
+    ? undefined
+    : `"shutdownTimeout" must be a non-negative finite number of milliseconds, got ${
+        typeof options.shutdownTimeout === 'number'
+          ? options.shutdownTimeout
+          : kindOf(options.shutdownTimeout)
+      }. Set shutdownTimeout to how long shutdown waits for consumers to disconnect, or leave it undefined for ${DEFAULT_SHUTDOWN_TIMEOUT_MS}.`;
+
 const optionsChecks: readonly OptionsCheck[] = [
   clientOptionsCheck,
   optionalNonEmptyString(
@@ -79,6 +93,7 @@ const optionsChecks: readonly OptionsCheck[] = [
     'Set producer to a ProducerConfig object, or leave it undefined.',
   ),
   messageFormatCheck,
+  shutdownTimeoutCheck,
 ];
 
 export function validateKafkaModuleOptions(

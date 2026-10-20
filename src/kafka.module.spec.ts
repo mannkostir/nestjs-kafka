@@ -601,6 +601,56 @@ describe('KafkaModule message format', () => {
   });
 });
 
+describe('KafkaModule shutdown timeout', () => {
+  const kafkaStartingForever = () =>
+    ({
+      admin: () => ({
+        connect: () => new Promise<void>(() => undefined),
+        disconnect: jest.fn().mockResolvedValue(undefined),
+      }),
+    }) as unknown as KafkaJS.Kafka;
+
+  const closingWithConsumerStarting = async (options: KafkaModuleOptions) => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [KafkaModule.register(options)],
+    })
+      .overrideProvider(KAFKA_PRODUCER)
+      .useValue(producerStub())
+      .overrideProvider(KafkaJS.Kafka)
+      .useValue(kafkaStartingForever())
+      .compile();
+    moduleRef
+      .get(ConsumerProxy)
+      .subscribe(
+        { topicPatterns: ['orders.created'], errorHandling: { type: 'ignore' } },
+        jest.fn(),
+        'orders-service',
+      )
+      .catch(() => undefined);
+    const closed = jest.fn();
+    moduleRef.close().then(closed);
+    return closed;
+  };
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+  });
+
+  it('bounds the consumer shutdown by the configured shutdown timeout', async () => {
+    const closed = await closingWithConsumerStarting({ clientOptions, shutdownTimeout: 50 });
+
+    await jest.advanceTimersByTimeAsync(50);
+
+    expect(closed).toHaveBeenCalled();
+  });
+});
+
 describe('KafkaModule connector names', () => {
   @Injectable()
   class ClicksHandler {
