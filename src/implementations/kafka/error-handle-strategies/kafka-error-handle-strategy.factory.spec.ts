@@ -166,7 +166,7 @@ describe('KafkaErrorHandleStrategyFactory', () => {
 
       expect(
         factory
-          .create({ type: 'retry', attempts: 1, dlqTopic: 'parking.lot' }, scope(true))
+          .create({ type: 'retry', attempts: 1, dlq: { topic: 'parking.lot' } }, scope(true))
           .destinationTopics(['acme.orders.created']),
       ).toContain('acme.parking.lot');
     });
@@ -176,7 +176,7 @@ describe('KafkaErrorHandleStrategyFactory', () => {
 
       expect(
         factory
-          .create({ type: 'retry', attempts: 1, dlqTopic: 'parking.lot' }, scope(false))
+          .create({ type: 'retry', attempts: 1, dlq: { topic: 'parking.lot' } }, scope(false))
           .destinationTopics(['orders.created']),
       ).toContain('parking.lot');
     });
@@ -227,6 +227,28 @@ describe('KafkaErrorHandleStrategyFactory', () => {
       expect(() => factory.create({ type: 'retry', attempts: 0 }, scope(true))).toThrow(
         /Invalid retry attempts/,
       );
+    });
+  });
+
+  describe('options type', () => {
+    it('rejects disabling backoff on retry', () => {
+      // @ts-expect-error
+      const options: MessageErrorHandlingOptions = { type: 'retry', attempts: 1, backoff: false };
+
+      expect(options).toBeDefined();
+    });
+
+    it('rejects a flat dead letter topic on retry', () => {
+      // @ts-expect-error
+      const options: MessageErrorHandlingOptions = { type: 'retry', attempts: 1, dlqTopic: 'x' };
+
+      expect(options).toBeDefined();
+    });
+
+    it('accepts disabling backoff on fail', () => {
+      const options: MessageErrorHandlingOptions = { type: 'fail', backoff: false };
+
+      expect(options).toBeDefined();
     });
   });
 

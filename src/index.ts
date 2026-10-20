@@ -8,7 +8,7 @@ export { ProducerProxy } from "./base/producer-proxy.js";
 export { KafkaMessage, MessageKey, MessageHeaders } from "./types/message.type.js";
 export { MessageOptions } from "./types/message-options.type.js";
 export { MessageFormat } from "./types/message-format.type.js";
-export { MessageErrorHandlingOptions, FailBackoffOptions } from "./types/message-error-handling.type.js";
+export { MessageErrorHandlingOptions, BackoffOptions } from "./types/message-error-handling.type.js";
 export { ConsumerOptions } from "./types/consumer-options.type.js";
 export { ConsumerRetryOptions } from "./types/consumer-retry-options.type.js";
 export { ProducerOptions, ProducerCompression } from "./types/producer-options.type.js";
