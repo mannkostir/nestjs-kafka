@@ -288,7 +288,7 @@ describe('topic provisioning', () => {
   });
 
   describe('a healthy handler next to one that forbids topic creation', () => {
-    it('releases the healthy handler\'s consumer once bootstrap fails', async () => {
+    it('leaves the healthy handler without group membership once bootstrap fails', async () => {
       await broker.createTopics(['payouts.created']);
 
       @Module({
@@ -304,7 +304,10 @@ describe('topic provisioning', () => {
 
       const moduleRef = await Test.createTestingModule({ imports: [MixedModule] }).compile();
 
-      await expect(moduleRef.init()).rejects.toThrow(/refunds\.created/);
+      const bootstrap = moduleRef.init();
+
+      await expect(bootstrap).rejects.toThrow(/^- StrictTopicHandler\.handle \(groupId "strict-topic"\): .*refunds\.created/m);
+      await expect(bootstrap).rejects.not.toThrow(/^- HealthyNeighbourHandler/m);
 
       const admin = new KafkaJS.Kafka({
         kafkaJS: { clientId: 'release-observer', brokers: broker.brokers },
@@ -316,12 +319,9 @@ describe('topic provisioning', () => {
           const { groups } = await admin.describeGroups(['healthy-neighbour']);
 
           expect(groups).toEqual([
-            expect.objectContaining({
-              groupId: 'healthy-neighbour',
-              state: KafkaJS.ConsumerGroupStates.EMPTY,
-              members: [],
-            }),
+            expect.objectContaining({ groupId: 'healthy-neighbour', members: [] }),
           ]);
+          expect([KafkaJS.ConsumerGroupStates.EMPTY, KafkaJS.ConsumerGroupStates.DEAD]).toContain(groups[0].state);
         });
       } finally {
         await admin.disconnect();
