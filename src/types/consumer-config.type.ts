@@ -1,9 +1,9 @@
-import type { KafkaJS } from '@confluentinc/kafka-javascript';
+import { ConsumerRetryOptions } from './consumer-retry-options.type.js';
 
 export type ConsumerConfig = {
   fromBeginning?: boolean;
   heartbeatInterval?: number;
-  retry?: KafkaJS.RetryOptions;
+  retry?: ConsumerRetryOptions;
   allowAutoTopicCreation?: boolean;
   sessionTimeout?: number;
   rebalanceTimeout?: number;
