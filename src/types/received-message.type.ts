@@ -1,7 +1,7 @@
 import { MessageContext } from "./message-context.type.js";
-import { MessageType } from "./message.type.js";
+import { KafkaMessage } from "./message.type.js";
 
-export type ReceivedMessage<TMessage extends MessageType = MessageType> = {
-  message: TMessage;
+export type ReceivedMessage<TValue = unknown> = {
+  message: KafkaMessage<TValue>;
   context: MessageContext;
 };

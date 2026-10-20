@@ -4,7 +4,7 @@ import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { KafkaModule } from '../../src/kafka.module.js';
 import { Message } from '../../src/decorators/message-handler.decorator.js';
 import { MessageContext } from '../../src/types/message-context.type.js';
-import { MessageType } from '../../src/types/message.type.js';
+import { KafkaMessage } from '../../src/types/message.type.js';
 import { startBroker, StartedBroker } from './kafka-broker.js';
 import { pause, waitFor } from './wait.js';
 
@@ -20,7 +20,7 @@ const seen: Array<{ handler: string; topic: string; key: string }> = [];
 @Injectable()
 class SpecialHandler {
   @Message(['orders.special'], sharedOptions)
-  async handle(message: MessageType, context: MessageContext): Promise<void> {
+  async handle(message: KafkaMessage, context: MessageContext): Promise<void> {
     seen.push({ handler: 'special', topic: context.topic, key: String(message.key) });
   }
 }
@@ -28,7 +28,7 @@ class SpecialHandler {
 @Injectable()
 class OrdersHandler {
   @Message([/^orders\..+/], sharedOptions)
-  async handle(message: MessageType, context: MessageContext): Promise<void> {
+  async handle(message: KafkaMessage, context: MessageContext): Promise<void> {
     seen.push({ handler: 'orders', topic: context.topic, key: String(message.key) });
   }
 }
@@ -36,7 +36,7 @@ class OrdersHandler {
 @Injectable()
 class EuHandler {
   @Message([/^.*(\.eu)$/], sharedOptions)
-  async handle(message: MessageType, context: MessageContext): Promise<void> {
+  async handle(message: KafkaMessage, context: MessageContext): Promise<void> {
     seen.push({ handler: 'eu', topic: context.topic, key: String(message.key) });
   }
 }

@@ -4,7 +4,7 @@ import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { KafkaModule } from '../../src/kafka.module.js';
 import { Message } from '../../src/decorators/message-handler.decorator.js';
 import { ProducerProxy } from '../../src/base/producer-proxy.js';
-import { MessageType } from '../../src/types/message.type.js';
+import { KafkaMessage } from '../../src/types/message.type.js';
 import { MessageFormat } from '../../src/types/message-format.type.js';
 import { startBroker, StartedBroker } from './kafka-broker.js';
 import { waitFor } from './wait.js';
@@ -12,9 +12,9 @@ import { waitFor } from './wait.js';
 type InventoryAdjusted = { sku: string; delta: number };
 type InvoiceIssued = { invoiceId: string };
 
-const adjusted: MessageType<InventoryAdjusted>[] = [];
-const issued: MessageType<InvoiceIssued>[] = [];
-const issuedOnTheWire: MessageType[] = [];
+const adjusted: KafkaMessage<InventoryAdjusted>[] = [];
+const issued: KafkaMessage<InvoiceIssued>[] = [];
+const issuedOnTheWire: KafkaMessage[] = [];
 
 const boundedJoin = { rebalanceTimeout: 20000, sessionTimeout: 10000 };
 
@@ -25,7 +25,7 @@ class InventoryHandler {
     errorHandling: { type: 'fail' },
     consumer: { fromBeginning: true },
   })
-  async handle(message: MessageType<InventoryAdjusted>): Promise<void> {
+  async handle(message: KafkaMessage<InventoryAdjusted>): Promise<void> {
     adjusted.push(message);
   }
 }
@@ -37,7 +37,7 @@ class InvoiceWireObserver {
     errorHandling: { type: 'fail' },
     consumer: { fromBeginning: true },
   })
-  async handle(message: MessageType): Promise<void> {
+  async handle(message: KafkaMessage): Promise<void> {
     issuedOnTheWire.push(message);
   }
 }
@@ -49,7 +49,7 @@ class InvoiceHandler {
     errorHandling: { type: 'fail' },
     consumer: { fromBeginning: true },
   })
-  async handle(message: MessageType<InvoiceIssued>): Promise<void> {
+  async handle(message: KafkaMessage<InvoiceIssued>): Promise<void> {
     issued.push(message);
   }
 }

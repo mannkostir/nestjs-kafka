@@ -3,13 +3,13 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { KafkaModule } from '../../src/kafka.module.js';
 import { Message } from '../../src/decorators/message-handler.decorator.js';
 import { ProducerProxy } from '../../src/base/producer-proxy.js';
-import { MessageType } from '../../src/types/message.type.js';
+import { KafkaMessage } from '../../src/types/message.type.js';
 import { startBroker, StartedBroker } from './kafka-broker.js';
 import { waitFor } from './wait.js';
 
 type InvoiceIssued = { invoiceId: string };
 
-const received: MessageType<InvoiceIssued>[] = [];
+const received: KafkaMessage<InvoiceIssued>[] = [];
 
 @Injectable()
 class InvoiceHandler {
@@ -18,7 +18,7 @@ class InvoiceHandler {
     errorHandling: { type: 'fail' },
     consumer: { fromBeginning: true },
   })
-  async handle(message: MessageType<InvoiceIssued>): Promise<void> {
+  async handle(message: KafkaMessage<InvoiceIssued>): Promise<void> {
     received.push(message);
   }
 }

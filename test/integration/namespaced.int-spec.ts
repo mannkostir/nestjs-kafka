@@ -4,13 +4,13 @@ import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { KafkaModule } from '../../src/kafka.module.js';
 import { Message } from '../../src/decorators/message-handler.decorator.js';
 import { ProducerProxy } from '../../src/base/producer-proxy.js';
-import { MessageType } from '../../src/types/message.type.js';
+import { KafkaMessage } from '../../src/types/message.type.js';
 import { startBroker, StartedBroker } from './kafka-broker.js';
 import { waitFor } from './wait.js';
 
 type OrderCreated = { orderId: string };
 
-const received: MessageType<OrderCreated>[] = [];
+const received: KafkaMessage<OrderCreated>[] = [];
 
 @Injectable()
 class NamespacedHandler {
@@ -19,12 +19,12 @@ class NamespacedHandler {
     errorHandling: { type: 'fail' },
     consumer: { fromBeginning: true },
   })
-  async handle(message: MessageType<OrderCreated>): Promise<void> {
+  async handle(message: KafkaMessage<OrderCreated>): Promise<void> {
     received.push(message);
   }
 }
 
-const audited: MessageType[] = [];
+const audited: KafkaMessage[] = [];
 
 @Injectable()
 class AuditHandler {
@@ -33,7 +33,7 @@ class AuditHandler {
     errorHandling: { type: 'fail' },
     consumer: { fromBeginning: true },
   })
-  async handle(message: MessageType): Promise<void> {
+  async handle(message: KafkaMessage): Promise<void> {
     audited.push(message);
   }
 }

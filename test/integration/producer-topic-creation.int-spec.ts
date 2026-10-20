@@ -3,7 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { KafkaModule } from '../../src/kafka.module.js';
 import { ProducerProxy } from '../../src/base/producer-proxy.js';
-import { ProducerConfig } from '../../src/types/producer-config.type.js';
+import { ProducerOptions } from '../../src/types/producer-options.type.js';
 import { startBroker, StartedBroker } from './kafka-broker.js';
 
 const UNKNOWN_TOPIC_PROPAGATION_MS = 30000;
@@ -11,7 +11,7 @@ const UNKNOWN_TOPIC_PROPAGATION_MS = 30000;
 describe('producer topic creation', () => {
   let broker: StartedBroker;
 
-  const startApp = async (clientId: string, producer?: ProducerConfig): Promise<TestingModule> => {
+  const startApp = async (clientId: string, producer?: ProducerOptions): Promise<TestingModule> => {
     @Module({
       imports: [
         KafkaModule.register({

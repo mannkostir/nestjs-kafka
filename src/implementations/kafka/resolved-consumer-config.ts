@@ -1,5 +1,5 @@
 import type { KafkaJS } from '@confluentinc/kafka-javascript';
-import { ConsumerConfig } from '../../types/consumer-config.type.js';
+import { ConsumerOptions } from '../../types/consumer-options.type.js';
 import { ConsumerRetryOptions } from '../../types/consumer-retry-options.type.js';
 
 type SharedGroupMember = { handlerName: string; config: ResolvedConsumerConfig };
@@ -20,7 +20,7 @@ export class ResolvedConsumerConfig {
     private readonly retry: ConsumerRetryOptions,
   ) {}
 
-  static resolve(handlerConfig?: ConsumerConfig, moduleDefaults?: ConsumerConfig): ResolvedConsumerConfig {
+  static resolve(handlerConfig?: ConsumerOptions, moduleDefaults?: ConsumerOptions): ResolvedConsumerConfig {
     const overrides = handlerConfig ?? {};
     const defaults = moduleDefaults ?? {};
     const partitionsConsumedConcurrently =

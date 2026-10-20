@@ -30,7 +30,7 @@ resolved after it returns, and on failure the policy decides per message; see
 Ordering is guaranteed per partition only. By default a handler's consumer processes one partition
 at a time.
 
-With `partitionsConsumedConcurrently` above `1` (see [`ConsumerConfig`](configuration.md#consumerconfig)),
+With `partitionsConsumedConcurrently` above `1` (see [`ConsumerOptions`](configuration.md#consumeroptions)),
 batches from different partitions run concurrently, up to the number of partitions assigned to the
 consumer. Messages within one partition still reach the handler one at a time, or one batch at a
 time for a batch handler, and in order, and nothing is ordered across partitions. The `fail` policy's backoff pauses only the failing

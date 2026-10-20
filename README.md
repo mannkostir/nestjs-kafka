@@ -87,7 +87,7 @@ Declare a handler on any provider in the application:
 
 ```ts
 import { Injectable, Logger } from '@nestjs/common';
-import { Message, MessageContext, MessageType } from 'nestjs-kafka-connector';
+import { Message, MessageContext, KafkaMessage } from 'nestjs-kafka-connector';
 
 type OrderCreated = { orderId: string; total: number };
 
@@ -100,7 +100,7 @@ export class OrderEventsHandler {
     errorHandling: { type: 'dlq' },
   })
   async handleOrderCreated(
-    message: MessageType<OrderCreated>,
+    message: KafkaMessage<OrderCreated>,
     context: MessageContext,
   ): Promise<void> {
     const order = message.value;

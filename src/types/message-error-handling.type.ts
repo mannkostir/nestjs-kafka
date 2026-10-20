@@ -1,7 +1,7 @@
-export type FailBackoffOptions = { initialMs?: number; maxMs?: number; multiplier?: number };
+export type BackoffOptions = { initialMs?: number; maxMs?: number; multiplier?: number };
 
-export type MessageErrorHandlingConfig =
-    | { type: 'fail'; backoff?: FailBackoffOptions | false }
+export type MessageErrorHandlingOptions =
+    | { type: 'fail'; backoff?: BackoffOptions | false }
     | { type: 'ignore' }
     | { type: 'dlq'; topic?: string }
-    | { type: 'retry'; attempts: number; backoff?: FailBackoffOptions; dlqTopic?: string };
+    | { type: 'retry'; attempts: number; backoff?: BackoffOptions; dlq?: { topic?: string } };

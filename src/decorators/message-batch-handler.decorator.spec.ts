@@ -86,6 +86,17 @@ describe('@MessageBatch', () => {
 });
 
 describe('@MessageBatch handler signature', () => {
+  type OrderCreated = { orderId: string };
+
+  it('accepts an async method taking a batch of typed received messages', () => {
+    class OrdersIndexer {
+      @MessageBatch(['orders'], validOptions)
+      async index(_batch: ReceivedMessage<OrderCreated>[]): Promise<void> {}
+    }
+
+    expect(OrdersIndexer).toBeDefined();
+  });
+
   it('only accepts a method taking the batch', () => {
     class OrdersIndexer {
       // @ts-expect-error

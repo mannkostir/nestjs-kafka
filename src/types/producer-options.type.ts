@@ -1,6 +1,6 @@
 export type ProducerCompression = 'none' | 'gzip' | 'snappy' | 'lz4' | 'zstd';
 
-export type ProducerConfig = {
+export type ProducerOptions = {
   allowAutoTopicCreation?: boolean;
   idempotent?: boolean;
   compression?: ProducerCompression;

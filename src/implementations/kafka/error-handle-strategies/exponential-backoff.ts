@@ -1,4 +1,4 @@
-import type { FailBackoffOptions } from '../../../types/message-error-handling.type.js';
+import type { BackoffOptions } from '../../../types/message-error-handling.type.js';
 
 export type BackoffPolicy = 'fail' | 'retry';
 
@@ -12,7 +12,7 @@ export class ExponentialBackoff {
     private readonly multiplier: number,
   ) {}
 
-  public static from(options: FailBackoffOptions, policy: BackoffPolicy): ExponentialBackoff {
+  public static from(options: BackoffOptions, policy: BackoffPolicy): ExponentialBackoff {
     const initialMs = options.initialMs ?? ExponentialBackoff.DEFAULTS.initialMs;
     const maxMs = options.maxMs ?? ExponentialBackoff.DEFAULTS.maxMs;
     const multiplier = options.multiplier ?? ExponentialBackoff.DEFAULTS.multiplier;

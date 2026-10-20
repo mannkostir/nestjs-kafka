@@ -1,29 +1,29 @@
 import type { KafkaJS } from '@confluentinc/kafka-javascript';
 import { Logger } from '@nestjs/common';
 import { BatchFailure } from '../../errors/batch-failure.js';
-import { BatchMessageHandlerCallback } from '../../types/batch-message-handler-callback.type.js';
-import { MessageType } from '../../types/message.type.js';
+import { MessageBatchHandlerCallback } from '../../types/message-batch-handler-callback.type.js';
+import { KafkaMessage } from '../../types/message.type.js';
 import { ReceivedMessage } from '../../types/received-message.type.js';
 import { KafkaErrorHandleStrategy } from './error-handle-strategies/kafka-error-handle.strategy.js';
-import { KafkaMessage } from './kafka-message.js';
+import { DecodedMessage } from './decoded-message.js';
 import { messageContextOf } from './message-context-of.js';
 import { KafkaMessageParseStrategy } from './parse-strategies/kafka-message-parse.strategy.js';
 
-type CollectedMessage<TMessage extends MessageType> = {
+type CollectedMessage<TValue> = {
   record: KafkaJS.KafkaMessage;
-  received: ReceivedMessage<TMessage>;
+  received: ReceivedMessage<TValue>;
 };
 
 type Remainder = (payload: KafkaJS.EachBatchPayload) => Promise<void>;
 
-type CollectedBatch<TMessage extends MessageType> = {
-  messages: CollectedMessage<TMessage>[];
+type CollectedBatch<TValue> = {
+  messages: CollectedMessage<TValue>[];
   remainder?: Remainder;
 };
 
-export class KafkaBatchDelivery<TMessage extends MessageType> {
+export class KafkaBatchDelivery<TValue> {
   constructor(
-    private readonly handler: BatchMessageHandlerCallback<TMessage>,
+    private readonly handler: MessageBatchHandlerCallback<TValue>,
     private readonly parseStrategy: KafkaMessageParseStrategy,
     private readonly errorStrategy: KafkaErrorHandleStrategy,
     private readonly groupId: string,
@@ -51,8 +51,8 @@ export class KafkaBatchDelivery<TMessage extends MessageType> {
     }
   }
 
-  private async collect(payload: KafkaJS.EachBatchPayload): Promise<CollectedBatch<TMessage>> {
-    const messages: CollectedMessage<TMessage>[] = [];
+  private async collect(payload: KafkaJS.EachBatchPayload): Promise<CollectedBatch<TValue>> {
+    const messages: CollectedMessage<TValue>[] = [];
 
     for (const record of payload.batch.messages) {
       if (!KafkaBatchDelivery.isLive(payload)) {
@@ -73,9 +73,9 @@ export class KafkaBatchDelivery<TMessage extends MessageType> {
     return { messages };
   }
 
-  private async decode(batch: KafkaJS.Batch, record: KafkaJS.KafkaMessage): Promise<ReceivedMessage<TMessage>> {
+  private async decode(batch: KafkaJS.Batch, record: KafkaJS.KafkaMessage): Promise<ReceivedMessage<TValue>> {
     return {
-      message: (await KafkaMessage.from(this.parseStrategy, record)) as TMessage,
+      message: (await DecodedMessage.from(this.parseStrategy, record)) as KafkaMessage<TValue>,
       context: messageContextOf(batch, record),
     };
   }
@@ -84,13 +84,13 @@ export class KafkaBatchDelivery<TMessage extends MessageType> {
     this.errorStrategy.holdUntilDue(payload, record);
   }
 
-  private async invoke(messages: CollectedMessage<TMessage>[]): Promise<void> {
+  private async invoke(messages: CollectedMessage<TValue>[]): Promise<void> {
     if (messages.length > 0) {
       await this.handler(messages.map(({ received }) => received));
     }
   }
 
-  private async fail(error: unknown, payload: KafkaJS.EachBatchPayload, messages: CollectedMessage<TMessage>[]): Promise<void> {
+  private async fail(error: unknown, payload: KafkaJS.EachBatchPayload, messages: CollectedMessage<TValue>[]): Promise<void> {
     if (error instanceof BatchFailure && error.index < messages.length) {
       messages.slice(0, error.index).forEach(({ record }) => payload.resolveOffset(record.offset));
       await this.errorStrategy.handle(error.cause, payload, messages[error.index].record);
@@ -110,7 +110,7 @@ export class KafkaBatchDelivery<TMessage extends MessageType> {
     );
   }
 
-  private async failAll(error: unknown, payload: KafkaJS.EachBatchPayload, messages: CollectedMessage<TMessage>[]): Promise<void> {
+  private async failAll(error: unknown, payload: KafkaJS.EachBatchPayload, messages: CollectedMessage<TValue>[]): Promise<void> {
     for (const { record } of messages) {
       await this.errorStrategy.handle(error, payload, record);
     }

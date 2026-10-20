@@ -4,14 +4,14 @@ import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { KafkaModule } from '../../src/kafka.module.js';
 import { Message } from '../../src/decorators/message-handler.decorator.js';
 import { ProducerProxy } from '../../src/base/producer-proxy.js';
-import { MessageType } from '../../src/types/message.type.js';
+import { KafkaMessage } from '../../src/types/message.type.js';
 import { startBroker, StartedBroker } from './kafka-broker.js';
 import { eventually, waitFor } from './wait.js';
 
 type PaymentCaptured = { paymentId: string };
 
-const captured: MessageType<PaymentCaptured>[] = [];
-const refunded: MessageType<PaymentCaptured>[] = [];
+const captured: KafkaMessage<PaymentCaptured>[] = [];
+const refunded: KafkaMessage<PaymentCaptured>[] = [];
 
 @Injectable()
 class PaymentCapturedHandler {
@@ -19,7 +19,7 @@ class PaymentCapturedHandler {
     groupId: 'payments-resume',
     errorHandling: { type: 'fail' },
   })
-  async handle(message: MessageType<PaymentCaptured>): Promise<void> {
+  async handle(message: KafkaMessage<PaymentCaptured>): Promise<void> {
     captured.push(message);
   }
 }
@@ -30,7 +30,7 @@ class PaymentRefundedHandler {
     groupId: 'payments-zero',
     errorHandling: { type: 'fail' },
   })
-  async handle(message: MessageType<PaymentCaptured>): Promise<void> {
+  async handle(message: KafkaMessage<PaymentCaptured>): Promise<void> {
     refunded.push(message);
   }
 }
@@ -61,7 +61,7 @@ const stopApp = async (moduleRef: TestingModule): Promise<void> => {
   await moduleRef.close();
 };
 
-const valuesOf = (messages: MessageType<PaymentCaptured>[]) =>
+const valuesOf = (messages: KafkaMessage<PaymentCaptured>[]) =>
   messages.map((message) => message.value);
 
 describe('resuming from a committed offset', () => {

@@ -1,6 +1,6 @@
-import { MessageErrorHandlingConfig } from '../types/message-error-handling.type.js';
+import { MessageErrorHandlingOptions } from '../types/message-error-handling.type.js';
 
-const knownErrorHandlingTypes: Record<MessageErrorHandlingConfig['type'], true> = {
+const knownErrorHandlingTypes: Record<MessageErrorHandlingOptions['type'], true> = {
   fail: true,
   ignore: true,
   dlq: true,

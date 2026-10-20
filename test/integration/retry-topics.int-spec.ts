@@ -4,13 +4,13 @@ import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { KafkaModule } from '../../src/kafka.module.js';
 import { Message } from '../../src/decorators/message-handler.decorator.js';
 import { ProducerProxy } from '../../src/base/producer-proxy.js';
-import { MessageType } from '../../src/types/message.type.js';
+import { KafkaMessage } from '../../src/types/message.type.js';
 import { MessageContext } from '../../src/types/message-context.type.js';
 import { startBroker, StartedBroker } from './kafka-broker.js';
 import { waitFor } from './wait.js';
 
 type Delivery = {
-  key: MessageType['key'];
+  key: KafkaMessage['key'];
   topic: string;
   at: number;
   headers: Record<string, string | string[]>;
@@ -27,7 +27,7 @@ class RefundHandler {
     errorHandling: { type: 'retry', attempts: 2, backoff: { initialMs: 1000, multiplier: 2 } },
     consumer: { fromBeginning: true },
   })
-  async handle(message: MessageType, context: MessageContext): Promise<void> {
+  async handle(message: KafkaMessage, context: MessageContext): Promise<void> {
     deliveries.push({
       key: message.key,
       topic: context.topic,
@@ -164,7 +164,7 @@ class InvoiceHandler {
     groupId: 'invoices',
     errorHandling: { type: 'retry', attempts: 1 },
   })
-  async handle(_message: MessageType): Promise<void> {}
+  async handle(_message: KafkaMessage): Promise<void> {}
 }
 
 describe('retry topic provisioning', () => {
@@ -211,7 +211,7 @@ class PayoutHandler {
     groupId: 'payouts',
     errorHandling: { type: 'retry', attempts: 1 },
   })
-  async handle(_message: MessageType, context: MessageContext): Promise<void> {
+  async handle(_message: KafkaMessage, context: MessageContext): Promise<void> {
     payoutTopics.push(context.topic);
   }
 }

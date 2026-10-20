@@ -3,14 +3,14 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { KafkaModule } from '../../src/kafka.module.js';
 import { Message } from '../../src/decorators/message-handler.decorator.js';
 import { ProducerProxy } from '../../src/base/producer-proxy.js';
-import { MessageType } from '../../src/types/message.type.js';
+import { KafkaMessage } from '../../src/types/message.type.js';
 import { MessageContext } from '../../src/types/message-context.type.js';
 import { startBroker, StartedBroker } from './kafka-broker.js';
 import { waitFor } from './wait.js';
 
 type ShipmentDispatched = { shipmentId: string };
 
-const deliveries: { message: MessageType<ShipmentDispatched>; context: MessageContext }[] = [];
+const deliveries: { message: KafkaMessage<ShipmentDispatched>; context: MessageContext }[] = [];
 
 const deliveryOf = (key: string) => deliveries.find(({ message }) => message.key === key);
 
@@ -21,7 +21,7 @@ class ShipmentHandler {
     errorHandling: { type: 'fail' },
     consumer: { fromBeginning: true },
   })
-  async handle(message: MessageType<ShipmentDispatched>, context: MessageContext): Promise<void> {
+  async handle(message: KafkaMessage<ShipmentDispatched>, context: MessageContext): Promise<void> {
     deliveries.push({ message, context });
   }
 }

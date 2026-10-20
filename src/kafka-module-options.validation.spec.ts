@@ -21,6 +21,19 @@ describe('validateKafkaModuleOptions', () => {
     expect(validateKafkaModuleOptions(options)).toBe(options);
   });
 
+  it('accepts a message format given as its string literal', () => {
+    const options: KafkaModuleOptions = { clientOptions, messageFormat: 'avro' };
+
+    expect(validateKafkaModuleOptions(options)).toBe(options);
+  });
+
+  it('rejects a message format literal that is not a known format', () => {
+    // @ts-expect-error
+    const options: KafkaModuleOptions = { clientOptions, messageFormat: 'protobuf' };
+
+    expect(validating(options)).toThrow('"messageFormat" must be one of json, enveloped-json, avro.');
+  });
+
   it('accepts options with only clientOptions', () => {
     const options = { clientOptions };
 
@@ -101,13 +114,13 @@ describe('validateKafkaModuleOptions', () => {
 
   it('rejects consumer defaults that are not an object', () => {
     expect(validating({ clientOptions, consumerDefaults: 'earliest' })).toThrow(
-      '- "consumerDefaults" must be an object. Set consumerDefaults to a ConsumerConfig object, or leave it undefined.',
+      '- "consumerDefaults" must be an object. Set consumerDefaults to a ConsumerOptions object, or leave it undefined.',
     );
   });
 
   it('rejects producer settings that are not an object', () => {
     expect(validating({ clientOptions, producer: true })).toThrow(
-      '- "producer" must be an object. Set producer to a ProducerConfig object, or leave it undefined.',
+      '- "producer" must be an object. Set producer to a ProducerOptions object, or leave it undefined.',
     );
   });
 

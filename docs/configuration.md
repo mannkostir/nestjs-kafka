@@ -10,9 +10,9 @@
 | `namespace` | `string` | no | Prefixes produced and consumed topics and consumer group ids. See [Topics and namespacing](topics-and-namespacing.md). |
 | `connectorName` | `string` | no | Scopes handler discovery when `KafkaModule` is registered more than once in the same app. See [Registering more than once](#registering-more-than-once). |
 | `schemaRegistry` | `{ url: string }` | no | Enables Avro. Constructs a `SchemaRegistry` against `url`. |
-| `consumerDefaults` | `ConsumerConfig` | no | Consumer settings applied to every handler unless overridden per handler. |
-| `producer` | `ProducerConfig` | no | Settings for the module's producer. See [`ProducerConfig`](#producerconfig). |
-| `messageFormat` | `MessageFormat` | no | Default format for every consumer and for the producer. Defaults to `MessageFormat.JSON`. A handler's `@Message({ messageFormat })` and a send's `{ messageFormat }` override it. See [Message formats](message-formats.md). |
+| `consumerDefaults` | `ConsumerOptions` | no | Consumer settings applied to every handler unless overridden per handler. |
+| `producer` | `ProducerOptions` | no | Settings for the module's producer. See [`ProducerOptions`](#produceroptions). |
+| `messageFormat` | `MessageFormat`: `'json' \| 'enveloped-json' \| 'avro'` | no | Default format for every consumer and for the producer. Defaults to `MessageFormat.JSON`. A handler's `@Message({ messageFormat })` and a send's `{ messageFormat }` override it. See [Message formats](message-formats.md). |
 | `shutdownTimeout` | `number` (ms) | no | How long shutdown waits for consumers to disconnect before it continues without them. Defaults to `10000`. See [Shutdown](delivery-semantics.md#shutdown). |
 
 The options are validated once, at module construction, for `register` and for every
@@ -132,9 +132,9 @@ Passing none of the three throws at module construction.
 | Option | Type | Required | Default |
 | --- | --- | --- | --- |
 | `groupId` | `string` | yes | — |
-| `errorHandling` | `MessageErrorHandlingConfig` | yes | — |
+| `errorHandling` | `MessageErrorHandlingOptions` | yes | — |
 | `messageFormat` | `MessageFormat` | no | the module's `messageFormat`, then `MessageFormat.JSON` |
-| `consumer` | `ConsumerConfig` | no | falls back to `consumerDefaults` |
+| `consumer` | `ConsumerOptions` | no | falls back to `consumerDefaults` |
 | `namespaced` | `boolean` | no | `true` |
 | `connectorName` | `string` | no | `undefined` — matches an unnamed module registration |
 | `sharedGroup` | `boolean` | no | `false` — the handler gets its own consumer group |
@@ -143,7 +143,7 @@ Passing none of the three throws at module construction.
 `groupId` unless every handler on that `groupId` sets `sharedGroup: true`;
 see [Handlers](handlers.md#sharing-a-consumer-group).
 
-## `ConsumerConfig`
+## `ConsumerOptions`
 
 The same shape is used for module-wide `consumerDefaults` and per-handler `consumer` overrides.
 
@@ -178,7 +178,7 @@ Retrying a failed handler is a separate concern, configured through
 `createMissingTopics` controls [topic provisioning](topics-and-namespacing.md#topic-provisioning):
 with `false`, bootstrap fails when a handler's topics, or its DLQ topic, do not exist; with `true`,
 the library creates them through the admin API, whatever the broker's `auto.create.topics.enable`
-says. It is unrelated to the producer's [`allowAutoTopicCreation`](#producerconfig).
+says. It is unrelated to the producer's [`allowAutoTopicCreation`](#produceroptions).
 
 ## Precedence
 
@@ -215,7 +215,7 @@ KafkaModule.register({
 That handler runs with `fromBeginning: true`, `heartbeatInterval: 10000`,
 `maxRetryTime: 20000`, `initialRetryTime: 300`, and `createMissingTopics: false`.
 
-## `ProducerConfig`
+## `ProducerOptions`
 
 The module's `producer` option.
 

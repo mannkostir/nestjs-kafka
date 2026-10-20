@@ -1,6 +1,6 @@
 import type { KafkaJS } from '@confluentinc/kafka-javascript';
 import { Logger } from '@nestjs/common';
-import { FailBackoffOptions, MessageErrorHandlingConfig } from '../../../types/message-error-handling.type.js';
+import { BackoffOptions, MessageErrorHandlingOptions } from '../../../types/message-error-handling.type.js';
 import { TopicNamespacer } from '../topic-namespacer.js';
 import { KafkaErrorHandleStrategy } from './kafka-error-handle.strategy.js';
 import { KafkaErrorHandleDlqStrategy } from './kafka-error-handle-dlq.strategy.js';
@@ -31,7 +31,7 @@ export class KafkaErrorHandleStrategyFactory {
     private readonly producer?: KafkaJS.Producer,
   ) {}
 
-  public create(config: MessageErrorHandlingConfig, scope: ErrorStrategyScope): KafkaErrorHandleStrategy {
+  public create(config: MessageErrorHandlingOptions, scope: ErrorStrategyScope): KafkaErrorHandleStrategy {
     if (config.type === 'fail') {
       return KafkaErrorHandleStrategyFactory.createFail(config.backoff);
     }
@@ -64,7 +64,7 @@ export class KafkaErrorHandleStrategyFactory {
   }
 
   private createDlq(
-    config: Extract<MessageErrorHandlingConfig, { type: 'dlq' }>,
+    config: Extract<MessageErrorHandlingOptions, { type: 'dlq' }>,
     scope: ErrorStrategyScope,
   ): KafkaErrorHandleDlqStrategy {
     if (!this.producer) {
@@ -89,7 +89,7 @@ export class KafkaErrorHandleStrategyFactory {
   }
 
   private static createFail(
-    backoff: FailBackoffOptions | false | undefined,
+    backoff: BackoffOptions | false | undefined,
   ): KafkaErrorHandleFailStrategy {
     if (backoff === false) {
       return new KafkaErrorHandleFailStrategy();
@@ -101,7 +101,7 @@ export class KafkaErrorHandleStrategyFactory {
   }
 
   private createRetry(
-    config: Extract<MessageErrorHandlingConfig, { type: 'retry' }>,
+    config: Extract<MessageErrorHandlingOptions, { type: 'retry' }>,
     scope: ErrorStrategyScope,
   ): KafkaErrorHandleRetryStrategy {
     if (!this.producer) {
@@ -122,7 +122,7 @@ export class KafkaErrorHandleStrategyFactory {
     const deadLetters = new KafkaErrorHandleDlqStrategy(
       this.producer,
       publishBackoff,
-      this.namespacedDlqTopic(config.dlqTopic, scope.namespaced),
+      this.namespacedDlqTopic(config.dlq?.topic, scope.namespaced),
     );
 
     return new KafkaErrorHandleRetryStrategy(this.producer, topics, schedule, gate, deadLetters, publishBackoff);

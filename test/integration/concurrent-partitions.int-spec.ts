@@ -3,7 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { KafkaModule } from '../../src/kafka.module.js';
 import { Message } from '../../src/decorators/message-handler.decorator.js';
-import { MessageType } from '../../src/types/message.type.js';
+import { KafkaMessage } from '../../src/types/message.type.js';
 import { MessageContext } from '../../src/types/message-context.type.js';
 import { startBroker, StartedBroker } from './kafka-broker.js';
 import { pause, waitFor } from './wait.js';
@@ -51,7 +51,7 @@ class ConcurrentShipmentHandler {
     errorHandling: { type: 'fail' },
     consumer: { fromBeginning: true, partitionsConsumedConcurrently: 2 },
   })
-  async handle(message: MessageType<ShipmentCreated>, { partition }: MessageContext): Promise<void> {
+  async handle(message: KafkaMessage<ShipmentCreated>, { partition }: MessageContext): Promise<void> {
     await concurrentActivity.handle(partition, message.value?.sequence ?? -1);
   }
 }
@@ -63,7 +63,7 @@ class SequentialShipmentHandler {
     errorHandling: { type: 'fail' },
     consumer: { fromBeginning: true },
   })
-  async handle(message: MessageType<ShipmentCreated>, { partition }: MessageContext): Promise<void> {
+  async handle(message: KafkaMessage<ShipmentCreated>, { partition }: MessageContext): Promise<void> {
     await sequentialActivity.handle(partition, message.value?.sequence ?? -1);
   }
 }

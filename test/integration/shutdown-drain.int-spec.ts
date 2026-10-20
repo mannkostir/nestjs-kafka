@@ -4,7 +4,7 @@ import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { KafkaModule } from '../../src/kafka.module.js';
 import { Message } from '../../src/decorators/message-handler.decorator.js';
 import { ProducerProxy } from '../../src/base/producer-proxy.js';
-import { MessageType } from '../../src/types/message.type.js';
+import { KafkaMessage } from '../../src/types/message.type.js';
 import { startBroker, StartedBroker } from './kafka-broker.js';
 import { eventually, pause, waitFor } from './wait.js';
 
@@ -22,7 +22,7 @@ class OrderPackedHandler {
     groupId: GROUP_ID,
     errorHandling: { type: 'fail' },
   })
-  async handle(message: MessageType<OrderPacked>): Promise<void> {
+  async handle(message: KafkaMessage<OrderPacked>): Promise<void> {
     received.push(message.value?.orderId);
     await gate;
   }

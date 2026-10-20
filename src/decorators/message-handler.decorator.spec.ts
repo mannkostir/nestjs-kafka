@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { MessageContext } from '../types/message-context.type.js';
 import { MessageOptions } from '../types/message-options.type.js';
-import { MessageType } from '../types/message.type.js';
+import { KafkaMessage } from '../types/message.type.js';
 import { Message, MessageHandlerKey } from './message-handler.decorator.js';
 
 type TopicPatterns = (string | RegExp)[];
@@ -191,7 +191,7 @@ describe('@Message handler signature', () => {
   it('accepts an async method taking a typed message and its context', () => {
     class OrdersHandler {
       @Message(['orders'], validOptions)
-      async handle(_message: MessageType<OrderCreated>, _context: MessageContext): Promise<void> {}
+      async handle(_message: KafkaMessage<OrderCreated>, _context: MessageContext): Promise<void> {}
     }
 
     expect(OrdersHandler).toBeDefined();
@@ -201,7 +201,7 @@ describe('@Message handler signature', () => {
     class OrdersHandler {
       // @ts-expect-error
       @Message(['orders'], validOptions)
-      handle(_message: MessageType<OrderCreated>): void {}
+      handle(_message: KafkaMessage<OrderCreated>): void {}
     }
 
     expect(OrdersHandler).toBeDefined();

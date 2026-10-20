@@ -1,6 +1,6 @@
 import { ConsumerRetryOptions } from './consumer-retry-options.type.js';
 
-export type ConsumerConfig = {
+export type ConsumerOptions = {
   fromBeginning?: boolean;
   heartbeatInterval?: number;
   retry?: ConsumerRetryOptions;

@@ -4,7 +4,7 @@ import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { KafkaModule } from '../../src/kafka.module.js';
 import { Message } from '../../src/decorators/message-handler.decorator.js';
 import { ProducerProxy } from '../../src/base/producer-proxy.js';
-import { MessageType } from '../../src/types/message.type.js';
+import { KafkaMessage } from '../../src/types/message.type.js';
 import { MessageContext } from '../../src/types/message-context.type.js';
 import { startBroker, StartedBroker } from './kafka-broker.js';
 import { waitFor } from './wait.js';
@@ -18,7 +18,7 @@ class AuditHandler {
     errorHandling: { type: 'retry', attempts: 2, backoff: { initialMs: 500 } },
     consumer: { fromBeginning: true },
   })
-  async handle(message: MessageType, context: MessageContext): Promise<void> {
+  async handle(message: KafkaMessage, context: MessageContext): Promise<void> {
     deliveries.push({ key: String(message.key), topic: context.topic });
 
     if (message.key === 'always-fails') {

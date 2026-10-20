@@ -4,7 +4,7 @@ import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { KafkaModule } from '../../src/kafka.module.js';
 import { Message } from '../../src/decorators/message-handler.decorator.js';
 import { ProducerProxy } from '../../src/base/producer-proxy.js';
-import { MessageType } from '../../src/types/message.type.js';
+import { KafkaMessage } from '../../src/types/message.type.js';
 import { startBroker, StartedBroker } from './kafka-broker.js';
 import { waitFor } from './wait.js';
 
@@ -15,12 +15,12 @@ class ExplodingHandler {
     errorHandling: { type: 'dlq' },
     consumer: { fromBeginning: true },
   })
-  async handle(_message: MessageType): Promise<void> {
+  async handle(_message: KafkaMessage): Promise<void> {
     throw new Error('handler exploded');
   }
 }
 
-const deadLetters: MessageType[] = [];
+const deadLetters: KafkaMessage[] = [];
 
 @Injectable()
 class DeadLetterReader {
@@ -29,7 +29,7 @@ class DeadLetterReader {
     errorHandling: { type: 'ignore' },
     consumer: { fromBeginning: true },
   })
-  async handle(message: MessageType): Promise<void> {
+  async handle(message: KafkaMessage): Promise<void> {
     deadLetters.push(message);
   }
 }
