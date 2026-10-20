@@ -21,6 +21,19 @@ describe('validateKafkaModuleOptions', () => {
     expect(validateKafkaModuleOptions(options)).toBe(options);
   });
 
+  it('accepts a message format given as its string literal', () => {
+    const options: KafkaModuleOptions = { clientOptions, messageFormat: 'avro' };
+
+    expect(validateKafkaModuleOptions(options)).toBe(options);
+  });
+
+  it('rejects a message format literal that is not a known format', () => {
+    // @ts-expect-error
+    const options: KafkaModuleOptions = { clientOptions, messageFormat: 'protobuf' };
+
+    expect(validating(options)).toThrow('"messageFormat" must be one of json, enveloped-json, avro.');
+  });
+
   it('accepts options with only clientOptions', () => {
     const options = { clientOptions };
 
