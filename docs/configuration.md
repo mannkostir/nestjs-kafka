@@ -13,16 +13,17 @@
 | `consumerDefaults` | `ConsumerConfig` | no | Consumer settings applied to every handler unless overridden per handler. |
 | `producer` | `ProducerConfig` | no | Settings for the module's producer. See [`ProducerConfig`](#producerconfig). |
 | `messageFormat` | `MessageFormat` | no | Default format for every consumer and for the producer. Defaults to `MessageFormat.JSON`. A handler's `@Message({ messageFormat })` and a send's `{ messageFormat }` override it. See [Message formats](message-formats.md). |
+| `shutdownTimeout` | `number` (ms) | no | How long shutdown waits for consumers to disconnect before it continues without them. Defaults to `10000`. See [Shutdown](delivery-semantics.md#shutdown). |
 
 The options are validated once, at module construction, for `register` and for every
 `registerAsync` form (`useFactory`, `useClass`, `useExisting`). `clientOptions` must be an object;
 `namespace` and `connectorName` must be non-empty strings when set; `schemaRegistry` must be an
 object with a non-empty `url` when set; `consumerDefaults` and `producer` must be objects when set;
-`messageFormat` must be a `MessageFormat` value when set. A factory that returns or resolves to
-anything other than an options object fails too. Every problem is reported in one error, each line
-saying how to fix it. Leave `namespace` or `connectorName` `undefined` to opt out of it rather than
-setting `''`; this matters most when the value comes from an environment variable that may be set
-but empty.
+`messageFormat` must be a `MessageFormat` value when set; `shutdownTimeout` must be a non-negative
+finite number when set. A factory that returns or resolves to anything other than an options object
+fails too. Every problem is reported in one error, each line saying how to fix it. Leave `namespace`
+or `connectorName` `undefined` to opt out of it rather than setting `''`; this matters most when the
+value comes from an environment variable that may be set but empty.
 
 Every Kafka client the module creates (handler consumers, the producer, and the admin clients that
 provision topics and pin start offsets) logs through Nest's `Logger` with the context `KafkaClient`,
