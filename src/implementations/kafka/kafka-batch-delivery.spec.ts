@@ -6,6 +6,9 @@ import { KafkaErrorHandleIgnoreStrategy } from './error-handle-strategies/kafka-
 import { KafkaErrorHandleFailStrategy } from './error-handle-strategies/kafka-error-handle-fail.strategy.js';
 import { KafkaErrorHandleDlqStrategy } from './error-handle-strategies/kafka-error-handle-dlq.strategy.js';
 import { KafkaErrorHandleStrategy } from './error-handle-strategies/kafka-error-handle.strategy.js';
+import { PublishFailureBackoff } from './error-handle-strategies/publish-failure-backoff.js';
+import { RedeliveryBackoff } from './error-handle-strategies/redelivery-backoff.js';
+import { ExponentialBackoff } from './error-handle-strategies/exponential-backoff.js';
 import { MessageFormat } from '../../types/message-format.type.js';
 import { BatchFailure } from '../../errors/batch-failure.js';
 import { ReceivedMessage } from '../../types/received-message.type.js';
@@ -42,6 +45,16 @@ const asPayload = (payload: StubPayload) => payload as unknown as KafkaJS.EachBa
 const json = new KafkaMessageParseStrategyFactory().create(MessageFormat.JSON);
 
 const producerStub = () => ({ send: jest.fn().mockResolvedValue([]) });
+
+const producerAcceptingOnce = (failure: Error) => ({
+  send: jest.fn().mockResolvedValueOnce([]).mockRejectedValueOnce(failure),
+});
+
+const publishBackoff = () =>
+  new PublishFailureBackoff(
+    new RedeliveryBackoff(ExponentialBackoff.from({}, 'fail'), { warn: jest.fn() } as unknown as Logger),
+    { warn: jest.fn() } as unknown as Logger,
+  );
 
 class HoldingStrategy extends KafkaErrorHandleStrategy {
   readonly held: string[] = [];
@@ -127,9 +140,29 @@ describe('KafkaBatchDelivery when the handler throws', () => {
     const producer = producerStub();
     await delivery(
       jest.fn().mockRejectedValue(new Error('boom')),
-      new KafkaErrorHandleDlqStrategy(producer as unknown as KafkaJS.Producer),
+      new KafkaErrorHandleDlqStrategy(producer as unknown as KafkaJS.Producer, publishBackoff()),
     ).deliver(asPayload(payloadOf([record('1'), record('2')])));
     expect(producer.send.mock.calls.map(([sent]) => sent.messages[0].key.toString())).toEqual(['key-1', 'key-2']);
+  });
+
+  it('rejects with the error of a dead letter publish that fails', async () => {
+    const publishFailure = new Error('broker unreachable');
+    const producer = producerAcceptingOnce(publishFailure);
+    await expect(
+      delivery(
+        jest.fn().mockRejectedValue(new Error('boom')),
+        new KafkaErrorHandleDlqStrategy(producer as unknown as KafkaJS.Producer, publishBackoff()),
+      ).deliver(asPayload(payloadOf([record('1'), record('2')]))),
+    ).rejects.toBe(publishFailure);
+  });
+
+  it('resolves only the messages dead-lettered before a publish fails', async () => {
+    const payload = payloadOf([record('1'), record('2')]);
+    await delivery(
+      jest.fn().mockRejectedValue(new Error('boom')),
+      new KafkaErrorHandleDlqStrategy(producerAcceptingOnce(new Error('broker unreachable')) as unknown as KafkaJS.Producer, publishBackoff()),
+    ).deliver(asPayload(payload)).catch(() => undefined);
+    expect(resolvedOffsets(payload)).toEqual(['1']);
   });
 
   it('rethrows under the fail policy without resolving anything', async () => {
@@ -160,7 +193,7 @@ describe('KafkaBatchDelivery when the handler throws a BatchFailure', () => {
     const producer = producerStub();
     await delivery(
       jest.fn().mockRejectedValue(new BatchFailure(1, new Error('boom'))),
-      new KafkaErrorHandleDlqStrategy(producer as unknown as KafkaJS.Producer),
+      new KafkaErrorHandleDlqStrategy(producer as unknown as KafkaJS.Producer, publishBackoff()),
     ).deliver(asPayload(payloadOf([record('1'), record('2'), record('3')])));
     expect(producer.send.mock.calls.map(([sent]) => sent.messages[0].key.toString())).toEqual(['key-2']);
   });
@@ -191,7 +224,7 @@ describe('KafkaBatchDelivery when the handler throws a BatchFailure', () => {
     const producer = producerStub();
     await delivery(
       jest.fn().mockRejectedValue(new BatchFailure(5, new Error('boom'))),
-      new KafkaErrorHandleDlqStrategy(producer as unknown as KafkaJS.Producer),
+      new KafkaErrorHandleDlqStrategy(producer as unknown as KafkaJS.Producer, publishBackoff()),
     ).deliver(asPayload(payloadOf([record('1'), record('2')])));
     expect(producer.send).toHaveBeenCalledTimes(2);
   });

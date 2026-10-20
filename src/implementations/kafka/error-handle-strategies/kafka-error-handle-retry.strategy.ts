@@ -3,6 +3,7 @@ import { KafkaErrorHandleStrategy } from './kafka-error-handle.strategy.js';
 import type { KafkaErrorHandleDlqStrategy } from './kafka-error-handle-dlq.strategy.js';
 import type { ExponentialBackoff } from './exponential-backoff.js';
 import type { HandlerRetryTopics } from './handler-retry-topics.js';
+import type { PublishFailureBackoff } from './publish-failure-backoff.js';
 import type { RetryDelayGate } from './retry-delay-gate.js';
 import { RetryHeaders } from './retry-headers.js';
 import type { RetryHop } from './retry-topic-name.js';
@@ -14,6 +15,7 @@ export class KafkaErrorHandleRetryStrategy extends KafkaErrorHandleStrategy {
     private readonly schedule: ExponentialBackoff,
     private readonly gate: RetryDelayGate,
     private readonly deadLetters: KafkaErrorHandleDlqStrategy,
+    private readonly publishBackoff: PublishFailureBackoff,
     private readonly clock: () => number = Date.now,
   ) {
     super();
@@ -23,11 +25,11 @@ export class KafkaErrorHandleRetryStrategy extends KafkaErrorHandleStrategy {
     const hop = this.topics.locate(payload.batch.topic, message);
     const next = this.topics.nextTopic(hop);
 
-    if (next === undefined) {
-      await this.deadLetters.publish(error, hop.source, message);
-    } else {
-      await this.republish(next, hop, error, message);
-    }
+    await this.publishBackoff.run(payload, message, () =>
+      next === undefined
+        ? this.deadLetters.publish(error, hop.source, message)
+        : this.republish(next, hop, error, message),
+    );
 
     payload.resolveOffset(message.offset);
   }
@@ -58,6 +60,7 @@ export class KafkaErrorHandleRetryStrategy extends KafkaErrorHandleStrategy {
 
   public override stop(): void {
     this.gate.stop();
+    this.publishBackoff.stop();
   }
 
   private async republish(topic: string, hop: RetryHop, error: unknown, message: KafkaJS.KafkaMessage): Promise<void> {

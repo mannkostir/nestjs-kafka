@@ -14,6 +14,7 @@ import { SourceRetryTopics } from './source-retry-topics.js';
 import { GroupRetryTopics } from './group-retry-topics.js';
 import { RetryDelayGate } from './retry-delay-gate.js';
 import { PausedPartitions } from './paused-partitions.js';
+import { PublishFailureBackoff } from './publish-failure-backoff.js';
 
 export type ErrorStrategyScope = {
   namespaced: boolean;
@@ -39,11 +40,11 @@ export class KafkaErrorHandleStrategyFactory {
       return this.createRetry(config, scope);
     }
 
-    const dlqTopic = this.namespacedDlqTopic(config.type === 'dlq' ? config.topic : undefined, scope.namespaced);
+    if (config.type === 'dlq') {
+      return this.createDlq(config, scope);
+    }
 
-    const cacheKey = config.type === 'dlq' ? `dlq:${dlqTopic ?? ''}` : config.type;
-
-    const cached = this.strategyCache.get(cacheKey);
+    const cached = this.strategyCache.get(config.type);
     if (cached) {
       return cached;
     }
@@ -54,21 +55,37 @@ export class KafkaErrorHandleStrategyFactory {
       case 'ignore':
         strategy = new KafkaErrorHandleIgnoreStrategy();
         break;
-      case 'dlq':
-        if (!this.producer) {
-          throw new Error(
-            'DLQ error handling requires a producer. ' +
-            'Provide "producer" in KafkaConsumer options.',
-          );
-        }
-        strategy = new KafkaErrorHandleDlqStrategy(this.producer, dlqTopic);
-        break;
       default:
         throw new Error(`Message error handle strategy not found for type: ${(config as { type: unknown }).type}`);
     }
 
-    this.strategyCache.set(cacheKey, strategy);
+    this.strategyCache.set(config.type, strategy);
     return strategy;
+  }
+
+  private createDlq(
+    config: Extract<MessageErrorHandlingConfig, { type: 'dlq' }>,
+    scope: ErrorStrategyScope,
+  ): KafkaErrorHandleDlqStrategy {
+    if (!this.producer) {
+      throw new Error(
+        'DLQ error handling requires a producer. ' +
+        'Provide "producer" in KafkaConsumer options.',
+      );
+    }
+
+    return new KafkaErrorHandleDlqStrategy(
+      this.producer,
+      KafkaErrorHandleStrategyFactory.createPublishBackoff(),
+      this.namespacedDlqTopic(config.topic, scope.namespaced),
+    );
+  }
+
+  private static createPublishBackoff(): PublishFailureBackoff {
+    return new PublishFailureBackoff(
+      new RedeliveryBackoff(ExponentialBackoff.from({}, 'fail'), new Logger(RedeliveryBackoff.name)),
+      new Logger(PublishFailureBackoff.name),
+    );
   }
 
   private static createFail(
@@ -101,12 +118,14 @@ export class KafkaErrorHandleStrategyFactory {
     );
     const schedule = ExponentialBackoff.from(config.backoff ?? {}, 'retry');
     const gate = new RetryDelayGate(topics, new PausedPartitions(new Logger(RetryDelayGate.name)));
+    const publishBackoff = KafkaErrorHandleStrategyFactory.createPublishBackoff();
     const deadLetters = new KafkaErrorHandleDlqStrategy(
       this.producer,
+      publishBackoff,
       this.namespacedDlqTopic(config.dlqTopic, scope.namespaced),
     );
 
-    return new KafkaErrorHandleRetryStrategy(this.producer, topics, schedule, gate, deadLetters);
+    return new KafkaErrorHandleRetryStrategy(this.producer, topics, schedule, gate, deadLetters, publishBackoff);
   }
 
   private namespacedDlqTopic(topic: string | undefined, namespaced: boolean): string | undefined {

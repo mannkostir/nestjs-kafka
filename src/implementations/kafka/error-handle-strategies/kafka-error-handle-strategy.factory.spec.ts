@@ -48,13 +48,25 @@ describe('KafkaErrorHandleStrategyFactory', () => {
   });
 
   describe('dlq', () => {
-    it('returns the same instance for the same topic', () => {
+    it('builds a fresh instance per subscription', () => {
       const factory = new KafkaErrorHandleStrategyFactory(namespacer(), producerStub());
 
       const first = factory.create({ type: 'dlq', topic: 'parking.lot' }, scope(true));
       const second = factory.create({ type: 'dlq', topic: 'parking.lot' }, scope(true));
 
-      expect(second).toBe(first);
+      expect(second).not.toBe(first);
+    });
+
+    it('pauses the partition when the dead letter cannot be published', async () => {
+      const producer = { send: jest.fn().mockRejectedValue(new Error('broker down')) } as unknown as KafkaJS.Producer;
+      const factory = new KafkaErrorHandleStrategyFactory(namespacer(), producer);
+      const strategy = factory.create({ type: 'dlq' }, scope(true));
+      const payload = batchPayload();
+
+      await strategy.handle(new Error('boom'), payload, record()).catch(() => undefined);
+      strategy.stop();
+
+      expect(payload.pause).toHaveBeenCalledTimes(1);
     });
 
     it('returns distinct instances for different topics', () => {

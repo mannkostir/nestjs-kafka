@@ -100,8 +100,9 @@ not rely on `close()` to clean up further.
 
 ## Shutdown
 
-Consumers close before the producer. `onModuleDestroy` cancels every pending `fail` backoff, so no
-paused partition resumes afterwards, then disconnects every consumer and logs any that fail;
+Consumers close before the producer. `onModuleDestroy` cancels every pending backoff, of `fail` and
+of a failed `dlq` or `retry` publish, so no paused partition resumes afterwards, then disconnects
+every consumer and logs any that fail;
 `beforeApplicationShutdown`, which Nest runs after every destroy hook, then disconnects the
 producer. DLQ publishes and producer calls made from handlers therefore still have a connected
 producer while the consumers stop.
