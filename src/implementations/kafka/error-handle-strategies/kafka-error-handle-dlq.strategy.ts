@@ -1,12 +1,14 @@
 import type { KafkaJS } from "@confluentinc/kafka-javascript";
 import { KafkaErrorHandleStrategy } from "./kafka-error-handle.strategy.js";
 import { describeFailure } from "./failure-description.js";
+import type { PublishFailureBackoff } from "./publish-failure-backoff.js";
 
 export class KafkaErrorHandleDlqStrategy extends KafkaErrorHandleStrategy {
     private static readonly DEFAULT_DLQ_SUFFIX = '.dlq';
 
     constructor(
         private readonly producer: KafkaJS.Producer,
+        private readonly publishBackoff: PublishFailureBackoff,
         private readonly dlqTopic?: string,
     ) {
         super();
@@ -50,7 +52,11 @@ export class KafkaErrorHandleDlqStrategy extends KafkaErrorHandleStrategy {
     }
 
     public async handle(error: unknown, payload: KafkaJS.EachBatchPayload, message: KafkaJS.KafkaMessage): Promise<void> {
-        await this.publish(error, payload.batch.topic, message);
+        await this.publishBackoff.run(payload, message, () => this.publish(error, payload.batch.topic, message));
         payload.resolveOffset(message.offset);
+    }
+
+    public override stop(): void {
+        this.publishBackoff.stop();
     }
 }

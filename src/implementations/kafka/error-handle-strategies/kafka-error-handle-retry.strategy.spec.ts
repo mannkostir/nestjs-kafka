@@ -6,6 +6,8 @@ import { HandlerRetryTopics } from './handler-retry-topics.js';
 import { KafkaErrorHandleDlqStrategy } from './kafka-error-handle-dlq.strategy.js';
 import { KafkaErrorHandleRetryStrategy } from './kafka-error-handle-retry.strategy.js';
 import { PausedPartitions } from './paused-partitions.js';
+import { PublishFailureBackoff } from './publish-failure-backoff.js';
+import { RedeliveryBackoff } from './redelivery-backoff.js';
 import { RetryDelayGate } from './retry-delay-gate.js';
 import { SourceRetryTopics } from './source-retry-topics.js';
 
@@ -21,27 +23,35 @@ const record = () => ({
   headers: { trace: 'abc' },
 }) as unknown as KafkaJS.KafkaMessage;
 
-const payloadOn = (topic: string) =>
+const payloadOn = (topic: string, resume: () => void = jest.fn()) =>
   ({
     batch: { topic, partition: 0 },
     resolveOffset: jest.fn(),
-    pause: jest.fn(() => jest.fn()),
+    pause: jest.fn(() => resume),
   }) as unknown as KafkaJS.EachBatchPayload;
 
 const producerStub = () => ({ send: jest.fn().mockResolvedValue([]) }) as unknown as KafkaJS.Producer;
 
+const rejectingProducer = (error: Error) => ({ send: jest.fn().mockRejectedValue(error) }) as unknown as KafkaJS.Producer;
+
 const retryTopics = () =>
   new HandlerRetryTopics(SourceRetryTopics.for('svc', 2), new Set(['orders.created']), GroupRetryTopics.for('svc', 2));
 
-const strategy = (producer: KafkaJS.Producer, dlqTopic?: string) =>
-  new KafkaErrorHandleRetryStrategy(
+const strategy = (producer: KafkaJS.Producer, dlqTopic?: string) => {
+  const publishBackoff = new PublishFailureBackoff(
+    new RedeliveryBackoff(ExponentialBackoff.from({}, 'fail'), stubLogger()),
+    stubLogger(),
+  );
+  return new KafkaErrorHandleRetryStrategy(
     producer,
     retryTopics(),
     ExponentialBackoff.from({ initialMs: 1000 }, 'retry'),
     new RetryDelayGate(retryTopics(), new PausedPartitions(stubLogger()), () => 5000),
-    new KafkaErrorHandleDlqStrategy(producer, dlqTopic),
+    new KafkaErrorHandleDlqStrategy(producer, publishBackoff, dlqTopic),
+    publishBackoff,
     () => 5000,
   );
+};
 
 const withOriginalTopic = (originalTopic: string) =>
   ({ ...record(), headers: { trace: 'abc', 'retry.original.topic': originalTopic } }) as unknown as KafkaJS.KafkaMessage;
@@ -166,5 +176,44 @@ describe('KafkaErrorHandleRetryStrategy', () => {
 
   it('lists the group retry topics as shared consumed topics', () => {
     expect(strategy(producerStub()).sharedConsumedTopics()).toEqual(['svc.retry.1', 'svc.retry.2']);
+  });
+
+  it('rethrows the error of a rejected republish', async () => {
+    const failure = new Error('broker down');
+    await expect(strategy(rejectingProducer(failure)).handle(new Error('boom'), payloadOn('orders.created'), record())).rejects.toBe(failure);
+  });
+
+  it('pauses the partition when the republish is rejected', async () => {
+    const payload = payloadOn('orders.created');
+    await strategy(rejectingProducer(new Error('broker down'))).handle(new Error('boom'), payload, record()).catch(() => undefined);
+    expect(payload.pause).toHaveBeenCalledTimes(1);
+  });
+
+  it('rethrows the error of a rejected dead letter publish', async () => {
+    const failure = new Error('broker down');
+    await expect(strategy(rejectingProducer(failure)).handle(new Error('boom'), payloadOn('orders.created.svc.retry.2'), record())).rejects.toBe(failure);
+  });
+
+  it('pauses the partition when the dead letter publish is rejected', async () => {
+    const payload = payloadOn('orders.created.svc.retry.2');
+    await strategy(rejectingProducer(new Error('broker down'))).handle(new Error('boom'), payload, record()).catch(() => undefined);
+    expect(payload.pause).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the offset unresolved when the dead letter cannot be published', async () => {
+    const payload = payloadOn('orders.created.svc.retry.2');
+    await strategy(rejectingProducer(new Error('broker down'))).handle(new Error('boom'), payload, record()).catch(() => undefined);
+    expect(payload.resolveOffset).not.toHaveBeenCalled();
+  });
+
+  it('never resumes a partition paused by a rejected publish after being stopped', async () => {
+    const resume = jest.fn();
+    const retry = strategy(rejectingProducer(new Error('broker down')));
+    await retry.handle(new Error('boom'), payloadOn('orders.created', resume), record()).catch(() => undefined);
+
+    retry.stop();
+    jest.advanceTimersByTime(30000);
+
+    expect(resume).not.toHaveBeenCalled();
   });
 });
