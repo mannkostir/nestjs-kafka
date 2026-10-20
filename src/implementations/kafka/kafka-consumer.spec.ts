@@ -710,6 +710,38 @@ describe('KafkaConsumer release of in-flight subscriptions', () => {
     expect(kafka.consumer).not.toHaveBeenCalled();
   });
 
+  it('provisions no topics for a subscribe made after release', async () => {
+    const topicProvisioner = provisionerStub();
+    const kafkaConsumer = new KafkaConsumer(kafkaStub(consumerStub()), {
+      topicProvisioner: topicProvisioner as unknown as KafkaTopicProvisioner,
+    });
+    await kafkaConsumer.disconnectAll();
+
+    await kafkaConsumer.subscribe(subscription(), jest.fn(), 'orders-service').catch(() => undefined);
+
+    expect(topicProvisioner.assertExisting).not.toHaveBeenCalled();
+  });
+
+  it('rejects a pattern-only subscribe released while it starts', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+    let finishRun!: () => void;
+    consumer.run.mockReturnValue(new Promise<void>((resolve) => { finishRun = resolve; }));
+    const kafkaConsumer = new KafkaConsumer(kafka);
+    const subscribing = kafkaConsumer.subscribe(
+      { ...subscription(), topicPatterns: [/^audit\..+/] },
+      jest.fn(),
+      'audit-service',
+    );
+    await flush();
+
+    const releasing = kafkaConsumer.disconnectAll();
+    finishRun();
+    await releasing;
+
+    await expect(subscribing).rejects.toThrow(new SubscriptionAborted('audit-service'));
+  });
+
   it('rejects a batch subscribe made after release', async () => {
     const kafkaConsumer = new KafkaConsumer(kafkaStub(consumerStub()));
     await kafkaConsumer.disconnectAll();

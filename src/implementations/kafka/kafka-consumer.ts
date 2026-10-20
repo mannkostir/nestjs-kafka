@@ -141,6 +141,8 @@ export class KafkaConsumer<
 
   private async startConsumer(consumerGroupId: string, routes: SharedGroupRoute<TMessage>[]): Promise<void> {
     const groupId = [this.namespace, consumerGroupId].filter(Boolean).join('-');
+    this.assertNotReleased(groupId);
+
     const prepared = routes.map((route) => this.prepare(route, groupId));
     const config = ResolvedConsumerConfig.agreed(consumerGroupId, prepared);
     const eachBatch = KafkaConsumer.dispatcherFor(consumerGroupId, prepared);
@@ -181,6 +183,8 @@ export class KafkaConsumer<
       await consumer.subscribe(topics);
 
       await this.run(consumer, eachBatch, config.partitionsConsumedConcurrently);
+
+      this.assertNotReleased(groupId);
 
       if (topicNames.length > 0) {
         await member.joined(config.joinTimeoutMs(), this.released.signal);
