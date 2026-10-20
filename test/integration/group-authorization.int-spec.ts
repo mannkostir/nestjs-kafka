@@ -2,7 +2,7 @@ import { Injectable, Module } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { KafkaModule } from '../../src/kafka.module.js';
 import { Message } from '../../src/decorators/message-handler.decorator.js';
-import { MessageType } from '../../src/types/message.type.js';
+import { KafkaMessage } from '../../src/types/message.type.js';
 import { startSaslBroker, StartedSaslBroker } from './sasl-kafka-broker.js';
 
 const TOPIC = 'invoices.issued';
@@ -13,7 +13,7 @@ class UnauthorizedGroupHandler {
     groupId: 'invoices-unauthorized',
     errorHandling: { type: 'fail' },
   })
-  async handle(_message: MessageType): Promise<void> {}
+  async handle(_message: KafkaMessage): Promise<void> {}
 }
 
 describe('group authorization', () => {

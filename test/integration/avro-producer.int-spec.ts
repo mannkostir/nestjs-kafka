@@ -5,7 +5,7 @@ import { SchemaType } from '@kafkajs/confluent-schema-registry';
 import { KafkaModule } from '../../src/kafka.module.js';
 import { Message } from '../../src/decorators/message-handler.decorator.js';
 import { ProducerProxy } from '../../src/base/producer-proxy.js';
-import { MessageType } from '../../src/types/message.type.js';
+import { KafkaMessage } from '../../src/types/message.type.js';
 import { MessageFormat } from '../../src/types/message-format.type.js';
 import {
   startSchemaRegistryBroker,
@@ -19,9 +19,9 @@ type RefundIssued = { refundId: string };
 
 const NAMESPACE = 'avro';
 
-const placed: MessageType<OrderPlaced>[] = [];
-const captured: MessageType<PaymentCaptured>[] = [];
-const refunded: MessageType<RefundIssued>[] = [];
+const placed: KafkaMessage<OrderPlaced>[] = [];
+const captured: KafkaMessage<PaymentCaptured>[] = [];
+const refunded: KafkaMessage<RefundIssued>[] = [];
 
 const avroConsumer = (groupId: string) => ({
   groupId,
@@ -33,7 +33,7 @@ const avroConsumer = (groupId: string) => ({
 @Injectable()
 class OrderPlacedHandler {
   @Message(['orders.placed'], avroConsumer('avro-orders'))
-  async handle(message: MessageType<OrderPlaced>): Promise<void> {
+  async handle(message: KafkaMessage<OrderPlaced>): Promise<void> {
     placed.push(message);
   }
 }
@@ -41,7 +41,7 @@ class OrderPlacedHandler {
 @Injectable()
 class PaymentCapturedHandler {
   @Message(['payments.captured'], avroConsumer('avro-payments'))
-  async handle(message: MessageType<PaymentCaptured>): Promise<void> {
+  async handle(message: KafkaMessage<PaymentCaptured>): Promise<void> {
     captured.push(message);
   }
 }
@@ -49,7 +49,7 @@ class PaymentCapturedHandler {
 @Injectable()
 class RefundIssuedHandler {
   @Message(['refunds.issued'], avroConsumer('avro-refunds'))
-  async handle(message: MessageType<RefundIssued>): Promise<void> {
+  async handle(message: KafkaMessage<RefundIssued>): Promise<void> {
     refunded.push(message);
   }
 }

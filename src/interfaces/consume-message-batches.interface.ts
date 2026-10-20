@@ -1,11 +1,10 @@
-import { BatchMessageHandlerCallback } from '../types/batch-message-handler-callback.type.js';
+import { MessageBatchHandlerCallback } from '../types/message-batch-handler-callback.type.js';
 import { ConsumerSubscriptionParameters } from '../types/consumer-subscription-parameters.type.js';
-import { MessageType } from '../types/message.type.js';
 
-export interface IConsumeMessageBatches<TMessage extends MessageType = MessageType> {
+export interface IConsumeMessageBatches<TValue = unknown> {
   subscribeBatch(
     subscription: ConsumerSubscriptionParameters,
-    cb: BatchMessageHandlerCallback<TMessage>,
+    cb: MessageBatchHandlerCallback<TValue>,
     consumerGroupId: string,
   ): Promise<void>;
 }

@@ -1,12 +1,12 @@
 import type { KafkaJS } from "@confluentinc/kafka-javascript";
-import { KafkaMessage } from "../kafka-message.js";
+import { DecodedMessage } from "../decoded-message.js";
 import type { MessageHeaders, MessageKey } from "../../../types/message.type.js";
 
 type HeaderValue = Buffer | string | (Buffer | string)[];
 
 export abstract class KafkaMessageParseStrategy {
-    public async parse(message: KafkaJS.KafkaMessage): Promise<KafkaMessage> {
-        return new KafkaMessage(
+    public async parse(message: KafkaJS.KafkaMessage): Promise<DecodedMessage> {
+        return new DecodedMessage(
             KafkaMessageParseStrategy.parseKey(message.key),
             message.value ? await this.parseValue(message.value) : null,
             KafkaMessageParseStrategy.parseHeaders(message.headers),

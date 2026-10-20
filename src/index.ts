@@ -5,7 +5,7 @@ export { MessageBatch } from "./decorators/message-batch-handler.decorator.js";
 
 export { ProducerProxy } from "./base/producer-proxy.js";
 
-export { MessageType, MessageKey, MessageHeaders } from "./types/message.type.js";
+export { KafkaMessage, MessageKey, MessageHeaders } from "./types/message.type.js";
 export { MessageOptions } from "./types/message-options.type.js";
 export { MessageFormat } from "./types/message-format.type.js";
 export { MessageErrorHandlingConfig, FailBackoffOptions } from "./types/message-error-handling.type.js";
@@ -15,7 +15,7 @@ export { ProducerConfig, ProducerCompression } from "./types/producer-config.typ
 export { MessageHandlerCallback } from "./types/message-handler-callback.type.js";
 export { MessageContext } from "./types/message-context.type.js";
 export { ReceivedMessage } from "./types/received-message.type.js";
-export { BatchMessageHandlerCallback } from "./types/batch-message-handler-callback.type.js";
+export { MessageBatchHandlerCallback } from "./types/message-batch-handler-callback.type.js";
 export { BatchFailure } from "./errors/batch-failure.js";
 export {
   KafkaModuleOptions,

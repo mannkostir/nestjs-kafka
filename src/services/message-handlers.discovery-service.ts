@@ -14,10 +14,9 @@ import {
   Message,
   MessageHandlerKey,
 } from '../decorators/message-handler.decorator.js';
-import { BatchMessageHandlerCallback } from '../types/batch-message-handler-callback.type.js';
+import { MessageBatchHandlerCallback } from '../types/message-batch-handler-callback.type.js';
 import { ConsumerSubscriptionParameters } from '../types/consumer-subscription-parameters.type.js';
 import { MessageHandlerCallback } from '../types/message-handler-callback.type.js';
-import { MessageType } from '../types/message.type.js';
 import { SubscriptionAborted } from '../errors/subscription-aborted.js';
 import {
   HandlerGroup,
@@ -98,12 +97,12 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
       subscribe: (subscription, handle, groupId) =>
         this.consumerProxy.subscribe(
           subscription,
-          handle as MessageHandlerCallback<MessageType>,
+          handle as MessageHandlerCallback,
           groupId,
         ),
       delivery: (handle) => ({
         kind: 'message',
-        handle: handle as MessageHandlerCallback<MessageType>,
+        handle: handle as MessageHandlerCallback,
       }),
     },
     {
@@ -111,12 +110,12 @@ export class MessageHandlersDiscoveryService implements OnApplicationBootstrap {
       subscribe: (subscription, handle, groupId) =>
         this.batchConsumer.subscribeBatch(
           subscription,
-          handle as BatchMessageHandlerCallback<MessageType>,
+          handle as MessageBatchHandlerCallback,
           groupId,
         ),
       delivery: (handle) => ({
         kind: 'batch',
-        handle: handle as BatchMessageHandlerCallback<MessageType>,
+        handle: handle as MessageBatchHandlerCallback,
       }),
     },
   ];

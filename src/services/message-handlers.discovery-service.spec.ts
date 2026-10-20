@@ -15,7 +15,7 @@ import { MessageBatch } from '../decorators/message-batch-handler.decorator.js';
 import { ReceivedMessage } from '../types/received-message.type.js';
 import { MessageFormat } from '../types/message-format.type.js';
 import { MessageContext } from '../types/message-context.type.js';
-import { MessageType } from '../types/message.type.js';
+import { KafkaMessage } from '../types/message.type.js';
 import {
   BATCH_CONSUMER,
   CONNECTOR_NAME,
@@ -27,13 +27,13 @@ import { MessageHandlersDiscoveryService } from './message-handlers.discovery-se
 
 @Injectable()
 class OrdersHandler {
-  public readonly handled: MessageType[] = [];
+  public readonly handled: KafkaMessage[] = [];
 
   @Message(['orders.created'], {
     groupId: 'orders-service',
     errorHandling: { type: 'fail' },
   })
-  async onOrderCreated(message: MessageType): Promise<void> {
+  async onOrderCreated(message: KafkaMessage): Promise<void> {
     this.handled.push(message);
   }
 }
@@ -46,7 +46,7 @@ class ContextRecordingHandler {
     groupId: 'context-service',
     errorHandling: { type: 'fail' },
   })
-  async handle(_message: MessageType, context: MessageContext): Promise<void> {
+  async handle(_message: KafkaMessage, context: MessageContext): Promise<void> {
     this.contexts.push(context);
   }
 }
@@ -294,7 +294,7 @@ const DoublyDecoratedHandler = (() => {
       groupId: 'orders-double-batch',
       errorHandling: { type: 'fail' },
     })
-    async handle(_payload: MessageType | ReceivedMessage[]): Promise<void> {}
+    async handle(_payload: KafkaMessage | ReceivedMessage[]): Promise<void> {}
   }
 
   return DoublyDecoratedHandler;
@@ -482,7 +482,7 @@ describe('MessageHandlersDiscoveryService', () => {
 
   it('invokes the handler method bound to its provider instance', async () => {
     const { subscribe, bootstrap } = harness([OrdersHandler]);
-    const message: MessageType = { key: null, value: null };
+    const message: KafkaMessage = { key: null, value: null };
 
     const app = await bootstrap();
     const [, callback] = subscribe.mock.calls[0];

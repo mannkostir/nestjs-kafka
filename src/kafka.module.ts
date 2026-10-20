@@ -9,7 +9,6 @@ import {
 } from './types/kafka-module-options.type.js';
 import { ConsumerConfig } from './types/consumer-config.type.js';
 import { ProducerConfig } from './types/producer-config.type.js';
-import { MessageType } from './types/message.type.js';
 import { MessageFormat } from './types/message-format.type.js';
 import { ConsumerProxy } from './base/consumer-proxy.js';
 import { KafkaConsumer } from './implementations/kafka/kafka-consumer.js';
@@ -137,7 +136,7 @@ const producerProxyProvider: Provider<ProducerProxy> = {
 const kafkaConnectionsProvider: Provider<IReleaseConnections> = {
   provide: KAFKA_CONNECTIONS,
   useFactory: (
-    consumer: KafkaConsumer<MessageType>,
+    consumer: KafkaConsumer<unknown>,
     producer: KafkaProducer,
   ) => new KafkaConnections(consumer, producer),
   inject: [ConsumerProxy, ProducerProxy],

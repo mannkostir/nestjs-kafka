@@ -1,7 +1,6 @@
 import { KafkaConnections } from './kafka-connections.js';
 import { KafkaConsumer } from './kafka-consumer.js';
 import { KafkaProducer } from './kafka-producer.js';
-import { MessageType } from '../../types/message.type.js';
 
 describe('KafkaConnections', () => {
   it('disconnects consumers before the producer', async () => {
@@ -10,7 +9,7 @@ describe('KafkaConnections', () => {
       disconnectAll: jest.fn(async () => {
         order.push('consumers');
       }),
-    } as unknown as KafkaConsumer<MessageType>;
+    } as unknown as KafkaConsumer<unknown>;
     const producer = {
       disconnect: jest.fn(async () => {
         order.push('producer');
@@ -25,7 +24,7 @@ describe('KafkaConnections', () => {
   it('disconnects the producer once when released twice', async () => {
     const consumer = {
       disconnectAll: jest.fn().mockResolvedValue(undefined),
-    } as unknown as KafkaConsumer<MessageType>;
+    } as unknown as KafkaConsumer<unknown>;
     const disconnect = jest.fn().mockResolvedValue(undefined);
     const producer = { disconnect } as unknown as KafkaProducer;
     const connections = new KafkaConnections(consumer, producer);
@@ -38,7 +37,7 @@ describe('KafkaConnections', () => {
 
   it('disconnects the consumers once when released concurrently', async () => {
     const disconnectAll = jest.fn().mockResolvedValue(undefined);
-    const consumer = { disconnectAll } as unknown as KafkaConsumer<MessageType>;
+    const consumer = { disconnectAll } as unknown as KafkaConsumer<unknown>;
     const producer = {
       disconnect: jest.fn().mockResolvedValue(undefined),
     } as unknown as KafkaProducer;

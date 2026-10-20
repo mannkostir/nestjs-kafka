@@ -1,11 +1,10 @@
 import { IReleaseConnections } from '../../interfaces/release-connections.interface.js';
-import { MessageType } from '../../types/message.type.js';
 import { KafkaConsumer } from './kafka-consumer.js';
 import { KafkaProducer } from './kafka-producer.js';
 
 export class KafkaConnections implements IReleaseConnections {
   constructor(
-    private readonly consumer: KafkaConsumer<MessageType>,
+    private readonly consumer: KafkaConsumer<unknown>,
     private readonly producer: KafkaProducer,
   ) {}
 

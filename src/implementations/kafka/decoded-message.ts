@@ -1,8 +1,8 @@
 import type { KafkaJS } from '@confluentinc/kafka-javascript';
-import { MessageHeaders, MessageKey, MessageType } from '../../types/message.type.js';
+import { KafkaMessage, MessageHeaders, MessageKey } from '../../types/message.type.js';
 import { KafkaMessageParseStrategy } from './parse-strategies/kafka-message-parse.strategy.js';
 
-export class KafkaMessage<TValue = unknown> implements MessageType<TValue>
+export class DecodedMessage<TValue = unknown> implements KafkaMessage<TValue>
 {
   readonly value: TValue | null;
 
@@ -16,7 +16,7 @@ export class KafkaMessage<TValue = unknown> implements MessageType<TValue>
     this.headers = headers;
   }
 
-  public static from(strategy: KafkaMessageParseStrategy, message: KafkaJS.KafkaMessage): Promise<KafkaMessage> {
+  public static from(strategy: KafkaMessageParseStrategy, message: KafkaJS.KafkaMessage): Promise<DecodedMessage> {
     return strategy.parse(message);
   }
 }

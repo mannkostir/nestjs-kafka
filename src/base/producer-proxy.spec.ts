@@ -1,13 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { MessageType } from '../types/message.type.js';
+import { KafkaMessage } from '../types/message.type.js';
 import { ProducedRecord } from '../types/produced-record.type.js';
 import { ProducerProxy } from './producer-proxy.js';
 
 class RecordingProducer extends ProducerProxy {
-  public readonly sent: MessageType[] = [];
+  public readonly sent: KafkaMessage[] = [];
 
-  public async send<TValue>(topic: string, message: MessageType<TValue>): Promise<ProducedRecord[]> {
+  public async send<TValue>(topic: string, message: KafkaMessage<TValue>): Promise<ProducedRecord[]> {
     this.sent.push(message);
 
     return [{ topic, partition: 0, offset: String(this.sent.length - 1) }];

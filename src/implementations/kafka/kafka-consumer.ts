@@ -1,11 +1,11 @@
 import type { KafkaJS } from '@confluentinc/kafka-javascript';
 import { Logger, OnModuleDestroy } from '@nestjs/common';
-import { MessageType } from '../../types/message.type.js';
+import { KafkaMessage } from '../../types/message.type.js';
 import { ConsumerProxy } from '../../base/consumer-proxy.js';
 import { ConsumerSubscriptionParameters } from '../../types/consumer-subscription-parameters.type.js';
 import { messageContextOf } from './message-context-of.js';
 import { MessageHandlerCallback } from '../../types/message-handler-callback.type.js';
-import { KafkaMessage } from './kafka-message.js';
+import { DecodedMessage } from './decoded-message.js';
 import type { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
 import { KafkaMessageParseStrategy } from './parse-strategies/kafka-message-parse.strategy.js';
 import { KafkaMessageParseStrategyFactory } from './parse-strategies/kafka-message-parse-strategy.factory.js';
@@ -20,7 +20,7 @@ import { NestKafkaLogger } from './nest-kafka-logger.js';
 import { ResolvedConsumerConfig } from './resolved-consumer-config.js';
 import { MessageFormat } from '../../types/message-format.type.js';
 import { IConsumeMessageBatches } from '../../interfaces/consume-message-batches.interface.js';
-import { BatchMessageHandlerCallback } from '../../types/batch-message-handler-callback.type.js';
+import { MessageBatchHandlerCallback } from '../../types/message-batch-handler-callback.type.js';
 import { KafkaBatchDelivery } from './kafka-batch-delivery.js';
 import { IConsumeSharedGroups } from '../../interfaces/consume-shared-groups.interface.js';
 import { KafkaHandlerRoutes } from './kafka-handler-routes.js';
@@ -62,8 +62,8 @@ type ConsumerSubscription = {
 };
 
 export class KafkaConsumer<
-  TMessage extends MessageType,
-> extends ConsumerProxy<TMessage> implements OnModuleDestroy, IConsumeMessageBatches<TMessage>, IConsumeSharedGroups<TMessage> {
+  TValue,
+> extends ConsumerProxy<TValue> implements OnModuleDestroy, IConsumeMessageBatches<TValue>, IConsumeSharedGroups<TValue> {
 
   private readonly logger = new Logger(KafkaConsumer.name);
   private readonly namespace?: string;
@@ -97,7 +97,7 @@ export class KafkaConsumer<
 
   public async subscribe(
     subscription: ConsumerSubscriptionParameters,
-    cb: MessageHandlerCallback<TMessage>,
+    cb: MessageHandlerCallback<TValue>,
     consumerGroupId: string
   ): Promise<void> {
     await this.start(consumerGroupId, [
@@ -107,7 +107,7 @@ export class KafkaConsumer<
 
   public async subscribeBatch(
     subscription: ConsumerSubscriptionParameters,
-    cb: BatchMessageHandlerCallback<TMessage>,
+    cb: MessageBatchHandlerCallback<TValue>,
     consumerGroupId: string,
   ): Promise<void> {
     await this.start(consumerGroupId, [
@@ -117,7 +117,7 @@ export class KafkaConsumer<
 
   public async subscribeGroup(
     consumerGroupId: string,
-    routes: SharedGroupRoute<TMessage>[],
+    routes: SharedGroupRoute<TValue>[],
   ): Promise<void> {
     await this.start(consumerGroupId, routes);
   }
@@ -138,7 +138,7 @@ export class KafkaConsumer<
     return (payload) => dispatcher.dispatch(payload);
   }
 
-  private async start(consumerGroupId: string, routes: SharedGroupRoute<TMessage>[]): Promise<void> {
+  private async start(consumerGroupId: string, routes: SharedGroupRoute<TValue>[]): Promise<void> {
     const groupId = [this.namespace, consumerGroupId].filter(Boolean).join('-');
     const starting = this.startConsumer(consumerGroupId, groupId, routes);
     this.startsInFlight.set(starting, groupId);
@@ -153,7 +153,7 @@ export class KafkaConsumer<
   private async startConsumer(
     consumerGroupId: string,
     groupId: string,
-    routes: SharedGroupRoute<TMessage>[],
+    routes: SharedGroupRoute<TValue>[],
   ): Promise<void> {
     this.assertNotStopping(groupId);
 
@@ -217,7 +217,7 @@ export class KafkaConsumer<
     }
   }
 
-  private prepare({ handlerName, subscription, delivery }: SharedGroupRoute<TMessage>, groupId: string): PreparedRoute {
+  private prepare({ handlerName, subscription, delivery }: SharedGroupRoute<TValue>, groupId: string): PreparedRoute {
     const namespaced = subscription.namespaced ?? true;
 
     const parseStrategy = this.parseStrategies.create(
@@ -261,7 +261,7 @@ export class KafkaConsumer<
   }
 
   private eachBatchFor(
-    delivery: RouteDelivery<TMessage>,
+    delivery: RouteDelivery<TValue>,
     parseStrategy: KafkaMessageParseStrategy,
     errorStrategy: KafkaErrorHandleStrategy,
     groupId: string,
@@ -293,7 +293,7 @@ export class KafkaConsumer<
   }
 
   private handleBatchByMessage(
-    cb: MessageHandlerCallback<TMessage>,
+    cb: MessageHandlerCallback<TValue>,
     parseStrategy: KafkaMessageParseStrategy,
     errorStrategy: KafkaErrorHandleStrategy,
   ) {
@@ -305,7 +305,7 @@ export class KafkaConsumer<
 
         try {
           await cb(
-            (await KafkaMessage.from(parseStrategy, message)) as TMessage,
+            (await DecodedMessage.from(parseStrategy, message)) as KafkaMessage<TValue>,
             messageContextOf(payload.batch, message),
           );
 

@@ -1,14 +1,13 @@
 import { IConsumeMessages } from '../interfaces/consume-messages.interface.js';
 import { ConsumerSubscriptionParameters } from '../types/consumer-subscription-parameters.type.js';
 import { MessageHandlerCallback } from '../types/message-handler-callback.type.js';
-import { MessageType } from '../types/message.type.js';
 
-export abstract class ConsumerProxy<TMessage extends MessageType = MessageType>
-  implements IConsumeMessages<TMessage>
+export abstract class ConsumerProxy<TValue = unknown>
+  implements IConsumeMessages<TValue>
 {
   public abstract subscribe(
     subscription: ConsumerSubscriptionParameters,
-    cb: MessageHandlerCallback<TMessage>,
+    cb: MessageHandlerCallback<TValue>,
     consumerGroupId: string
   ): Promise<void>;
 }

@@ -4,11 +4,11 @@ import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { KafkaModule } from '../../src/kafka.module.js';
 import { Message } from '../../src/decorators/message-handler.decorator.js';
 import { ProducerProxy } from '../../src/base/producer-proxy.js';
-import { MessageType } from '../../src/types/message.type.js';
+import { KafkaMessage } from '../../src/types/message.type.js';
 import { startBroker, StartedBroker } from './kafka-broker.js';
 import { eventually, waitFor } from './wait.js';
 
-const shipped: MessageType[] = [];
+const shipped: KafkaMessage[] = [];
 
 @Injectable()
 class LateTopicHandler {
@@ -17,7 +17,7 @@ class LateTopicHandler {
     errorHandling: { type: 'fail' },
     consumer: { createMissingTopics: true },
   })
-  async handle(message: MessageType): Promise<void> {
+  async handle(message: KafkaMessage): Promise<void> {
     shipped.push(message);
   }
 }
@@ -28,7 +28,7 @@ class PatternOnlyHandler {
     groupId: 'pattern-only',
     errorHandling: { type: 'fail' },
   })
-  async handle(_message: MessageType): Promise<void> {}
+  async handle(_message: KafkaMessage): Promise<void> {}
 }
 
 @Injectable()
@@ -38,7 +38,7 @@ class StrictTopicHandler {
     errorHandling: { type: 'fail' },
     consumer: { createMissingTopics: false },
   })
-  async handle(_message: MessageType): Promise<void> {}
+  async handle(_message: KafkaMessage): Promise<void> {}
 }
 
 @Injectable()
@@ -48,7 +48,7 @@ class StrictCreditsHandler {
     errorHandling: { type: 'fail' },
     consumer: { createMissingTopics: false },
   })
-  async handle(_message: MessageType): Promise<void> {}
+  async handle(_message: KafkaMessage): Promise<void> {}
 }
 
 @Injectable()
@@ -58,7 +58,7 @@ class StrictRebatesHandler {
     errorHandling: { type: 'fail' },
     consumer: { createMissingTopics: false },
   })
-  async handle(_message: MessageType): Promise<void> {}
+  async handle(_message: KafkaMessage): Promise<void> {}
 }
 
 @Injectable()
@@ -67,7 +67,7 @@ class HealthyNeighbourHandler {
     groupId: 'healthy-neighbour',
     errorHandling: { type: 'fail' },
   })
-  async handle(_message: MessageType): Promise<void> {}
+  async handle(_message: KafkaMessage): Promise<void> {}
 }
 
 @Injectable()
@@ -76,7 +76,7 @@ class DefaultTopicHandler {
     groupId: 'default-topic',
     errorHandling: { type: 'fail' },
   })
-  async handle(_message: MessageType): Promise<void> {}
+  async handle(_message: KafkaMessage): Promise<void> {}
 }
 
 @Injectable()
@@ -85,7 +85,7 @@ class MissingDeadLetterHandler {
     groupId: 'missing-dead-letter',
     errorHandling: { type: 'dlq' },
   })
-  async handle(_message: MessageType): Promise<void> {}
+  async handle(_message: KafkaMessage): Promise<void> {}
 }
 
 @Injectable()
@@ -95,7 +95,7 @@ class CreatedDeadLetterHandler {
     errorHandling: { type: 'dlq' },
     consumer: { createMissingTopics: true },
   })
-  async handle(_message: MessageType): Promise<void> {}
+  async handle(_message: KafkaMessage): Promise<void> {}
 }
 
 describe('topic provisioning', () => {

@@ -4,13 +4,13 @@ import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { KafkaModule } from '../../src/kafka.module.js';
 import { Message } from '../../src/decorators/message-handler.decorator.js';
 import { ProducerProxy } from '../../src/base/producer-proxy.js';
-import { MessageType } from '../../src/types/message.type.js';
+import { KafkaMessage } from '../../src/types/message.type.js';
 import { startBroker, StartedBroker } from './kafka-broker.js';
 import { eventually, waitFor } from './wait.js';
 
 type InvoiceCreated = { invoiceId: string };
 
-const attempts: MessageType<InvoiceCreated>[] = [];
+const attempts: KafkaMessage<InvoiceCreated>[] = [];
 
 @Injectable()
 class FlakyInvoiceHandler {
@@ -19,7 +19,7 @@ class FlakyInvoiceHandler {
     errorHandling: { type: 'fail' },
     consumer: { fromBeginning: true },
   })
-  async handle(message: MessageType<InvoiceCreated>): Promise<void> {
+  async handle(message: KafkaMessage<InvoiceCreated>): Promise<void> {
     attempts.push(message);
 
     if (attempts.length === 1) {

@@ -1,6 +1,5 @@
-import { BatchMessageHandlerCallback } from '../types/batch-message-handler-callback.type.js';
+import { MessageBatchHandlerCallback } from '../types/message-batch-handler-callback.type.js';
 import { MessageOptions } from '../types/message-options.type.js';
-import { MessageType } from '../types/message.type.js';
 import {
   assertValidMessageArguments,
   describeHandler,
@@ -11,15 +10,15 @@ export const MessageBatchHandlerKey = 'HANDLE_MESSAGE_BATCH' as const;
 export function MessageBatch(
   topicPattern: (string | RegExp)[],
   options: MessageOptions,
-): <TMessage extends MessageType>(
+): <TValue>(
   target: object,
   propertyKey: string | symbol,
-  descriptor: TypedPropertyDescriptor<BatchMessageHandlerCallback<TMessage>>,
+  descriptor: TypedPropertyDescriptor<MessageBatchHandlerCallback<TValue>>,
 ) => void {
-  return <TMessage extends MessageType>(
+  return <TValue>(
     target: object,
     propertyKey: string | symbol,
-    descriptor: TypedPropertyDescriptor<BatchMessageHandlerCallback<TMessage>>,
+    descriptor: TypedPropertyDescriptor<MessageBatchHandlerCallback<TValue>>,
   ): void => {
     assertValidMessageArguments(
       'MessageBatch',

@@ -3,7 +3,7 @@ import type { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
 import { BeforeApplicationShutdown, Logger } from '@nestjs/common';
 import { ProducerProxy } from '../../base/producer-proxy.js';
 import { MessageFormat } from '../../types/message-format.type.js';
-import { MessageType } from '../../types/message.type.js';
+import { KafkaMessage } from '../../types/message.type.js';
 import { ProducedRecord } from '../../types/produced-record.type.js';
 import { ProducerSendOptions } from '../../types/producer-send-options.type.js';
 import { toProducedRecord } from './kafka-produced-record.js';
@@ -38,7 +38,7 @@ export class KafkaProducer extends ProducerProxy implements BeforeApplicationShu
 
   public async send<TValue>(
     topic: string,
-    message: MessageType<TValue>,
+    message: KafkaMessage<TValue>,
     options?: ProducerSendOptions,
   ): Promise<ProducedRecord[]> {
     const namespaced = options?.namespaced ?? true;

@@ -5,7 +5,7 @@ import { KafkaModule } from '../../src/kafka.module.js';
 import { Message } from '../../src/decorators/message-handler.decorator.js';
 import { MessageBatch } from '../../src/decorators/message-batch-handler.decorator.js';
 import { MessageContext } from '../../src/types/message-context.type.js';
-import { MessageType } from '../../src/types/message.type.js';
+import { KafkaMessage } from '../../src/types/message.type.js';
 import { ReceivedMessage } from '../../src/types/received-message.type.js';
 import { startBroker, StartedBroker } from './kafka-broker.js';
 import { eventually, waitFor } from './wait.js';
@@ -24,7 +24,7 @@ class OrdersHandler {
     errorHandling: { type: 'retry', attempts: 1, backoff: { initialMs: 500 } },
     consumer: sharedConsumer,
   })
-  async onOrder(message: MessageType, context: MessageContext): Promise<void> {
+  async onOrder(message: KafkaMessage, context: MessageContext): Promise<void> {
     ordersSeen.push({ key: String(message.key), topic: context.topic });
 
     if (String(message.key) === 'retry-me' && !retryThrown) {

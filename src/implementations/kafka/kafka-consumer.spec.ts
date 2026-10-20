@@ -4,7 +4,6 @@ import { KafkaConsumer } from './kafka-consumer.js';
 import { KafkaTopicProvisioner } from './kafka-topic-provisioner.js';
 import { TopicNamespacer } from './topic-namespacer.js';
 import { MessageFormat } from '../../types/message-format.type.js';
-import { MessageType } from '../../types/message.type.js';
 import { KafkaMessageParseStrategyFactory } from './parse-strategies/kafka-message-parse-strategy.factory.js';
 import { SubscriptionAborted } from '../../errors/subscription-aborted.js';
 
@@ -2092,7 +2091,7 @@ describe('KafkaConsumer delivery once stopping', () => {
 
   const threeRecords = () => [record('1'), record('2'), record('3')];
 
-  const stoppingOnFirstCall = (kafkaConsumer: Pick<KafkaConsumer<MessageType>, 'disconnectAll'>) => {
+  const stoppingOnFirstCall = (kafkaConsumer: Pick<KafkaConsumer<unknown>, 'disconnectAll'>) => {
     const stopped: Promise<void>[] = [];
     const handler = jest.fn().mockResolvedValue(undefined);
     handler.mockImplementationOnce(async () => {
