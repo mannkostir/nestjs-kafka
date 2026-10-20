@@ -1,10 +1,11 @@
 import { MessageType } from '../types/message.type.js';
+import { ProducedRecord } from '../types/produced-record.type.js';
 import { ProducerSendOptions } from '../types/producer-send-options.type.js';
 
-export interface IProduceMessages<TMessage extends MessageType = MessageType> {
-  send(
+export interface IProduceMessages {
+  send<TValue>(
     topic: string,
-    message: TMessage,
+    message: MessageType<TValue>,
     options?: ProducerSendOptions,
-  ): Promise<unknown>;
+  ): Promise<ProducedRecord[]>;
 }

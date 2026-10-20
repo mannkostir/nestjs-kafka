@@ -11,7 +11,7 @@ export { MessageOptions } from "./types/message-options.type.js";
 export { MessageFormat } from "./types/message-format.type.js";
 export { MessageErrorHandlingConfig, FailBackoffOptions } from "./types/message-error-handling.type.js";
 export { ConsumerConfig } from "./types/consumer-config.type.js";
-export { ProducerConfig } from "./types/producer-config.type.js";
+export { ProducerConfig, ProducerCompression } from "./types/producer-config.type.js";
 export { ConsumerSubscriptionParameters } from "./types/consumer-subscription-parameters.type.js";
 export { MessageHandlerCallback } from "./types/message-handler-callback.type.js";
 export { MessageContext } from "./types/message-context.type.js";
@@ -25,3 +25,4 @@ export {
   SchemaRegistryOptions,
 } from "./types/kafka-module-options.type.js";
 export { ProducerSendOptions } from "./types/producer-send-options.type.js";
+export { ProducedRecord } from "./types/produced-record.type.js";
