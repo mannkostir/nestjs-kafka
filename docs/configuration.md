@@ -195,8 +195,8 @@ The module's `producer` option.
 | --- | --- | --- |
 | `allowAutoTopicCreation` | `boolean` | `false` |
 | `idempotent` | `boolean` | unset — the client applies its own (currently `false`) |
-| `compression` | `'none' \| 'gzip' \| 'snappy' \| 'lz4' \| 'zstd'` | unset — the client applies its own (currently `none`) |
-| `acks` | `number` | unset — the client applies its own (currently `-1`, all in-sync replicas) |
+| `compression` | `ProducerCompression`: `'none' \| 'gzip' \| 'snappy' \| 'lz4' \| 'zstd'` | unset — the client applies its own (currently `none`) |
+| `acks` | `-1 \| 0 \| 1` | unset — the client applies its own (currently `-1`, all in-sync replicas) |
 
 `allowAutoTopicCreation` maps to librdkafka's `allow.auto.create.topics` on the producer. See
 [Producing](producing.md#topic) for what a send to a missing topic does.

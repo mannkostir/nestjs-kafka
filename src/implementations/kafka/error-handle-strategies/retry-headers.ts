@@ -34,6 +34,12 @@ export class RetryHeaders {
     return Number.isFinite(num) ? num : Number.NaN;
   }
 
+  public static originalTopic(message: KafkaJS.KafkaMessage): string | undefined {
+    const value = RetryHeaders.firstValue(message.headers, RetryHeaders.ORIGINAL_TOPIC);
+
+    return value === undefined || value === '' ? undefined : value;
+  }
+
   private static firstValue(headers: KafkaJS.IHeaders | undefined, name: string): string | undefined {
     if (!headers) {
       return undefined;

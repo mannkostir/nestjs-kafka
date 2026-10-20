@@ -1349,21 +1349,95 @@ describe('KafkaConsumer retry error handling', () => {
     expect(handler).toHaveBeenCalledTimes(1);
   });
 
-  it('rejects a retry subscription with a pattern before creating a consumer', async () => {
+  it('subscribes a pattern retry handler to the group retry topics', async () => {
+    const consumer = consumerStub();
+
+    await new KafkaConsumer(kafkaStub(consumer), {
+      producer: producerStub(),
+      topicProvisioner: provisionerStub() as unknown as KafkaTopicProvisioner,
+    }).subscribe({ ...retrySubscription(), topicPatterns: [/^audit\..+/] }, jest.fn(), 'orders-service');
+
+    expect(consumer.subscribe).toHaveBeenCalledWith({
+      topics: [/^audit\..+/, 'orders-service.retry.1', 'orders-service.retry.2'],
+    });
+  });
+
+  it('checks the group retry topics exist before subscribing', async () => {
+    const consumer = consumerStub();
+    const topicProvisioner = provisionerStub();
+
+    await new KafkaConsumer(kafkaStub(consumer), {
+      producer: producerStub(),
+      topicProvisioner: topicProvisioner as unknown as KafkaTopicProvisioner,
+    }).subscribe(
+      { ...retrySubscription(), topicPatterns: ['orders.created', /^audit\..+/] },
+      jest.fn(),
+      'orders-service',
+    );
+
+    expect(topicProvisioner.assertExisting).toHaveBeenCalledWith([
+      'orders.created',
+      'orders.created.orders-service.retry.1',
+      'orders.created.orders-service.retry.2',
+      'orders-service.retry.1',
+      'orders-service.retry.2',
+      'orders.created.dlq',
+    ]);
+  });
+
+  it('names group retry topics by the namespaced group', async () => {
+    const consumer = consumerStub();
+
+    await new KafkaConsumer(kafkaStub(consumer), {
+      namespace: 'dev',
+      namespacer: new TopicNamespacer('dev'),
+      producer: producerStub(),
+      topicProvisioner: provisionerStub() as unknown as KafkaTopicProvisioner,
+    }).subscribe({ ...retrySubscription(), topicPatterns: [/^audit\..+/] }, jest.fn(), 'orders-service');
+
+    expect(consumer.subscribe).toHaveBeenCalledWith({
+      topics: [/^dev\.(audit\..+)/, 'dev-orders-service.retry.1', 'dev-orders-service.retry.2'],
+    });
+  });
+
+  it('waits for an assignment when a pattern retry handler has group retry topics', async () => {
     const consumer = consumerStub();
     const kafka = kafkaStub(consumer);
+    consumer.run.mockImplementation(() => Promise.resolve());
+    let settled = false;
 
-    await expect(
-      new KafkaConsumer(kafka, {
-        producer: producerStub(),
-        topicProvisioner: provisionerStub() as unknown as KafkaTopicProvisioner,
-      }).subscribe(
-        { ...retrySubscription(), topicPatterns: ['orders.created', /^audit\..+/] },
-        jest.fn(),
-        'orders-service',
-      ),
-    ).rejects.toThrow(/subscribes to a pattern/);
-    expect(kafka.consumer).not.toHaveBeenCalled();
+    void new KafkaConsumer(kafka, {
+      producer: producerStub(),
+      topicProvisioner: provisionerStub() as unknown as KafkaTopicProvisioner,
+    })
+      .subscribe({ ...retrySubscription(), topicPatterns: [/^audit\..+/] }, jest.fn(), 'orders-service')
+      .finally(() => {
+        settled = true;
+      });
+    await jest.advanceTimersByTimeAsync(1000);
+
+    expect(settled).toBe(false);
+  });
+
+  it('starts an uncommitted group retry partition at its log start', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+    const admin = (kafka.admin as jest.Mock)();
+    admin.fetchOffsets = jest.fn().mockResolvedValue([
+      { topic: 'orders-service.retry.1', partitions: [{ partition: 0, offset: '-1' }] },
+    ]);
+    admin.fetchTopicOffsets = jest.fn().mockResolvedValue([
+      { partition: 0, high: '42', low: '5', offset: '42' },
+    ]);
+    await new KafkaConsumer(kafka, {
+      producer: producerStub(),
+      topicProvisioner: provisionerStub() as unknown as KafkaTopicProvisioner,
+    }).subscribe({ ...retrySubscription(), topicPatterns: [/^audit\..+/] }, jest.fn(), 'orders-service');
+    const { rebalance_cb } = (kafka.consumer as jest.Mock).mock.calls[0][0];
+
+    const pinned = await rebalance_cb({ code: -175 }, [{ topic: 'orders-service.retry.1', partition: 0 }]);
+
+    expect(pinned).toEqual([{ topic: 'orders-service.retry.1', partition: 0, offset: 5 }]);
   });
 
   it('never resumes a held retry partition after every consumer is disconnected', async () => {
@@ -1499,6 +1573,9 @@ describe('KafkaConsumer shared group', () => {
     delivery: { kind: 'message' as const, handle: jest.fn().mockResolvedValue(undefined) },
   });
 
+  const patternRoute = (handlerName: string, topicPatterns: RegExp[], overrides: object = {}) =>
+    route(handlerName, 'unused', { topicPatterns, ...overrides });
+
   const batchRoute = (handlerName: string, topic: string) => ({
     handlerName,
     subscription: { topicPatterns: [topic], messageFormat: MessageFormat.JSON, errorHandling: { type: 'ignore' as const } },
@@ -1556,6 +1633,76 @@ describe('KafkaConsumer shared group', () => {
       orders: orders.delivery.handle.mock.calls.length,
       lot: lot.delivery.handle.mock.calls.length,
     }).toEqual({ orders: 0, lot: 1 });
+  });
+
+  it('hands a batch from a pattern topic to the pattern route', async () => {
+    const consumer = consumerStub();
+    const orders = route('A.x', 'orders.created');
+    const audit = patternRoute('B.y', [/^audit\..+/]);
+
+    await new KafkaConsumer(kafkaStub(consumer)).subscribeGroup('billing', [orders, audit]);
+    await eachBatchOf(consumer)(payloadFrom('audit.eu'));
+
+    expect(audit.delivery.handle).toHaveBeenCalledTimes(1);
+  });
+
+  it('pauses a topic matched by two pattern routes', async () => {
+    const consumer = consumerStub();
+    const first = patternRoute('A.x', [/^audit\..+/]);
+    const second = patternRoute('B.y', [/^.*(eu)/]);
+    const payload = payloadFrom('audit.eu');
+
+    await new KafkaConsumer(kafkaStub(consumer)).subscribeGroup('billing', [first, second]);
+    await eachBatchOf(consumer)(payload);
+
+    expect([payload.pause.mock.calls.length, first.delivery.handle.mock.calls.length, second.delivery.handle.mock.calls.length]).toEqual([1, 0, 0]);
+  });
+
+  it('pauses a topic no route of the group claims', async () => {
+    const consumer = consumerStub();
+    const payload = payloadFrom('payments');
+
+    await new KafkaConsumer(kafkaStub(consumer)).subscribeGroup('billing', [
+      route('A.x', 'orders.created'),
+      route('B.y', 'parking.lot'),
+    ]);
+    await eachBatchOf(consumer)(payload);
+
+    expect(payload.pause).toHaveBeenCalledTimes(1);
+  });
+
+  it('subscribes a shared group once to the group retry topics of its pattern retry routes', async () => {
+    const consumer = consumerStub();
+    const first = patternRoute('A.x', [/^audit\..+/], { errorHandling: { type: 'retry', attempts: 2 } });
+    const second = patternRoute('B.y', [/^ledger\..+/], { errorHandling: { type: 'retry', attempts: 1 } });
+
+    await new KafkaConsumer(kafkaStub(consumer), {
+      producer: producerStub(),
+      topicProvisioner: provisionerStub() as unknown as KafkaTopicProvisioner,
+    }).subscribeGroup('billing', [first, second]);
+
+    expect(consumer.subscribe).toHaveBeenCalledWith({
+      topics: [/^audit\..+/, /^ledger\..+/, 'billing.retry.1', 'billing.retry.2'],
+    });
+  });
+
+  it('hands a shared group retry record only to the route that owns its original topic', async () => {
+    const consumer = consumerStub();
+    const audit = patternRoute('A.x', [/^audit\..+/], { errorHandling: { type: 'retry', attempts: 1 } });
+    const ledger = patternRoute('B.y', [/^ledger\..+/], { errorHandling: { type: 'retry', attempts: 1 } });
+    const payload = payloadFrom('billing.retry.1');
+    payload.batch.messages = [{ ...record('1'), headers: { 'retry.original.topic': 'ledger.eu', 'retry.due': '1' } }];
+
+    await new KafkaConsumer(kafkaStub(consumer), {
+      producer: producerStub(),
+      topicProvisioner: provisionerStub() as unknown as KafkaTopicProvisioner,
+    }).subscribeGroup('billing', [audit, ledger]);
+    await eachBatchOf(consumer)(payload);
+
+    expect({
+      audit: audit.delivery.handle.mock.calls.length,
+      ledger: ledger.delivery.handle.mock.calls.length,
+    }).toEqual({ audit: 0, ledger: 1 });
   });
 
   it('hands a batch route the whole batch in one call', async () => {

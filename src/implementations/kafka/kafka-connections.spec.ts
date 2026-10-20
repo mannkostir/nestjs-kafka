@@ -15,7 +15,7 @@ describe('KafkaConnections', () => {
       disconnect: jest.fn(async () => {
         order.push('producer');
       }),
-    } as unknown as KafkaProducer<Record<string, unknown>>;
+    } as unknown as KafkaProducer;
 
     await new KafkaConnections(consumer, producer).releaseConnections();
 

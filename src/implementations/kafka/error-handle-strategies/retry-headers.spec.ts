@@ -47,4 +47,13 @@ describe('RetryHeaders', () => {
   it.each([undefined, {}, { 'retry.due': 'soon' }, { 'retry.due': '' }])('has no due time for headers %p', (headers) => {
     expect(RetryHeaders.dueAt(withHeaders(headers))).toBeNaN();
   });
+
+  it.each([
+    [{ 'retry.original.topic': 'audit.eu' }, 'audit.eu'],
+    [{ 'retry.original.topic': Buffer.from('audit.eu') }, 'audit.eu'],
+    [{ 'retry.original.topic': '' }, undefined],
+    [undefined, undefined],
+  ])('reads the original topic from %p', (headers, expected) => {
+    expect(RetryHeaders.originalTopic({ headers } as unknown as KafkaJS.KafkaMessage)).toBe(expected);
+  });
 });

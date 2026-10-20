@@ -24,10 +24,15 @@ const producerStub = () =>
 
 const namespacer = () => new TopicNamespacer('acme');
 
-const scope = (namespaced: boolean, topicPatterns: (string | RegExp)[] = ['orders.created']) => ({
+const scope = (
+  namespaced: boolean,
+  concreteTopics: string[] = ['orders.created'],
+  subscribesToPatterns = false,
+) => ({
   namespaced,
   groupId: 'svc',
-  topicPatterns,
+  concreteTopics,
+  subscribesToPatterns,
 });
 
 describe('KafkaErrorHandleStrategyFactory', () => {
@@ -170,12 +175,30 @@ describe('KafkaErrorHandleStrategyFactory', () => {
       ).toThrow(/Retry error handling requires a producer/);
     });
 
-    it('rejects retry on a pattern subscription', () => {
+    it('derives group retry topics for a pattern subscription', () => {
       const factory = new KafkaErrorHandleStrategyFactory(namespacer(), producerStub());
 
-      expect(() =>
-        factory.create({ type: 'retry', attempts: 1 }, scope(true, ['orders.created', /^audit\..+/])),
-      ).toThrow(/subscribes to a pattern/);
+      expect(
+        factory.create({ type: 'retry', attempts: 2 }, scope(true, ['acme.orders.created'], true)).sharedConsumedTopics(),
+      ).toEqual(['svc.retry.1', 'svc.retry.2']);
+    });
+
+    it('derives no group retry topics without a pattern', () => {
+      const factory = new KafkaErrorHandleStrategyFactory(namespacer(), producerStub());
+
+      expect(factory.create({ type: 'retry', attempts: 2 }, scope(true)).sharedConsumedTopics()).toEqual([]);
+    });
+
+    it('keeps a concrete source on the per-source scheme next to a pattern', async () => {
+      const producer = producerStub();
+      const factory = new KafkaErrorHandleStrategyFactory(namespacer(), producer);
+      const payload = { ...batchPayload(), batch: { topic: 'acme.orders.created', partition: 0 } } as unknown as KafkaJS.EachBatchPayload;
+
+      await factory
+        .create({ type: 'retry', attempts: 2 }, scope(true, ['acme.orders.created'], true))
+        .handle(new Error('boom'), payload, record());
+
+      expect((producer.send as jest.Mock).mock.calls[0][0].topic).toBe('acme.orders.created.svc.retry.1');
     });
 
     it('rejects invalid retry backoff', () => {
