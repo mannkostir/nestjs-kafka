@@ -5,6 +5,7 @@ import { KafkaTopicProvisioner } from './kafka-topic-provisioner.js';
 import { TopicNamespacer } from './topic-namespacer.js';
 import { MessageFormat } from '../../types/message-format.type.js';
 import { KafkaMessageParseStrategyFactory } from './parse-strategies/kafka-message-parse-strategy.factory.js';
+import { SubscriptionAborted } from '../../errors/subscription-aborted.js';
 
 const consumerStub = () => ({
   connect: jest.fn().mockResolvedValue(undefined),
@@ -606,6 +607,116 @@ describe('KafkaConsumer shutdown', () => {
     await kafkaConsumer.onModuleDestroy();
 
     expect(consumer.disconnect).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('KafkaConsumer release of in-flight subscriptions', () => {
+  const joiningConsumer = () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+    consumer.run.mockImplementation(() => Promise.resolve());
+    return { consumer, kafka };
+  };
+
+  const provisioningConsumer = () => {
+    const kafka = kafkaStub(consumerStub());
+    const topicProvisioner = provisionerStub();
+    let finishProvisioning!: () => void;
+    topicProvisioner.assertExisting.mockReturnValue(
+      new Promise<void>((resolve) => { finishProvisioning = resolve; }),
+    );
+    const kafkaConsumer = new KafkaConsumer(kafka, {
+      topicProvisioner: topicProvisioner as unknown as KafkaTopicProvisioner,
+    });
+    return { kafka, kafkaConsumer, finishProvisioning: () => finishProvisioning() };
+  };
+
+  it('rejects a subscribe still waiting for its assignment', async () => {
+    const { kafka } = joiningConsumer();
+    const kafkaConsumer = new KafkaConsumer(kafka);
+    const subscribing = kafkaConsumer.subscribe(subscription(), jest.fn(), 'orders-service');
+    await flush();
+
+    await kafkaConsumer.disconnectAll();
+
+    await expect(subscribing).rejects.toThrow(new SubscriptionAborted('orders-service'));
+  });
+
+  it('disconnects a consumer released while waiting for its assignment exactly once', async () => {
+    const { consumer, kafka } = joiningConsumer();
+    const kafkaConsumer = new KafkaConsumer(kafka);
+    const subscribing = kafkaConsumer.subscribe(subscription(), jest.fn(), 'orders-service');
+    await flush();
+
+    await kafkaConsumer.disconnectAll();
+    await subscribing.catch(() => undefined);
+
+    expect(consumer.disconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('finishes releasing only after a pending subscribe has settled', async () => {
+    const { kafka } = joiningConsumer();
+    const kafkaConsumer = new KafkaConsumer(kafka);
+    const settled: string[] = [];
+    kafkaConsumer
+      .subscribe(subscription(), jest.fn(), 'orders-service')
+      .catch(() => settled.push('subscribe'));
+    await flush();
+
+    await kafkaConsumer.disconnectAll().then(() => settled.push('release'));
+
+    expect(settled).toEqual(['subscribe', 'release']);
+  });
+
+  it('rejects a subscribe still provisioning its topics', async () => {
+    const { kafkaConsumer, finishProvisioning } = provisioningConsumer();
+    const subscribing = kafkaConsumer.subscribe(subscription(), jest.fn(), 'orders-service');
+
+    const releasing = kafkaConsumer.disconnectAll();
+    finishProvisioning();
+    await releasing;
+
+    await expect(subscribing).rejects.toBeInstanceOf(SubscriptionAborted);
+  });
+
+  it('creates no consumer for a subscribe still provisioning its topics', async () => {
+    const { kafka, kafkaConsumer, finishProvisioning } = provisioningConsumer();
+    const subscribing = kafkaConsumer.subscribe(subscription(), jest.fn(), 'orders-service');
+
+    const releasing = kafkaConsumer.disconnectAll();
+    finishProvisioning();
+    await releasing;
+    await subscribing.catch(() => undefined);
+
+    expect(kafka.consumer).not.toHaveBeenCalled();
+  });
+
+  it('rejects a subscribe made after release', async () => {
+    const kafkaConsumer = new KafkaConsumer(kafkaStub(consumerStub()));
+    await kafkaConsumer.disconnectAll();
+
+    await expect(
+      kafkaConsumer.subscribe(subscription(), jest.fn(), 'orders-service'),
+    ).rejects.toThrow(new SubscriptionAborted('orders-service'));
+  });
+
+  it('creates no consumer for a subscribe made after release', async () => {
+    const kafka = kafkaStub(consumerStub());
+    const kafkaConsumer = new KafkaConsumer(kafka);
+    await kafkaConsumer.disconnectAll();
+
+    await kafkaConsumer.subscribe(subscription(), jest.fn(), 'orders-service').catch(() => undefined);
+
+    expect(kafka.consumer).not.toHaveBeenCalled();
+  });
+
+  it('rejects a batch subscribe made after release', async () => {
+    const kafkaConsumer = new KafkaConsumer(kafkaStub(consumerStub()));
+    await kafkaConsumer.disconnectAll();
+
+    await expect(
+      kafkaConsumer.subscribeBatch(subscription(), jest.fn(), 'orders-service'),
+    ).rejects.toBeInstanceOf(SubscriptionAborted);
   });
 });
 

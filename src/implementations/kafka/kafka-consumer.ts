@@ -25,6 +25,7 @@ import { KafkaBatchDelivery } from './kafka-batch-delivery.js';
 import { IConsumeSharedGroups } from '../../interfaces/consume-shared-groups.interface.js';
 import { KafkaHandlerRoutes } from './kafka-handler-routes.js';
 import { RouteDelivery, SharedGroupRoute } from '../../types/shared-group-route.type.js';
+import { SubscriptionAborted } from '../../errors/subscription-aborted.js';
 
 export interface KafkaConsumerOptions {
   namespace?: string;
@@ -69,6 +70,8 @@ export class KafkaConsumer<
   private readonly parseStrategies: KafkaMessageParseStrategyFactory;
   private readonly errorStrategies: KafkaErrorHandleStrategyFactory;
   private readonly subscriptions: ConsumerSubscription[] = [];
+  private readonly released = new AbortController();
+  private readonly startsInFlight = new Set<Promise<void>>();
 
   constructor(
     private readonly kafka: KafkaJS.Kafka,
@@ -126,6 +129,17 @@ export class KafkaConsumer<
   }
 
   private async start(consumerGroupId: string, routes: SharedGroupRoute<TMessage>[]): Promise<void> {
+    const starting = this.startConsumer(consumerGroupId, routes);
+    this.startsInFlight.add(starting);
+
+    try {
+      await starting;
+    } finally {
+      this.startsInFlight.delete(starting);
+    }
+  }
+
+  private async startConsumer(consumerGroupId: string, routes: SharedGroupRoute<TMessage>[]): Promise<void> {
     const groupId = [this.namespace, consumerGroupId].filter(Boolean).join('-');
     const prepared = routes.map((route) => this.prepare(route, groupId));
     const config = ResolvedConsumerConfig.agreed(consumerGroupId, prepared);
@@ -141,6 +155,8 @@ export class KafkaConsumer<
     } else {
       await this.topicProvisioner.assertExisting(requiredTopics);
     }
+
+    this.assertNotReleased(groupId);
 
     const member = new KafkaGroupMember(
       this.kafka,
@@ -167,11 +183,17 @@ export class KafkaConsumer<
       await this.run(consumer, eachBatch, config.partitionsConsumedConcurrently);
 
       if (topicNames.length > 0) {
-        await member.joined(config.joinTimeoutMs());
+        await member.joined(config.joinTimeoutMs(), this.released.signal);
       }
     } catch (error) {
       await this.closeFailedSubscription(consumerSubscription);
       throw error;
+    }
+  }
+
+  private assertNotReleased(groupId: string): void {
+    if (this.released.signal.aborted) {
+      throw new SubscriptionAborted(groupId);
     }
   }
 
@@ -290,6 +312,9 @@ export class KafkaConsumer<
   }
 
   public async disconnectAll(): Promise<void> {
+    this.released.abort();
+    await Promise.allSettled([...this.startsInFlight]);
+
     const subscriptions = this.subscriptions.splice(0);
 
     this.logger.log(`Disconnecting ${subscriptions.length} consumer(s)...`);
