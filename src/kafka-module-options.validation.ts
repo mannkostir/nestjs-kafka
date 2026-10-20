@@ -86,11 +86,11 @@ const optionsChecks: readonly OptionsCheck[] = [
   schemaRegistryCheck,
   optionalObject(
     'consumerDefaults',
-    'Set consumerDefaults to a ConsumerConfig object, or leave it undefined.',
+    'Set consumerDefaults to a ConsumerOptions object, or leave it undefined.',
   ),
   optionalObject(
     'producer',
-    'Set producer to a ProducerConfig object, or leave it undefined.',
+    'Set producer to a ProducerOptions object, or leave it undefined.',
   ),
   messageFormatCheck,
   shutdownTimeoutCheck,

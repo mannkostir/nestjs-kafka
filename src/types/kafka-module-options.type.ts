@@ -5,8 +5,8 @@ import type {
   Type,
 } from '@nestjs/common';
 import type { KafkaJS } from '@confluentinc/kafka-javascript';
-import { ConsumerConfig } from './consumer-config.type.js';
-import { ProducerConfig } from './producer-config.type.js';
+import { ConsumerOptions } from './consumer-options.type.js';
+import { ProducerOptions } from './producer-options.type.js';
 import { MessageFormat } from './message-format.type.js';
 
 export type SchemaRegistryOptions = {
@@ -20,8 +20,8 @@ export type KafkaModuleOptions = {
   schemaRegistry?: {
     url: string;
   };
-  consumerDefaults?: ConsumerConfig;
-  producer?: ProducerConfig;
+  consumerDefaults?: ConsumerOptions;
+  producer?: ProducerOptions;
   messageFormat?: MessageFormat;
   shutdownTimeout?: number;
 };

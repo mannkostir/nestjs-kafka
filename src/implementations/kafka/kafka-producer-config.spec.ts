@@ -1,6 +1,6 @@
 import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { toClientProducerConfig } from './kafka-producer-config.js';
-import { ProducerCompression } from '../../types/producer-config.type.js';
+import { ProducerCompression } from '../../types/producer-options.type.js';
 
 describe('toClientProducerConfig', () => {
   it('disables auto topic creation when nothing is configured', () => {

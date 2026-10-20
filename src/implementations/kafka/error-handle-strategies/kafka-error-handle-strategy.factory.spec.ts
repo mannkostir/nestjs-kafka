@@ -1,5 +1,5 @@
 import type { KafkaJS } from '@confluentinc/kafka-javascript';
-import { MessageErrorHandlingConfig } from '../../../types/message-error-handling.type.js';
+import { MessageErrorHandlingOptions } from '../../../types/message-error-handling.type.js';
 import { TopicNamespacer } from '../topic-namespacer.js';
 import { KafkaErrorHandleStrategyFactory } from './kafka-error-handle-strategy.factory.js';
 
@@ -234,7 +234,7 @@ describe('KafkaErrorHandleStrategyFactory', () => {
     const factory = new KafkaErrorHandleStrategyFactory(namespacer());
 
     expect(() =>
-      factory.create({ type: 'skip' } as unknown as MessageErrorHandlingConfig, scope(true)),
+      factory.create({ type: 'skip' } as unknown as MessageErrorHandlingOptions, scope(true)),
     ).toThrow('Message error handle strategy not found for type: skip');
   });
 });

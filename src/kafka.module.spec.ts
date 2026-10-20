@@ -9,7 +9,7 @@ import { KAFKA_PRODUCER, KAFKA_CONNECTIONS, BATCH_CONSUMER, SHARED_GROUP_CONSUME
 import { ConsumerProxy } from './base/consumer-proxy.js';
 import { ProducerProxy } from './base/producer-proxy.js';
 import { MessageFormat } from './types/message-format.type.js';
-import { ProducerCompression } from './types/producer-config.type.js';
+import { ProducerCompression } from './types/producer-options.type.js';
 import { KafkaMessageParseStrategyFactory } from './implementations/kafka/parse-strategies/kafka-message-parse-strategy.factory.js';
 import { NestKafkaLogger } from './implementations/kafka/nest-kafka-logger.js';
 import { KafkaConsumer } from './implementations/kafka/kafka-consumer.js';

@@ -11,7 +11,7 @@ import { KafkaMessageParseStrategy } from './parse-strategies/kafka-message-pars
 import { KafkaMessageParseStrategyFactory } from './parse-strategies/kafka-message-parse-strategy.factory.js';
 import { KafkaErrorHandleStrategy } from './error-handle-strategies/kafka-error-handle.strategy.js';
 import { KafkaErrorHandleStrategyFactory } from './error-handle-strategies/kafka-error-handle-strategy.factory.js';
-import { ConsumerConfig } from '../../types/consumer-config.type.js';
+import { ConsumerOptions } from '../../types/consumer-options.type.js';
 import { TopicNamespacer } from './topic-namespacer.js';
 import { LibrdkafkaTopicPattern } from './librdkafka-topic-pattern.js';
 import { KafkaTopicProvisioner } from './kafka-topic-provisioner.js';
@@ -33,7 +33,7 @@ export interface KafkaConsumerOptions {
   namespace?: string;
   schemaRegistry?: SchemaRegistry;
   producer?: KafkaJS.Producer;
-  consumerDefaults?: ConsumerConfig;
+  consumerDefaults?: ConsumerOptions;
   namespacer?: TopicNamespacer;
   topicProvisioner?: KafkaTopicProvisioner;
   clientLogger?: KafkaJS.Logger;
@@ -67,7 +67,7 @@ export class KafkaConsumer<
 
   private readonly logger = new Logger(KafkaConsumer.name);
   private readonly namespace?: string;
-  private readonly consumerDefaults?: ConsumerConfig;
+  private readonly consumerDefaults?: ConsumerOptions;
   private readonly namespacer: TopicNamespacer;
   private readonly topicProvisioner: KafkaTopicProvisioner;
   private readonly clientLogger: KafkaJS.Logger;

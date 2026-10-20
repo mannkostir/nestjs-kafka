@@ -7,8 +7,8 @@ import {
   KafkaModuleAsyncOptions,
   KafkaModuleOptionsFactory,
 } from './types/kafka-module-options.type.js';
-import { ConsumerConfig } from './types/consumer-config.type.js';
-import { ProducerConfig } from './types/producer-config.type.js';
+import { ConsumerOptions } from './types/consumer-options.type.js';
+import { ProducerOptions } from './types/producer-options.type.js';
 import { MessageFormat } from './types/message-format.type.js';
 import { ConsumerProxy } from './base/consumer-proxy.js';
 import { KafkaConsumer } from './implementations/kafka/kafka-consumer.js';
@@ -53,7 +53,7 @@ const kafkaProducerProvider: Provider<KafkaJS.Producer> = {
   provide: KAFKA_PRODUCER,
   useFactory: (
     kafka: KafkaJS.Kafka,
-    producerConfig: ProducerConfig | undefined,
+    producerConfig: ProducerOptions | undefined,
   ) => kafka.producer({ kafkaJS: toClientProducerConfig(producerConfig) }),
   inject: [KafkaJS.Kafka, PRODUCER_CONFIG],
 };
@@ -91,7 +91,7 @@ const consumerProxyProvider: Provider<ConsumerProxy> = {
     producer: KafkaJS.Producer,
     schemaRegistry: SchemaRegistry | undefined,
     namespace: string | undefined,
-    consumerDefaults: ConsumerConfig | undefined,
+    consumerDefaults: ConsumerOptions | undefined,
     namespacer: TopicNamespacer,
     clientLogger: KafkaJS.Logger | undefined,
     messageFormat: MessageFormat | undefined,

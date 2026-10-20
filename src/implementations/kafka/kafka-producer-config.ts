@@ -1,5 +1,5 @@
 import { KafkaJS } from '@confluentinc/kafka-javascript';
-import { ProducerCompression, ProducerConfig } from '../../types/producer-config.type.js';
+import { ProducerCompression, ProducerOptions } from '../../types/producer-options.type.js';
 
 const DEFAULT_ALLOW_AUTO_TOPIC_CREATION = false;
 
@@ -27,7 +27,7 @@ const toClientCompression = (compression: string): KafkaJS.CompressionTypes => {
   return CLIENT_COMPRESSION[compression];
 };
 
-const rejectIdempotentAcksConflict = (config: ProducerConfig | undefined): void => {
+const rejectIdempotentAcksConflict = (config: ProducerOptions | undefined): void => {
   if (config?.idempotent === true && config.acks !== undefined && config.acks !== IDEMPOTENT_ACKS) {
     throw new Error(
       `KafkaModule "producer.acks" must be ${IDEMPOTENT_ACKS} when "producer.idempotent" is true. Set acks to ${IDEMPOTENT_ACKS}, leave it unset, or turn idempotence off.`,
@@ -35,7 +35,7 @@ const rejectIdempotentAcksConflict = (config: ProducerConfig | undefined): void 
   }
 };
 
-export const toClientProducerConfig = (config: ProducerConfig | undefined): KafkaJS.ProducerConfig => {
+export const toClientProducerConfig = (config: ProducerOptions | undefined): KafkaJS.ProducerConfig => {
   rejectIdempotentAcksConflict(config);
 
   return {
