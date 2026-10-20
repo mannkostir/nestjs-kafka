@@ -68,9 +68,11 @@ Without `topic`, the destination is the source topic plus a `.dlq` suffix — `o
 `orders.created.dlq`. How DLQ topics are namespaced and created is described in
 [Topics and namespacing](topics-and-namespacing.md#dlq-topics).
 
-If the DLQ publish fails, the offset is not resolved and the record is redelivered. A publish to a
-missing DLQ topic fails only after about 30 seconds (see [Producing](producing.md#topic)), so each
-redelivery stalls the partition for that long.
+If the DLQ publish fails, the offset is not resolved: the partition is paused and the record is
+redelivered after a backoff with the [`fail`](#-type-fail-) defaults (`300` ms, doubling, up to
+`30000` ms). The publish error is logged as a warning once per backoff step. A publish to a missing
+DLQ topic fails only after about 30 seconds (see [Producing](producing.md#topic)), so each attempt
+also stalls the partition for that long.
 
 The original headers are preserved, and these are added:
 
@@ -151,8 +153,9 @@ under [`dlq`](#-type-dlq-topic-string-), where `dlq.original.topic` is the topic
 consumed from. The `retry.*` headers are kept. How retry topics are named, namespaced and created is
 described in [Topics and namespacing](topics-and-namespacing.md#retry-topics).
 
-If the republish or the dead-letter publish fails, the offset is not resolved and the record is
-redelivered.
+If the republish or the dead-letter publish fails, the offset is not resolved, and the partition is
+paused and the record redelivered with the same backoff as a failed
+[`dlq`](#-type-dlq-topic-string-) publish.
 
 Per-key ordering is not preserved: while a record waits in a retry topic, later records with the same
 key are processed. Use `fail` when order matters.
@@ -181,7 +184,9 @@ async handleOrder(message: MessageType<OrderCreated>): Promise<void> {
 When a `@MessageBatch` handler returns, every message of its batch is resolved. When it throws, the
 policy applies to every message of the batch, in order: `ignore` skips them all, `dlq` dead-letters
 each one, `retry` sends each one to its next retry topic, and `fail` pauses the partition and
-redelivers the whole batch.
+redelivers the whole batch. If a `dlq` or `retry` publish fails, the messages already published are
+resolved, and the rest are redelivered after the backoff described under
+[`dlq`](#-type-dlq-topic-string-).
 
 To fail a single message, throw `BatchFailure` with its index in the batch the handler received and
 the underlying error:
