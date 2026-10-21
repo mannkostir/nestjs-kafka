@@ -26,6 +26,26 @@ const kafkaStub = (
 
 const config = (): KafkaJS.ConsumerConfig => ({ groupId: 'g' });
 
+type CommittedTopic = { topic: string; partitions: { partition: number; offset: string }[] };
+
+const committedOffsetsOf =
+  (group: CommittedTopic[]) =>
+  async ({ topics }: { topics: (string | { topic: string; partitions: number[] })[] }) =>
+    topics.flatMap((requested) =>
+      typeof requested === 'string'
+        ? (group.find(({ topic }) => topic === requested) ?? [])
+        : {
+            topic: requested.topic,
+            partitions: requested.partitions.map((partition) => ({
+              partition,
+              offset:
+                group
+                  .find(({ topic }) => topic === requested.topic)
+                  ?.partitions.find((committed) => committed.partition === partition)?.offset ?? '-1',
+            })),
+          },
+    );
+
 const clientLoggerStub = () => ({
   info: jest.fn(),
   error: jest.fn(),
@@ -219,6 +239,62 @@ describe('KafkaGroupMember start offset pinning', () => {
 
     expect(result).toEqual([{ topic: 't', partition: 0, offset: 42 }]);
     expect(typeof (result as { offset: number }[])[0].offset).toBe('number');
+  });
+
+  it('starts an uncommitted partition at the log start once another partition of its topic has a committed offset', async () => {
+    const admin = adminStub();
+    admin.fetchOffsets.mockImplementation(
+      committedOffsetsOf([{ topic: 't', partitions: [{ partition: 0, offset: '3' }] }]),
+    );
+    admin.fetchTopicOffsets.mockResolvedValue([
+      { partition: 0, high: '9', low: '0', offset: '9' },
+      { partition: 1, high: '42', low: '5', offset: '42' },
+    ]);
+    const kafka = kafkaStub(admin);
+    new KafkaGroupMember(kafka, config(), true, clientLoggerStub());
+
+    const result = await rebalanceCallback(kafka)({ code: -175 }, [{ topic: 't', partition: 1 }]);
+
+    expect(result).toEqual([{ topic: 't', partition: 1, offset: 5 }]);
+  });
+
+  it('keeps the committed partition and starts its uncommitted sibling at the log start in one assignment', async () => {
+    const admin = adminStub();
+    admin.fetchOffsets.mockImplementation(
+      committedOffsetsOf([{ topic: 't', partitions: [{ partition: 0, offset: '3' }] }]),
+    );
+    admin.fetchTopicOffsets.mockResolvedValue([
+      { partition: 0, high: '9', low: '0', offset: '9' },
+      { partition: 1, high: '42', low: '5', offset: '42' },
+    ]);
+    const kafka = kafkaStub(admin);
+    new KafkaGroupMember(kafka, config(), true, clientLoggerStub());
+
+    const result = await rebalanceCallback(kafka)({ code: -175 }, [
+      { topic: 't', partition: 0 },
+      { topic: 't', partition: 1 },
+    ]);
+
+    expect(result).toEqual([
+      { topic: 't', partition: 0, offset: 3 },
+      { topic: 't', partition: 1, offset: 5 },
+    ]);
+  });
+
+  it('still starts at the log end when only another topic has a committed offset', async () => {
+    const admin = adminStub();
+    admin.fetchOffsets.mockImplementation(
+      committedOffsetsOf([{ topic: 'other', partitions: [{ partition: 0, offset: '3' }] }]),
+    );
+    admin.fetchTopicOffsets.mockResolvedValue([
+      { partition: 0, high: '42', low: '5', offset: '42' },
+    ]);
+    const kafka = kafkaStub(admin);
+    new KafkaGroupMember(kafka, config(), true, clientLoggerStub());
+
+    const result = await rebalanceCallback(kafka)({ code: -175 }, [{ topic: 't', partition: 0 }]);
+
+    expect(result).toEqual([{ topic: 't', partition: 0, offset: 42 }]);
   });
 
   it('keeps a committed offset', async () => {
@@ -438,7 +514,8 @@ describe('KafkaGroupMember pin failure fallback', () => {
     expect(warn).toHaveBeenCalledWith(
       'Consumer group "g" failed to pin start offsets for its new assignment; ' +
         "falling back to the client's default start offsets. broker unreachable " +
-        'Retry partition(s) without a committed offset may start at the log end: t.g.retry.1[0], t.g.retry.1[1].',
+        'Partitions without a committed offset may start at the log end, ' +
+        'including retry partition(s): t.g.retry.1[0], t.g.retry.1[1].',
     );
   });
 
@@ -452,7 +529,8 @@ describe('KafkaGroupMember pin failure fallback', () => {
 
     expect(warn).toHaveBeenCalledWith(
       'Consumer group "g" failed to pin start offsets for its new assignment; ' +
-        "falling back to the client's default start offsets. broker unreachable",
+        "falling back to the client's default start offsets. broker unreachable " +
+        'Partitions without a committed offset may start at the log end.',
     );
   });
 
