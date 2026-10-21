@@ -139,6 +139,7 @@ export class KafkaGroupMember {
           ({ topic, partition }) =>
             !KafkaGroupMember.isValidOffset(committed.get(`${topic}:${partition}`)),
         ),
+        KafkaGroupMember.topicsWithACommit(committed),
       );
 
       return assignment.map(({ topic, partition }) => ({
@@ -157,7 +158,7 @@ export class KafkaGroupMember {
   ): Promise<Map<string, string>> {
     const results = await admin.fetchOffsets({
       groupId: this.groupId,
-      topics: KafkaGroupMember.byTopic(assignment),
+      topics: [...new Set(assignment.map(({ topic }) => topic))],
     });
 
     return new Map(
@@ -170,6 +171,7 @@ export class KafkaGroupMember {
   private async uncommittedStartOffsets(
     admin: KafkaJS.Admin,
     partitions: KafkaJS.TopicPartition[],
+    committedTopics: ReadonlySet<string>,
   ): Promise<Map<string, string>> {
     if (partitions.length === 0) {
       return new Map();
@@ -178,7 +180,7 @@ export class KafkaGroupMember {
     const topics = [...new Set(partitions.map(({ topic }) => topic))];
     const offsets = await Promise.all(
       topics.map(async (topic) => {
-        const startsAtLogStart = this.replayedTopics.has(topic);
+        const startsAtLogStart = this.replayedTopics.has(topic) || committedTopics.has(topic);
 
         return (await admin.fetchTopicOffsets(topic)).map(
           ({ partition, high, low }) => [`${topic}:${partition}`, startsAtLogStart ? low : high] as const,
@@ -195,22 +197,17 @@ export class KafkaGroupMember {
       .map(({ topic, partition }) => `${topic}[${partition}]`);
 
     return replayed.length === 0
-      ? ''
-      : ` Retry partition(s) without a committed offset may start at the log end: ${replayed.join(', ')}.`;
+      ? ' Partitions without a committed offset may start at the log end.'
+      : ' Partitions without a committed offset may start at the log end, ' +
+          `including retry partition(s): ${replayed.join(', ')}.`;
   }
 
-  private static byTopic(
-    assignment: KafkaJS.TopicPartition[],
-  ): { topic: string; partitions: number[] }[] {
-    const partitionsByTopic = new Map<string, number[]>();
-
-    for (const { topic, partition } of assignment) {
-      const partitions = partitionsByTopic.get(topic) ?? [];
-      partitions.push(partition);
-      partitionsByTopic.set(topic, partitions);
-    }
-
-    return [...partitionsByTopic.entries()].map(([topic, partitions]) => ({ topic, partitions }));
+  private static topicsWithACommit(committed: Map<string, string>): Set<string> {
+    return new Set(
+      [...committed.entries()]
+        .filter(([, offset]) => KafkaGroupMember.isValidOffset(offset))
+        .map(([key]) => key.slice(0, key.lastIndexOf(':'))),
+    );
   }
 
   private static startOffset(

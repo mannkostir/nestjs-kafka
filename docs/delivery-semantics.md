@@ -42,14 +42,24 @@ concurrently, so right after startup or under light traffic batches can still ru
 
 ## Start offsets
 
-With `fromBeginning: false` (the default), a partition with no committed offset starts at the log
-end as of its assignment. A committed offset, including `0`, is always honoured instead. Retry topics
-are the exception: a retry topic partition with no committed offset starts at its log start, see
+With `fromBeginning: false` (the default), a committed offset, including `0`, is always honoured.
+A partition with no committed offset starts at the log end as of its assignment while the group has
+committed no offset on any partition of that topic, and at its log start once it has. A retry topic
+partition with no committed offset starts at its log start, see
 [Topics and namespacing](topics-and-namespacing.md#retry-topics).
 
-Messages produced after bootstrap are delivered to the consumer that holds the partition. Until the
-group's first commit, a partition that changes owner — for example a second replica joining, or a
-crash before the first commit — starts again at the log end.
+A partition can stay without a committed offset long after the group started on its topic: one
+that receives no traffic, or whose owner stops before its first commit, has none. When such a
+partition changes owner — a second replica joining, a restart, a crash — the next owner reads it
+from its log start, so nothing produced to it since the group started is skipped. If the partition
+held messages from before the group started on the topic, those are delivered too.
+
+Until the group's first commit on a topic, a partition that changes owner still starts again at the
+log end, and messages produced to it since the previous assignment are skipped.
+
+Reading the committed and log offsets of a new assignment is bounded to 10 seconds. If it fails or
+times out, the library logs a warning and every partition without a committed offset in that
+assignment, retry topics included, starts at the log end.
 
 ## Bootstrap waits for group assignment
 
@@ -142,8 +152,8 @@ groups.
   The client's default assignor is `roundrobin`, which is eager: while a group rebalances, all of its
   members stop consuming until the new assignment arrives. With `fromBeginning: false` (the
   default), every non-empty assignment also costs admin round trips before consumption resumes: the
-  library fetches the group's committed offsets, and the log-end offsets of partitions that have
-  none, through an admin client that shares the consumer's connections.
+  library fetches the group's committed offsets for the assigned topics, and the log offsets of
+  partitions that have none, through an admin client that shares the consumer's connections.
 - **Bootstrap time.** Handlers subscribe concurrently, so bootstrap takes about as long as the
   slowest handler rather than the sum of all of them. For each handler with a plain-string topic,
   that is an admin client connecting to list (and possibly create) topics, the consumer connecting,
