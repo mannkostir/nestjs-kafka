@@ -1,6 +1,7 @@
 import { Injectable, Module } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { KafkaJS } from '@confluentinc/kafka-javascript';
+import { KafkaConsumer } from '../../src/implementations/kafka/kafka-consumer.js';
 import { KafkaModule } from '../../src/kafka.module.js';
 import { Message } from '../../src/decorators/message-handler.decorator.js';
 import { ProducerProxy } from '../../src/base/producer-proxy.js';
@@ -125,5 +126,61 @@ describe('stopping while a handler is mid-batch', () => {
     await waitFor(() => received.includes('o-2') && received.includes('o-3'), 20000);
 
     expect(received).toEqual(expect.arrayContaining(['o-2', 'o-3']));
+  });
+});
+
+describe('stopping a running consumer alongside a pending connection', () => {
+  let broker: StartedBroker;
+
+  beforeAll(async () => {
+    broker = await startBroker();
+    await broker.createTopics([TOPIC]);
+  });
+
+  afterAll(async () => {
+    await broker?.stop();
+  });
+
+  it('finishes the real consumer disconnect while its sibling connection remains pending', async () => {
+    const kafka = new KafkaJS.Kafka({
+      kafkaJS: { clientId: 'mixed-shutdown', brokers: broker.brokers },
+    });
+    const createConsumer = jest.spyOn(kafka, 'consumer');
+    const connector = new KafkaConsumer(kafka, { shutdownTimeout: 3000 });
+    const subscription = {
+      topicPatterns: [TOPIC],
+      consumer: { fromBeginning: true },
+      errorHandling: { type: 'ignore' as const },
+    };
+    let finishConnect!: () => void;
+    const connecting = new Promise<void>((resolve) => { finishConnect = resolve; });
+    let disconnected = false;
+    let starting: Promise<void> = Promise.resolve();
+
+    try {
+      await connector.subscribe(subscription, async () => undefined, 'mixed-running');
+      const running = createConsumer.mock.results[0].value as KafkaJS.Consumer;
+      const disconnect = running.disconnect.bind(running);
+      jest.spyOn(running, 'disconnect').mockImplementation(async () => {
+        await disconnect();
+        disconnected = true;
+      });
+      createConsumer.mockReturnValueOnce({
+        connect: () => connecting,
+        disconnect: async () => undefined,
+      } as unknown as KafkaJS.Consumer);
+      starting = connector.subscribe(subscription, async () => undefined, 'mixed-pending')
+        .catch(() => undefined);
+      await waitFor(() => createConsumer.mock.calls.length === 2);
+
+      await connector.disconnectAll();
+
+      expect(disconnected).toBe(true);
+    } finally {
+      finishConnect();
+      await starting;
+      await connector.disconnectAll();
+      jest.restoreAllMocks();
+    }
   });
 });

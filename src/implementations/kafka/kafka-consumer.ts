@@ -74,7 +74,7 @@ export class KafkaConsumer<
   private readonly messageFormat: MessageFormat;
   private readonly parseStrategies: KafkaMessageParseStrategyFactory;
   private readonly errorStrategies: KafkaErrorHandleStrategyFactory;
-  private readonly subscriptions: ConsumerSubscription[] = [];
+  private readonly runningSubscriptions: ConsumerSubscription[] = [];
   private readonly stopping = new AbortController();
   private readonly startsInFlight = new Map<Promise<void>, string>();
   private readonly shutdownTimeoutMs: number;
@@ -189,14 +189,14 @@ export class KafkaConsumer<
       errorStrategies: prepared.map((route) => route.errorStrategy),
     };
 
-    this.subscriptions.push(consumerSubscription);
-
     try {
       await consumer.connect();
+      this.assertNotStopping(groupId);
 
       const topics: KafkaJS.ConsumerSubscribeTopics = { topics: [...topicPatterns, ...retryTopics, ...sharedRetryTopics] };
 
       await consumer.subscribe(topics);
+      this.assertNotStopping(groupId);
 
       await this.run(consumer, eachBatch, config.partitionsConsumedConcurrently);
 
@@ -205,6 +205,9 @@ export class KafkaConsumer<
       if (topicNames.length > 0 || sharedRetryTopics.length > 0) {
         await member.joined(config.joinTimeoutMs(), this.stopping.signal);
       }
+
+      this.assertNotStopping(groupId);
+      this.runningSubscriptions.push(consumerSubscription);
     } catch (error) {
       await this.closeFailedSubscription(consumerSubscription);
       throw error;
@@ -275,11 +278,6 @@ export class KafkaConsumer<
   }
 
   private async closeFailedSubscription(subscription: ConsumerSubscription): Promise<void> {
-    const index = this.subscriptions.indexOf(subscription);
-    if (index !== -1) {
-      this.subscriptions.splice(index, 1);
-    }
-
     try {
       await KafkaConsumer.close(subscription);
     } catch (disconnectError) {
@@ -349,30 +347,29 @@ export class KafkaConsumer<
       this.logger.warn(
         `Consumer group(s) ${draining.groupIds.join(', ')} still draining after the ${this.shutdownTimeoutMs} ms shutdown timeout; shutting down without waiting for them.`,
       );
+    } else {
+      this.logger.log('All consumers disconnected');
     }
   }
 
   private async drain(draining: DrainingGroups): Promise<void> {
-    await Promise.allSettled(
-      [...this.startsInFlight].map(([starting, groupId]) => draining.track(groupId, starting)),
-    );
-
-    const subscriptions = this.subscriptions.splice(0);
+    const starting = [...this.startsInFlight].map(([work, groupId]) => draining.track(groupId, work));
+    const subscriptions = this.runningSubscriptions.splice(0);
 
     this.logger.log(`Disconnecting ${subscriptions.length} consumer(s)...`);
 
-    const results = await Promise.allSettled(
-      subscriptions.map((subscription) =>
-        draining.track(subscription.groupId, KafkaConsumer.close(subscription)),
-      ),
+    const disconnecting = subscriptions.map((subscription) =>
+      draining.track(subscription.groupId, KafkaConsumer.close(subscription)),
     );
+    const [, results] = await Promise.all([
+      Promise.allSettled(starting),
+      Promise.allSettled(disconnecting),
+    ]);
 
     for (const result of results) {
       if (result.status === 'rejected') {
         this.logger.error('Error disconnecting consumer', result.reason);
       }
     }
-
-    this.logger.log('All consumers disconnected');
   }
 }

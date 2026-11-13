@@ -2234,6 +2234,149 @@ describe('KafkaConsumer shutdown timeout', () => {
     jest.restoreAllMocks();
   });
 
+  const runningWithPendingConnect = async () => {
+    const running = consumerStub();
+    const pending = consumerStub();
+    let finishConnect!: () => void;
+    let failConnect!: (error: Error) => void;
+    pending.connect.mockReturnValue(new Promise<void>((resolve, reject) => {
+      finishConnect = resolve;
+      failConnect = reject;
+    }));
+    const kafka = kafkaStub(running);
+    (kafka.consumer as jest.Mock).mockReturnValueOnce(running).mockReturnValueOnce(pending);
+    const kafkaConsumer = new KafkaConsumer(kafka, { namespace: 'dev', shutdownTimeout: 500 });
+    await kafkaConsumer.subscribe(subscription(), jest.fn(), 'running-service');
+    const starting = kafkaConsumer.subscribe(subscription(), jest.fn(), 'pending-service');
+    const failure = starting.catch((error: unknown) => error);
+    await jest.advanceTimersByTimeAsync(0);
+    return { running, pending, kafkaConsumer, failure, finishConnect, failConnect };
+  };
+
+  it('disconnects a running sibling immediately while another consumer is still connecting', async () => {
+    const { running, kafkaConsumer } = await runningWithPendingConnect();
+
+    const disconnecting = kafkaConsumer.disconnectAll();
+    await jest.advanceTimersByTimeAsync(0);
+
+    expect(running.disconnect).toHaveBeenCalledTimes(1);
+    await jest.advanceTimersByTimeAsync(500);
+    await disconnecting;
+  });
+
+  it('reports both a stuck start and a stuck running disconnect at the deadline', async () => {
+    const { running, kafkaConsumer } = await runningWithPendingConnect();
+    running.disconnect.mockReturnValue(never());
+
+    const disconnecting = kafkaConsumer.disconnectAll();
+    await jest.advanceTimersByTimeAsync(500);
+    await disconnecting;
+
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/dev-pending-service.*dev-running-service|dev-running-service.*dev-pending-service/));
+  });
+
+  it('leaves a disconnected running sibling out of the stuck-start warning', async () => {
+    const { kafkaConsumer } = await runningWithPendingConnect();
+
+    const disconnecting = kafkaConsumer.disconnectAll();
+    await jest.advanceTimersByTimeAsync(500);
+    await disconnecting;
+
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('dev-running-service'));
+  });
+
+  it('keeps cleanup ownership with a start that connects after the deadline', async () => {
+    const { pending, kafkaConsumer, failure, finishConnect } = await runningWithPendingConnect();
+    const disconnecting = kafkaConsumer.disconnectAll();
+    await jest.advanceTimersByTimeAsync(500);
+    await disconnecting;
+
+    finishConnect();
+    await failure;
+    await kafkaConsumer.onModuleDestroy();
+
+    expect(pending.disconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('disconnects a pending start once when its connection completes before the deadline', async () => {
+    const { pending, kafkaConsumer, failure, finishConnect } = await runningWithPendingConnect();
+
+    const disconnecting = kafkaConsumer.disconnectAll();
+    finishConnect();
+    await failure;
+    await disconnecting;
+
+    expect(pending.disconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves the original connection failure after the shutdown deadline', async () => {
+    const { kafkaConsumer, failure, failConnect } = await runningWithPendingConnect();
+    const error = new Error('connect failed');
+    const disconnecting = kafkaConsumer.disconnectAll();
+    await jest.advanceTimersByTimeAsync(500);
+    await disconnecting;
+
+    failConnect(error);
+
+    await expect(failure).resolves.toBe(error);
+  });
+
+  it('cleans up a failed connection exactly once after the shutdown deadline', async () => {
+    const { pending, kafkaConsumer, failure, failConnect } = await runningWithPendingConnect();
+    const disconnecting = kafkaConsumer.disconnectAll();
+    await jest.advanceTimersByTimeAsync(500);
+    await disconnecting;
+
+    failConnect(new Error('connect failed'));
+    await failure;
+    await kafkaConsumer.onModuleDestroy();
+
+    expect(pending.disconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not start delivery when a pending connection completes after shutdown', async () => {
+    const { pending, kafkaConsumer, failure, finishConnect } = await runningWithPendingConnect();
+    const disconnecting = kafkaConsumer.disconnectAll();
+    await jest.advanceTimersByTimeAsync(500);
+    await disconnecting;
+
+    finishConnect();
+    await failure;
+
+    expect(pending.run).not.toHaveBeenCalled();
+  });
+
+  it('never logs successful shutdown when a late start finishes after the deadline', async () => {
+    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    const { kafkaConsumer, failure, finishConnect } = await runningWithPendingConnect();
+    const disconnecting = kafkaConsumer.disconnectAll();
+    await jest.advanceTimersByTimeAsync(500);
+    await disconnecting;
+
+    finishConnect();
+    await failure;
+    await jest.advanceTimersByTimeAsync(0);
+
+    expect(log).not.toHaveBeenCalledWith('All consumers disconnected');
+  });
+
+  it('never logs successful shutdown when a disconnect finishes after the deadline', async () => {
+    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    const consumer = consumerStub();
+    let finishDisconnect!: () => void;
+    consumer.disconnect.mockReturnValue(new Promise<void>((resolve) => { finishDisconnect = resolve; }));
+    const kafkaConsumer = new KafkaConsumer(kafkaStub(consumer), { shutdownTimeout: 500 });
+    await kafkaConsumer.subscribe(subscription(), jest.fn(), 'orders-service');
+    const disconnecting = kafkaConsumer.disconnectAll();
+    await jest.advanceTimersByTimeAsync(500);
+    await disconnecting;
+
+    finishDisconnect();
+    await jest.advanceTimersByTimeAsync(0);
+
+    expect(log).not.toHaveBeenCalledWith('All consumers disconnected');
+  });
+
   it('stops waiting for a disconnect that never settles once the shutdown timeout passes', async () => {
     const { kafkaConsumer } = await hungFirstDisconnect({ shutdownTimeout: 500 });
     const settled = settledFlag(kafkaConsumer.disconnectAll());
