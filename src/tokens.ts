@@ -20,3 +20,7 @@ export const ASYNC_CONNECTOR_NAME = 'ASYNC_CONNECTOR_NAME';
 export function getProducerToken(connectorName: string): string {
   return `KAFKA_PRODUCER_PROXY:${connectorName}`;
 }
+
+export function getHealthToken(connectorName: string): string {
+  return `KAFKA_CONNECTOR_HEALTH:${connectorName}`;
+}

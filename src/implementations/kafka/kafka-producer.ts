@@ -10,16 +10,20 @@ import { toProducedRecord } from './kafka-produced-record.js';
 import { encodeKey } from './serialize-strategies/encode-key.js';
 import { KafkaMessageSerializeStrategyFactory } from './serialize-strategies/kafka-message-serialize-strategy.factory.js';
 import { TopicNamespacer } from './topic-namespacer.js';
+import { ConnectorHealthState } from '../../health/connector-health-state.js';
 
 export interface KafkaProducerOptions {
   messageFormat?: MessageFormat;
   schemaRegistry?: SchemaRegistry;
   latestSchemaTtl?: number;
+  health?: ConnectorHealthState;
 }
 
 export class KafkaProducer extends ProducerProxy implements BeforeApplicationShutdown {
 
   private readonly logger = new Logger(KafkaProducer.name);
+  private connectionAttempt = 0;
+  private readonly health: ConnectorHealthState;
   private readonly messageFormat: MessageFormat;
   private readonly serializeStrategies: KafkaMessageSerializeStrategyFactory;
 
@@ -29,6 +33,7 @@ export class KafkaProducer extends ProducerProxy implements BeforeApplicationShu
     options?: KafkaProducerOptions,
   ) {
     super();
+    this.health = options?.health ?? new ConnectorHealthState();
     this.messageFormat = options?.messageFormat ?? MessageFormat.JSON;
     this.serializeStrategies = new KafkaMessageSerializeStrategyFactory(options?.schemaRegistry, {
       latestSchemaTtl: options?.latestSchemaTtl,
@@ -36,7 +41,12 @@ export class KafkaProducer extends ProducerProxy implements BeforeApplicationShu
   }
 
   public async connect(): Promise<void> {
-    return this.producer.connect();
+    const attempt = ++this.connectionAttempt;
+    this.health.producerConnected = false;
+    await this.producer.connect();
+    if (attempt === this.connectionAttempt) {
+      this.health.producerConnected = true;
+    }
   }
 
   public async send<TValue>(
@@ -70,6 +80,8 @@ export class KafkaProducer extends ProducerProxy implements BeforeApplicationShu
   }
 
   public async disconnect(): Promise<void> {
+    ++this.connectionAttempt;
+    this.health.producerConnected = false;
     this.logger.log('Disconnecting producer...');
 
     try {

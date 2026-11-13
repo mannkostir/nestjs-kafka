@@ -236,3 +236,5 @@ The module's `producer` option.
 unknown `compression` fails module construction. They apply to the whole producer; there is no
 per-send `acks` or `compression`. `idempotent: true` requires `acks` to be unset or `-1`; any other
 `acks` fails module construction.
+
+Connector lifecycle observations and host readiness integration are described in [Connector health](health.md).

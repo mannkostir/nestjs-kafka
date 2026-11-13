@@ -4,6 +4,8 @@ import { Logger } from '@nestjs/common';
 import { JoinFailureDetector } from './join-failure-detector.js';
 import { SubscriptionAborted } from '../../errors/subscription-aborted.js';
 
+import { GroupObservation } from '../../health/connector-health-state.js';
+
 type RebalanceEvent = { code: number };
 
 const DEFAULT_PIN_TIMEOUT_MS = 10000;
@@ -26,6 +28,7 @@ export class KafkaGroupMember {
     assignment: KafkaJS.TopicPartition[],
   ): Promise<RdKafka.TopicPartitionOffset[] | undefined> => {
     if (event.code !== KafkaJS.ErrorCodes.ERR__ASSIGN_PARTITIONS) {
+      this.observation?.revoked();
       return undefined;
     }
 
@@ -43,6 +46,7 @@ export class KafkaGroupMember {
       );
       return undefined;
     } finally {
+      this.observation?.assigned(assignment);
       this.markAssigned();
     }
   };
@@ -56,9 +60,10 @@ export class KafkaGroupMember {
     clientLogger: KafkaJS.Logger,
     private readonly replayedTopics: ReadonlySet<string> = new Set(),
     private readonly pinTimeoutMs: number = DEFAULT_PIN_TIMEOUT_MS,
+    private readonly observation?: GroupObservation,
   ) {
     this.groupId = config.kafkaJS.groupId;
-    this.joinFailureDetector = new JoinFailureDetector(clientLogger);
+    this.joinFailureDetector = new JoinFailureDetector(clientLogger, (message) => this.observation?.workerFailed(message));
     this.consumer = kafka.consumer({
       ...config,
       rebalance_cb: this.onRebalance,

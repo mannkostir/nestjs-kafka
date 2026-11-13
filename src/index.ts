@@ -4,7 +4,7 @@ export { Message } from "./decorators/message-handler.decorator.js";
 export { MessageBatch } from "./decorators/message-batch-handler.decorator.js";
 
 export { InjectProducer } from "./decorators/inject-producer.decorator.js";
-export { getProducerToken } from "./tokens.js";
+export { getProducerToken, getHealthToken } from "./tokens.js";
 
 export { ProducerProxy } from "./base/producer-proxy.js";
 
@@ -28,3 +28,6 @@ export {
 } from "./types/kafka-module-options.type.js";
 export { ProducerSendOptions } from "./types/producer-send-options.type.js";
 export { ProducedRecord } from "./types/produced-record.type.js";
+
+export { ConnectorHealth } from "./base/connector-health.js";
+export type { ConnectorHealthSnapshot, GroupHealth, HealthPartition, WorkerError } from "./types/connector-health.type.js";
