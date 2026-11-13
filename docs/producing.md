@@ -33,6 +33,70 @@ await this.producer.send(
 );
 ```
 
+## Selecting a connector
+
+For multiple connectors, give each registration a distinct `connectorName` and inject its
+producer with `@InjectProducer(connectorName)`. Both helpers are exported from
+`nestjs-kafka-connector`.
+
+```ts
+import { Injectable, Module } from '@nestjs/common';
+import { InjectProducer, KafkaModule, ProducerProxy } from 'nestjs-kafka-connector';
+
+@Injectable()
+class Publisher {
+  constructor(
+    @InjectProducer('analytics') private readonly analytics: ProducerProxy,
+    @InjectProducer('billing') private readonly billing: ProducerProxy,
+  ) {}
+
+  async recordClick(): Promise<void> {
+    await this.analytics.send('clicks.recorded', { key: null, value: { page: '/' } });
+  }
+}
+
+@Module({
+  imports: [
+    KafkaModule.register({
+      connectorName: 'analytics',
+      clientOptions: { kafkaJS: { brokers: ['analytics:9092'] } },
+    }),
+    KafkaModule.register({
+      connectorName: 'billing',
+      clientOptions: { kafkaJS: { brokers: ['billing:9092'] } },
+    }),
+  ],
+  providers: [Publisher],
+})
+class AppModule {}
+```
+
+`getProducerToken('analytics')` returns the same injection token used by
+`@InjectProducer('analytics')`. Use it with Nest's `@Inject`, factory provider `inject` arrays,
+`app.get`, or test provider overrides. The named token aliases the existing producer instance;
+it does not open an additional connection. The module still exports `ProducerProxy` for existing
+registrations and single-connector applications. With multiple registrations, plain
+`ProducerProxy` injection does not select a particular connector; use a named token for that.
+
+For async registration, set `connectorName` at the top level so the module can declare the token
+before the options factory executes:
+
+```ts
+KafkaModule.registerAsync({
+  connectorName: 'analytics',
+  useFactory: async () => ({
+    clientOptions: { kafkaJS: { brokers: ['analytics:9092'] } },
+  }),
+});
+```
+
+This works with `useFactory`, `useClass`, and `useExisting`. The top-level name is applied to the
+resolved options when they omit `connectorName`, including for `@Message` handler selection.
+If the resolved options explicitly provide another name, registration fails before opening a
+producer connection. Returning the same name is also valid. Existing factories that return a
+name without setting the top-level name remain valid and support plain `ProducerProxy`
+injection, but do not export a named producer token. Names must be non-empty strings.
+
 ## Result
 
 `send` resolves when the client reports the record delivered, to an array holding its

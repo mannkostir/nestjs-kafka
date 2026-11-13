@@ -37,6 +37,7 @@ export interface KafkaModuleOptionsFactory {
 
 export interface KafkaModuleAsyncOptions
   extends Pick<ModuleMetadata, 'imports'> {
+  connectorName?: string;
   inject?: Array<InjectionToken | OptionalFactoryDependency>;
   useFactory?: (
     ...args: any[]

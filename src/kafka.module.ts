@@ -20,9 +20,11 @@ import { toKafkaClientConfig } from './implementations/kafka/kafka-client-config
 import type { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
 import { MessageHandlersDiscoveryService } from './services/message-handlers.discovery-service.js';
 import { KafkaConnections } from './implementations/kafka/kafka-connections.js';
-import { validateKafkaModuleOptions } from './kafka-module-options.validation.js';
+import { resolveAsyncKafkaModuleOptions, validateKafkaModuleOptions } from './kafka-module-options.validation.js';
 import { IReleaseConnections } from './interfaces/release-connections.interface.js';
 import {
+  ASYNC_CONNECTOR_NAME,
+  getProducerToken,
   KAFKA_MODULE_OPTIONS,
   RAW_KAFKA_MODULE_OPTIONS,
   TRANSPORT_CONFIG,
@@ -206,6 +208,18 @@ const validatedOptionsProvider: Provider<KafkaModuleOptions> = {
   inject: [RAW_KAFKA_MODULE_OPTIONS],
 };
 
+function createNamedProducerProviders(connectorName: string | undefined): Provider[] {
+  return connectorName === undefined
+    ? []
+    : [{ provide: getProducerToken(connectorName), useExisting: ProducerProxy }];
+}
+
+function producerExports(connectorName: string | undefined) {
+  return connectorName === undefined
+    ? [ProducerProxy]
+    : [ProducerProxy, getProducerToken(connectorName)];
+}
+
 @Module({})
 export class KafkaModule {
   public static register(
@@ -229,10 +243,11 @@ export class KafkaModule {
         sharedGroupConsumerProvider,
         topicNamespacerProvider,
         producerProxyProvider,
+        ...createNamedProducerProviders(options?.connectorName),
         kafkaConnectionsProvider,
         MessageHandlersDiscoveryService,
       ],
-      exports: [ProducerProxy],
+      exports: producerExports(options?.connectorName),
     };
   }
 
@@ -244,7 +259,12 @@ export class KafkaModule {
       imports: [...(asyncOptions.imports || []), DiscoveryModule],
       providers: [
         ...this.createAsyncOptionsProviders(asyncOptions),
-        validatedOptionsProvider,
+        { provide: ASYNC_CONNECTOR_NAME, useValue: asyncOptions.connectorName },
+        {
+          provide: KAFKA_MODULE_OPTIONS,
+          useFactory: resolveAsyncKafkaModuleOptions,
+          inject: [RAW_KAFKA_MODULE_OPTIONS, ASYNC_CONNECTOR_NAME],
+        },
         ...createDerivedProviders(),
         kafkaProvider,
         kafkaProducerProvider,
@@ -254,10 +274,11 @@ export class KafkaModule {
         sharedGroupConsumerProvider,
         topicNamespacerProvider,
         producerProxyProvider,
+        ...createNamedProducerProviders(asyncOptions.connectorName),
         kafkaConnectionsProvider,
         MessageHandlersDiscoveryService,
       ],
-      exports: [ProducerProxy],
+      exports: producerExports(asyncOptions.connectorName),
     };
   }
 

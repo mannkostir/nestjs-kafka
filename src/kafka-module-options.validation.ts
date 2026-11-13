@@ -140,3 +140,26 @@ export function validateKafkaModuleOptions(
   }
   return options as KafkaModuleOptions;
 }
+
+export function resolveAsyncKafkaModuleOptions(
+  options: unknown,
+  connectorName: string | undefined,
+): KafkaModuleOptions {
+  const validated = validateKafkaModuleOptions(options);
+  const problem = optionalNonEmptyString(
+    'connectorName',
+    'Set a non-empty top-level connectorName in KafkaModule.registerAsync, or leave it undefined for plain ProducerProxy injection.',
+  )({ connectorName });
+  if (problem) {
+    throw new Error(`Invalid KafkaModule.registerAsync options: ${problem}`);
+  }
+  if (connectorName === undefined) {
+    return validated;
+  }
+  if (validated.connectorName !== undefined && validated.connectorName !== connectorName) {
+    throw new Error(
+      `KafkaModule.registerAsync connectorName "${connectorName}" does not match returned connectorName "${validated.connectorName}". Use the same name, or omit connectorName from the returned options.`,
+    );
+  }
+  return { ...validated, connectorName };
+}
