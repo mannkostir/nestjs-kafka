@@ -95,6 +95,70 @@ describe('KafkaConsumer group id', () => {
 });
 
 describe('KafkaConsumer configuration precedence', () => {
+  it.each(['message', 'batch'] as const)('sets the native batch limit for a %s handler', async (kind) => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+    const consumerDefaults = { fromBeginning: false, maxBatchSize: 128 };
+    const handlerOptions = { fromBeginning: false, maxBatchSize: 64 };
+    const subject = new KafkaConsumer(kafka, { consumerDefaults });
+    const options = { ...subscription(), consumer: handlerOptions };
+
+    if (kind === 'batch') {
+      await subject.subscribeBatch(options, jest.fn(), 'orders-service');
+    } else {
+      await subject.subscribe(options, jest.fn(), 'orders-service');
+    }
+
+    expect((kafka.consumer as jest.Mock).mock.calls[0][0]).toEqual({
+      'js.consumer.max.batch.size': 64,
+      rebalance_cb: expect.any(Function),
+      kafkaJS: {
+        groupId: 'orders-service',
+        allowAutoTopicCreation: false,
+        fromBeginning: false,
+        retry: {},
+        logger: expect.anything(),
+      },
+    });
+  });
+
+  it('keeps the consumer batch limit out of admin config', async () => {
+    const kafka = kafkaStub(consumerStub());
+
+    await new KafkaConsumer(kafka, { consumerDefaults: { maxBatchSize: 128 } }).subscribe(
+      subscription(), jest.fn(), 'orders-service',
+    );
+
+    expect(kafka.admin).toHaveBeenCalledWith();
+  });
+
+  it('uses the module batch limit when the handler leaves it unset', async () => {
+    const kafka = kafkaStub(consumerStub());
+    const consumerDefaults = { fromBeginning: false, maxBatchSize: 128 };
+
+    await new KafkaConsumer(kafka, { consumerDefaults }).subscribe(subscription(), jest.fn(), 'orders-service');
+
+    expect((kafka.consumer as jest.Mock).mock.calls[0][0]['js.consumer.max.batch.size']).toBe(128);
+  });
+
+  it('leaves the native batch limit unset for the client default', async () => {
+    const kafka = kafkaStub(consumerStub());
+
+    await new KafkaConsumer(kafka).subscribe(subscription(), jest.fn(), 'orders-service');
+
+    expect((kafka.consumer as jest.Mock).mock.calls[0][0]).not.toHaveProperty(['js.consumer.max.batch.size']);
+  });
+
+  it.each([0, -1, 1.5, NaN, Infinity])('rejects batch limit %p before creating a consumer', async (maxBatchSize) => {
+    const kafka = kafkaStub(consumerStub());
+    const consumer = { fromBeginning: false, maxBatchSize };
+
+    await expect(
+      new KafkaConsumer(kafka).subscribe({ ...subscription(), consumer }, jest.fn(), 'orders-service'),
+    ).rejects.toThrow(/maxBatchSize must be a positive integer/);
+    expect(kafka.consumer).not.toHaveBeenCalled();
+  });
+
   it('falls back to the built-in defaults', async () => {
     const consumer = consumerStub();
     const kafka = kafkaStub(consumer);
@@ -1863,6 +1927,18 @@ describe('KafkaConsumer shared group', () => {
     handlerName,
     subscription: { topicPatterns: [topic], messageFormat: MessageFormat.JSON, errorHandling: { type: 'ignore' as const } },
     delivery: { kind: 'batch' as const, handle: jest.fn().mockResolvedValue(undefined) },
+  });
+
+  it('rejects differing batch limits before creating a consumer', async () => {
+    const kafka = kafkaStub(consumerStub());
+
+    await expect(
+      new KafkaConsumer(kafka).subscribeGroup('billing', [
+        route('A.x', 'orders.created', { consumer: { maxBatchSize: 64 } }),
+        route('B.y', 'parking.lot', { consumer: { maxBatchSize: 128 } }),
+      ]),
+    ).rejects.toThrow('resolve consumer option "maxBatchSize" differently (64 vs 128)');
+    expect(kafka.consumer).not.toHaveBeenCalled();
   });
 
   it('creates one client consumer for every handler of the group', async () => {

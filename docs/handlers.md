@@ -90,8 +90,26 @@ How failures are handled is described in [Error handling](error-handling.md#batc
 
 ### Batch size
 
-A batch holds at most 32 messages, the client's default. The library does not offer a way to
-change that yet.
+Set `consumer.maxBatchSize` on a `@MessageBatch` or `@Message` handler to limit how many messages
+are fetched in each client batch. It must be a positive integer. The handler's value takes
+precedence over module `consumerDefaults.maxBatchSize`; leaving both unset uses the client's
+default of 32 messages.
+
+```ts
+@MessageBatch(['orders.created'], {
+  groupId: 'orders-indexer',
+  consumer: { maxBatchSize: 128 },
+  errorHandling: { type: 'dlq' },
+})
+async index(batch: ReceivedMessage<OrderCreated>[]): Promise<void> {
+  await this.search.bulkIndex(batch.map(({ message }) => message.value));
+}
+```
+
+Handlers sharing a group must resolve the same `maxBatchSize`, just like the other consumer
+options. Set it under `consumer` or `consumerDefaults`; putting the native
+`js.consumer.max.batch.size` setting in `clientOptions` also sends it to producer and admin
+clients, which reject it.
 
 The size is an upper bound, not a target. The client's cache starts at one message after an
 assignment and grows with throughput, so right after startup or under light traffic a batch can

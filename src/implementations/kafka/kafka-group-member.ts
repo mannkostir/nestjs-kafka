@@ -51,17 +51,18 @@ export class KafkaGroupMember {
 
   constructor(
     private readonly kafka: KafkaJS.Kafka,
-    config: KafkaJS.ConsumerConfig,
+    config: KafkaJS.ConsumerConstructorConfig & { kafkaJS: KafkaJS.ConsumerConfig },
     private readonly startAtLogEnd: boolean,
     clientLogger: KafkaJS.Logger,
     private readonly replayedTopics: ReadonlySet<string> = new Set(),
     private readonly pinTimeoutMs: number = DEFAULT_PIN_TIMEOUT_MS,
   ) {
-    this.groupId = config.groupId;
+    this.groupId = config.kafkaJS.groupId;
     this.joinFailureDetector = new JoinFailureDetector(clientLogger);
     this.consumer = kafka.consumer({
+      ...config,
       rebalance_cb: this.onRebalance,
-      kafkaJS: { ...config, logger: this.joinFailureDetector },
+      kafkaJS: { ...config.kafkaJS, logger: this.joinFailureDetector },
     });
   }
 

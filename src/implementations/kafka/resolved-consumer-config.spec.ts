@@ -4,12 +4,45 @@ describe('ResolvedConsumerConfig', () => {
   it('applies built-in defaults when nothing is configured', () => {
     const config = ResolvedConsumerConfig.resolve();
 
-    expect(config.clientConfig('group')).toEqual({
+    expect(config.clientConfig('group').kafkaJS).toEqual({
       groupId: 'group',
       fromBeginning: false,
       allowAutoTopicCreation: false,
       retry: {},
     });
+  });
+
+  it('omits an unset batch limit from the native constructor config', () => {
+    const config = ResolvedConsumerConfig.resolve();
+
+    expect(Object.keys(config.clientConfig('group'))).toEqual(['kafkaJS']);
+  });
+
+  it('resolves the module batch limit into native constructor config', () => {
+    const config = ResolvedConsumerConfig.resolve(undefined, { maxBatchSize: 128 });
+
+    expect(config.clientConfig('group')['js.consumer.max.batch.size']).toBe(128);
+  });
+
+  it('lets the handler batch limit beat the module default', () => {
+    const config = ResolvedConsumerConfig.resolve({ maxBatchSize: 1 }, { maxBatchSize: 128 });
+
+    expect(config.clientConfig('group')['js.consumer.max.batch.size']).toBe(1);
+  });
+
+  it.each([0, -1, 1.5, NaN, Infinity, -Infinity, '64', true])(
+    'rejects %p as a resolved batch limit',
+    (value) => {
+      expect(() => ResolvedConsumerConfig.resolve({ maxBatchSize: value as number })).toThrow(
+        /maxBatchSize must be a positive integer/,
+      );
+    },
+  );
+
+  it('rejects an invalid module batch limit', () => {
+    expect(() => ResolvedConsumerConfig.resolve(undefined, { maxBatchSize: 0 })).toThrow(
+      /maxBatchSize must be a positive integer/,
+    );
   });
 
   it('does not create missing topics unless opted in', () => {
@@ -21,7 +54,7 @@ describe('ResolvedConsumerConfig', () => {
   it('omits unset fields from the client config', () => {
     const config = ResolvedConsumerConfig.resolve({ sessionTimeout: 45000 });
 
-    expect(Object.keys(config.clientConfig('group'))).toEqual([
+    expect(Object.keys(config.clientConfig('group').kafkaJS)).toEqual([
       'groupId',
       'fromBeginning',
       'allowAutoTopicCreation',
@@ -39,7 +72,7 @@ describe('ResolvedConsumerConfig', () => {
       rebalanceTimeout: 60000,
     });
 
-    expect(config.clientConfig('group')).toEqual({
+    expect(config.clientConfig('group').kafkaJS).toEqual({
       groupId: 'group',
       fromBeginning: true,
       allowAutoTopicCreation: false,
@@ -68,7 +101,7 @@ describe('ResolvedConsumerConfig', () => {
       },
     );
 
-    expect(config.clientConfig('group')).toEqual({
+    expect(config.clientConfig('group').kafkaJS).toEqual({
       groupId: 'group',
       fromBeginning: false,
       allowAutoTopicCreation: true,
@@ -94,7 +127,7 @@ describe('ResolvedConsumerConfig', () => {
       { retry: { maxRetryTime: 5000, initialRetryTime: 100 } },
     );
 
-    expect(config.clientConfig('group').retry).toEqual({
+    expect(config.clientConfig('group').kafkaJS.retry).toEqual({
       maxRetryTime: 2000,
       initialRetryTime: 100,
     });
@@ -105,7 +138,7 @@ describe('ResolvedConsumerConfig', () => {
 
     const config = ResolvedConsumerConfig.resolve({ retry: untypedRetry });
 
-    expect(config.clientConfig('group').retry).toEqual({ maxRetryTime: 2000 });
+    expect(config.clientConfig('group').kafkaJS.retry).toEqual({ maxRetryTime: 2000 });
   });
 
   it('ignores fields outside the consumer retry options when comparing shared group members', () => {
@@ -158,7 +191,7 @@ describe('ResolvedConsumerConfig', () => {
   it('keeps partitions consumed concurrently out of the client config', () => {
     const config = ResolvedConsumerConfig.resolve({ partitionsConsumedConcurrently: 3 });
 
-    expect(config.clientConfig('group')).not.toHaveProperty('partitionsConsumedConcurrently');
+    expect(config.clientConfig('group').kafkaJS).not.toHaveProperty('partitionsConsumedConcurrently');
   });
 
   it.each([0, -1, 1.5, NaN])('rejects %p as partitions consumed concurrently', (value) => {
@@ -227,6 +260,22 @@ describe('ResolvedConsumerConfig.agreed', () => {
         member('B.y', ResolvedConsumerConfig.resolve()),
       ]),
     ).toThrow('resolve consumer option "createMissingTopics" differently (true vs false)');
+  });
+
+  it('agrees when a handler and module default resolve the same batch limit', () => {
+    const first = ResolvedConsumerConfig.resolve({ maxBatchSize: 64 });
+
+    expect(ResolvedConsumerConfig.agreed('billing', [
+      member('A.x', first),
+      member('B.y', ResolvedConsumerConfig.resolve(undefined, { maxBatchSize: 64 })),
+    ])).toBe(first);
+  });
+
+  it('distinguishes an unset batch limit from an explicit value', () => {
+    expect(() => ResolvedConsumerConfig.agreed('billing', [
+      member('A.x', ResolvedConsumerConfig.resolve()),
+      member('B.y', ResolvedConsumerConfig.resolve({ maxBatchSize: 32 })),
+    ])).toThrow('resolve consumer option "maxBatchSize" differently (unset vs 32)');
   });
 
   it('reports differing concurrency', () => {

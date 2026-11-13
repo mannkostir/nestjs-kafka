@@ -24,7 +24,7 @@ const kafkaStub = (
     admin: jest.fn().mockReturnValue(admin),
   }) as unknown as KafkaJS.Kafka;
 
-const config = (): KafkaJS.ConsumerConfig => ({ groupId: 'g' });
+const config = () => ({ kafkaJS: { groupId: 'g' } });
 
 type CommittedTopic = { topic: string; partitions: { partition: number; offset: string }[] };
 
@@ -73,7 +73,31 @@ describe('KafkaGroupMember construction', () => {
 
     const call = (kafka.consumer as jest.Mock).mock.calls[0][0];
     expect(typeof call.rebalance_cb).toBe('function');
-    expect(call.kafkaJS).toEqual({ ...passedConfig, logger: expect.any(JoinFailureDetector) });
+    expect(call.kafkaJS).toEqual({ ...passedConfig.kafkaJS, logger: expect.any(JoinFailureDetector) });
+  });
+
+  it('preserves native and KafkaJS settings when installing its callbacks', () => {
+    const kafka = kafkaStub(adminStub());
+    const passedConfig = {
+      'js.consumer.max.batch.size': 64,
+      kafkaJS: {
+        groupId: 'g',
+        fromBeginning: true,
+        allowAutoTopicCreation: false,
+        heartbeatInterval: 1000,
+        sessionTimeout: 45000,
+        rebalanceTimeout: 60000,
+        retry: { maxRetryTime: 2000, initialRetryTime: 100 },
+      },
+    };
+
+    new KafkaGroupMember(kafka, passedConfig, false, clientLoggerStub());
+
+    expect((kafka.consumer as jest.Mock).mock.calls[0][0]).toEqual({
+      ...passedConfig,
+      rebalance_cb: expect.any(Function),
+      kafkaJS: { ...passedConfig.kafkaJS, logger: expect.any(JoinFailureDetector) },
+    });
   });
 
   it('hands the consumer a logger that forwards to the client logger', () => {

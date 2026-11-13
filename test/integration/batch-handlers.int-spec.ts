@@ -29,7 +29,7 @@ class BulkIndexer {
   @MessageBatch(['batch.bulk'], {
     groupId: 'batch-bulk',
     errorHandling: { type: 'fail' },
-    consumer: { fromBeginning: true },
+    consumer: { fromBeginning: true, maxBatchSize: 8 },
   })
   async index(batch: ReceivedMessage[]): Promise<void> {
     bulk.push(batch.map(({ message }) => String(message.key)));
@@ -182,6 +182,12 @@ describe('batch handlers', () => {
       inOrder: bulk.flat().slice(0, backlogSize).join(',') === keys200.join(','),
       batched: Math.max(...bulk.map((batch) => batch.length)) > 1,
     }).toEqual({ inOrder: true, batched: true });
+  });
+
+  it('limits every bulk batch to the configured maximum', async () => {
+    await waitFor(() => bulk.flat().length >= backlogSize);
+
+    expect(Math.max(...bulk.map((batch) => batch.length))).toBeLessThanOrEqual(8);
   });
 
   it('commits the offsets of a handled batch', async () => {

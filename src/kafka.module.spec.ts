@@ -181,6 +181,15 @@ describe('KafkaModule producer', () => {
     ).toEqual({ kafkaJS: { allowAutoTopicCreation: false } });
   });
 
+  it('keeps the consumer batch limit out of the producer config', async () => {
+    expect(
+      await producerConfigOf(KafkaModule.register({
+        clientOptions,
+        consumerDefaults: { maxBatchSize: 128 },
+      })),
+    ).toEqual({ kafkaJS: { allowAutoTopicCreation: false } });
+  });
+
   it('creates the producer with auto topic creation when enabled', async () => {
     expect(
       await producerConfigOf(
@@ -407,6 +416,22 @@ describe('KafkaModule client logger', () => {
     namespace: jest.fn(),
     setLogLevel: jest.fn(),
   };
+
+  it('keeps the consumer batch limit out of the common client config', async () => {
+    const RealKafka = KafkaJS.Kafka;
+    const constructClient = jest.spyOn(KafkaJS, 'Kafka').mockImplementation((config) => new RealKafka(config));
+
+    try {
+      const moduleRef = await compileWith({ clientOptions, consumerDefaults: { maxBatchSize: 128 } });
+      await moduleRef.close();
+
+      expect(constructClient.mock.calls[0][0]).toEqual({
+        kafkaJS: { ...clientOptions.kafkaJS, logger: expect.any(NestKafkaLogger) },
+      });
+    } finally {
+      constructClient.mockRestore();
+    }
+  });
 
   it('creates the client with a Nest logger when none is configured', async () => {
     expect(
