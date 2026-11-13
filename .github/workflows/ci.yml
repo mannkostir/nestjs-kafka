@@ -107,3 +107,55 @@ jobs:
           name: kafka-client-debug-nest-${{ matrix.nest }}
           path: ${{ runner.temp }}/kafka-client-debug.log
           if-no-files-found: ignore
+
+  peer-floor:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        nest: [11, 12]
+    name: peer floor (nest ${{ matrix.nest }})
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: >-
+          npm install --no-save --package-lock=false
+          @confluentinc/kafka-javascript@1.10.1
+          @kafkajs/confluent-schema-registry@3.0.0
+          @nestjs/common@^${{ matrix.nest }}
+          @nestjs/core@^${{ matrix.nest }}
+          @nestjs/testing@^${{ matrix.nest }}
+      - run: |
+          node <<'NODE'
+          const assert = require('node:assert/strict');
+          for (const [name, expected] of Object.entries({
+            '@confluentinc/kafka-javascript': '1.10.1',
+            '@kafkajs/confluent-schema-registry': '3.0.0',
+          })) {
+            const installed = require(`./node_modules/${name}/package.json`).version;
+            console.log(`${name}: ${installed}`);
+            assert.equal(installed, expected);
+          }
+          for (const name of ['@nestjs/common', '@nestjs/core', '@nestjs/testing']) {
+            assert.equal(require(`./node_modules/${name}/package.json`).version.split('.')[0], '${{ matrix.nest }}');
+          }
+          NODE
+      - run: npx tsc --noEmit
+      - run: npm test -- --runInBand
+      - run: npm run build
+      - run: npm run test:integration
+        timeout-minutes: 25
+        env:
+          KAFKA_CLIENT_DEBUG: ${{ vars.KAFKA_CLIENT_DEBUG }}
+          KAFKA_CLIENT_DEBUG_LOG: ${{ runner.temp }}/kafka-client-debug.log
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: kafka-client-debug-peer-floor-nest-${{ matrix.nest }}
+          path: ${{ runner.temp }}/kafka-client-debug.log
+          if-no-files-found: ignore

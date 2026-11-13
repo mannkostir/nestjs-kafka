@@ -8,14 +8,20 @@ the host application provides.
 | Peer | Supported range |
 | --- | --- |
 | `@nestjs/common`, `@nestjs/core` | `^11.0.0 \|\| ^12.0.0` |
-| `@confluentinc/kafka-javascript` | `^1.10.0` |
+| `@confluentinc/kafka-javascript` | `^1.10.1` |
 | `reflect-metadata` | `^0.2.0` |
-| `@kafkajs/confluent-schema-registry` (optional, for Avro) | `>=3.0.0` |
+| `@kafkajs/confluent-schema-registry` (optional, for Avro) | `^3.0.0` |
 
 CI runs the type check, unit tests, build, and integration tests against both NestJS 11 and
 NestJS 12 on Node.js 24. For each NestJS version, CI checks that both entry points of the built
 package load on Node.js 20.19.0 and 22.12.0, and that the ES module entry loads on Node.js
 20.18.3 and 22.11.0.
+
+A separate peer-floor job installs exactly `@confluentinc/kafka-javascript@1.10.1` and
+`@kafkajs/confluent-schema-registry@3.0.0` for both NestJS versions on Node.js 24. It asserts
+the installed versions, then runs the type check, unit tests, build, and full integration suite,
+including Avro round trips against real Kafka and Schema Registry containers. The registry peer
+is only required when using Avro; JSON-only applications can omit it.
 
 The module's `clientOptions` is `KafkaJS.CommonConstructorConfig` from
 `@confluentinc/kafka-javascript`, passed to the client unchanged. Its shape follows the installed
