@@ -1,8 +1,8 @@
 # Message formats
 
 The format is chosen per module with `messageFormat`, and overridden per handler with
-`@Message({ messageFormat })` and per send with `{ messageFormat }`. It defaults to
-`MessageFormat.JSON`.
+`@Message(topics, { groupId, errorHandling, messageFormat })` and per send with `{ messageFormat }`.
+It defaults to `MessageFormat.JSON`.
 
 `MessageFormat` is a constant object and a type of the same name. The constants
 `MessageFormat.JSON`, `MessageFormat.ENVELOPED_JSON` and `MessageFormat.AVRO` hold the string
@@ -98,7 +98,21 @@ KafkaModule.register({
 });
 ```
 
-`schemaRegistry` uses the exported `SchemaRegistryOptions` type. Both auth fields must be non-empty
+### Registry options
+
+`schemaRegistry` uses the exported `SchemaRegistryOptions` type:
+
+```ts
+type SchemaRegistryOptions = {
+  url: string;
+  latestSchemaTtl?: number;
+  auth?: { username: string; password: string };
+};
+```
+
+`url` is required and must be non-empty. `latestSchemaTtl` defaults to `60000` milliseconds and
+controls the producer's latest-schema id cache; `0` disables caching. It must be finite and
+nonnegative. See [Producing Avro](#producing-avro) for cache behavior. Both auth fields must be non-empty
 strings; credentials are forwarded to the registry client. Leave `auth` undefined for an
 unauthenticated registry. The same options work with `registerAsync` through `useFactory`,
 `useClass`, or `useExisting`. For JSON formats, `schemaRegistry` can remain undefined and the

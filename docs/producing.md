@@ -10,12 +10,7 @@ Idempotence, compression and acks are producer-wide; see
 send<TValue>(
   topic: string,
   message: KafkaMessage<TValue>,
-  options?: {
-    namespaced?: boolean;
-    messageFormat?: MessageFormat;
-    schemaId?: number;
-    subject?: string;
-  },
+  options?: ProducerSendOptions,
 ): Promise<ProducedRecord[]>;
 ```
 
@@ -33,10 +28,27 @@ await this.producer.send(
 );
 ```
 
+## Send options
+
+The exported `ProducerSendOptions` type has only optional fields; omitting it uses these defaults:
+
+| Field | Type | Default and semantics |
+| --- | --- | --- |
+| `namespaced` | `boolean` | `true`; set `false` to send to the exact supplied topic, without the module namespace. |
+| `messageFormat` | `MessageFormat` | Module format, then `MessageFormat.JSON`; overrides encoding for this send. |
+| `schemaId` | `number` | Unset; for Avro, selects a positive integer registry id instead of looking up the latest schema. |
+| `subject` | `string` | Unset; for Avro, overrides the latest-schema subject, whose default is `<effective topic>-value`. Must be nonblank. |
+
+For Avro, supply at most one of `schemaId` and `subject`; passing both rejects. JSON formats ignore
+both fields. See [Producing Avro](message-formats.md#producing-avro) for caching and failures.
+Serialization or broker delivery failures reject the `send` promise and propagate to the caller;
+consumer error policies do not automatically retry an application send.
+
 ## Selecting a connector
 
 For multiple connectors, give each registration a distinct `connectorName` and inject its
-producer with `@InjectProducer(connectorName)`. Both helpers are exported from
+producer with `InjectProducer(connectorName: string)`, a Nest injection decorator. It selects the
+producer registered under that name. The named injection helpers are exported from
 `nestjs-kafka-connector`.
 
 ```ts
@@ -71,7 +83,8 @@ class Publisher {
 class AppModule {}
 ```
 
-`getProducerToken('analytics')` returns the same injection token used by
+`getProducerToken(connectorName: string): string` returns the named injection token. For example,
+`getProducerToken('analytics')` returns the same token used by
 `@InjectProducer('analytics')`. Use it with Nest's `@Inject`, factory provider `inject` arrays,
 `app.get`, or test provider overrides. The named token aliases the existing producer instance;
 it does not open an additional connection. The module still exports `ProducerProxy` for existing

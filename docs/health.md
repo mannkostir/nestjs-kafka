@@ -4,6 +4,42 @@ Inject `ConnectorHealth` from `nestjs-kafka-connector` for one unnamed connector
 
 For named connectors, inject `@Inject(getHealthToken('analytics')) health: ConnectorHealth`. Each registration owns its state. With `registerAsync`, set `connectorName: 'analytics'` on the registration options, alongside `useFactory`, `useClass` or `useExisting`. A factory-only name supports plain class injection but cannot create a named injection alias. A returned name must match the static name if both are supplied.
 
+## Public health types
+
+`ConnectorHealth` is an abstract injectable port with one synchronous method,
+`snapshot(): ConnectorHealthSnapshot`. It takes no arguments and returns a local observation.
+The exported types describe its complete result:
+
+```ts
+type HealthPartition = Readonly<{ topic: string; partition: number }>;
+type WorkerError = Readonly<{ message: string }>;
+
+type GroupHealth = Readonly<{
+  groupId: string;
+  joined: boolean;
+  assignment: readonly HealthPartition[];
+  lastWorkerError: WorkerError | null;
+}>;
+
+type ConnectorHealthSnapshot = Readonly<{
+  producerConnected: boolean;
+  groups: readonly GroupHealth[];
+}>;
+```
+
+`ConnectorHealthSnapshot` is one connector's producer state and group observations. `GroupHealth`
+represents an effective consumer group, including shared groups. Each `HealthPartition` identifies
+an assigned concrete topic (including its namespace) and partition number. `WorkerError` is a
+retained message diagnostic, not the original exception or a stack trace. Before a connection
+succeeds, `producerConnected` is false; `groups` is empty before subscriptions start. A new group
+starts with `joined: false`, an empty `assignment`, and `lastWorkerError: null`. The flags and
+diagnostics follow the lifecycle below.
+
+`getHealthToken(connectorName: string): string` creates the named Nest injection token, suitable
+for `@Inject`, provider `inject` arrays, `app.get` and test overrides. The alias resolves to the same
+`ConnectorHealth` instance for that registration. With multiple registrations, use named tokens
+to select a particular connector; plain class injection does not select one by name.
+
 ## Snapshot semantics
 
 - `producerConnected` becomes true when the client's `connect()` resolves. It becomes false when another connection attempt starts or shutdown begins, including failed disconnects. It records local lifecycle state; it does not continuously observe broker connectivity.

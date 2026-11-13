@@ -34,7 +34,51 @@ Every handler needs an array of topics holding at least one non-empty topic name
 host or a cast options object therefore fails early, with an error naming the handler as
 `ClassName.methodName` and the option to fix.
 
+## Callback types
+
+The exported callback types default `TValue` to `unknown`:
+
+```ts
+type MessageHandlerCallback<TValue = unknown> = (
+  message: KafkaMessage<TValue>,
+  context: MessageContext,
+) => Promise<void>;
+
+type ReceivedMessage<TValue = unknown> = {
+  message: KafkaMessage<TValue>;
+  context: MessageContext;
+};
+
+type MessageBatchHandlerCallback<TValue = unknown> = (
+  batch: ReceivedMessage<TValue>[],
+) => Promise<void>;
+```
+
+`MessageHandlerCallback` describes one decoded delivery; `MessageBatchHandlerCallback` describes
+an ordered batch from one topic partition. `ReceivedMessage` pairs each batch entry with its own
+record context. Resolving the promise lets the library resolve the delivered offsets; rejecting
+it invokes the configured [error policy](error-handling.md). Handler return values carry no reply
+message. Annotating `TValue` provides compile-time checking, not runtime payload validation.
+
 ## The message
+
+The exported message types are shared by handlers and producer sends:
+
+```ts
+type MessageKey = string | Record<string, unknown> | null;
+type MessageHeaders = Record<string, string | string[]>;
+
+type KafkaMessage<TValue = unknown> = {
+  key: MessageKey;
+  value: TValue | null;
+  headers?: MessageHeaders;
+};
+```
+
+`key` and `value` are required, but either can be `null`; `headers` is optional. `MessageKey`
+permits a string, an object with arbitrary property values, or no key. `MessageHeaders` permits
+one string per header or repeated values as an array. [Producing](producing.md#key) describes
+serialization; the consumer decoding rules follow.
 
 `message.value` is the decoded record value, as described in [Message formats](message-formats.md).
 `message.key` is an object when the record key is a JSON object, otherwise the raw UTF-8 string, or

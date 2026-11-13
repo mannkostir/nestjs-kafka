@@ -1,7 +1,21 @@
 # Error handling
 
 Every handler declares an `errorHandling` policy. It applies when the handler method rejects, and
-also when parsing the record throws.
+also when parsing the record throws. The exported `MessageErrorHandlingOptions` type is a
+required discriminated union; there is no default policy:
+
+```ts
+type BackoffOptions = { initialMs?: number; maxMs?: number; multiplier?: number };
+
+type MessageErrorHandlingOptions =
+  | { type: 'fail'; backoff?: BackoffOptions | false }
+  | { type: 'ignore' }
+  | { type: 'dlq'; topic?: string }
+  | { type: 'retry'; attempts: number; backoff?: BackoffOptions; dlq?: { topic?: string } };
+```
+
+`BackoffOptions` controls per-message redelivery delays, with defaults and constraints below. It
+is distinct from `ConsumerRetryOptions`, which controls failed broker requests.
 
 | Policy | On failure | Redelivered |
 | --- | --- | --- |
@@ -9,6 +23,14 @@ also when parsing the record throws.
 | `ignore` | resolves the offset and moves on | no |
 | `dlq` | publishes the record to a dead-letter topic, then resolves the offset | no |
 | `retry` | republishes to a delay topic, then dead-letters once attempts run out | yes, after each delay, up to `attempts` times |
+
+For `dlq` and `retry`, anchor source patterns at both ends and restrict them to source topics,
+for example `/^orders[.]created$/`. A pattern such as `/orders/` also matches
+`orders.created.dlq`, and `/^orders.*$/` still includes that suffix. Matching your dead-letter or
+retry topics as sources can consume your own failure records and create a delivery loop. The
+library does not automatically exclude them from a pattern; choose a source pattern that excludes
+both generated destinations and any explicit DLQ destination. See
+[Pattern topics](topics-and-namespacing.md#pattern-regexp-topics).
 
 ## `{ type: 'fail' }`
 
@@ -194,6 +216,12 @@ the underlying error:
 ```ts
 throw new BatchFailure(index, error);
 ```
+
+`BatchFailure` extends `Error` with `name: 'BatchFailure'` and readonly `index: number` and
+`cause: unknown` properties. Its constructor is `new BatchFailure(index: number, cause: unknown)`.
+The index is zero-based; a negative, fractional or non-finite index throws `RangeError` during
+construction. The cause is the underlying failure passed to the policy, and the error message
+includes the index and the cause's message (or its string representation).
 
 The messages before `index` are resolved, the policy applies to the message at `index` with `error`,
 and the messages after it are delivered again in a later batch. An index outside the batch is

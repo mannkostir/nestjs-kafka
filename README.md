@@ -150,7 +150,7 @@ consumers and the producer disconnect cleanly on `SIGTERM`.
 - [Message formats](https://github.com/mannkostir/nestjs-kafka/blob/main/docs/message-formats.md) —
   JSON, enveloped JSON, and Avro.
 - [Error handling](https://github.com/mannkostir/nestjs-kafka/blob/main/docs/error-handling.md) —
-  the `fail`, `ignore`, and `dlq` policies, backoff, and dead-letter headers.
+  the `fail`, `ignore`, `dlq`, and `retry` policies, backoff, and dead-letter headers.
 - [Producing](https://github.com/mannkostir/nestjs-kafka/blob/main/docs/producing.md) — `send()`,
   keys, headers, and value encoding.
 - [Delivery semantics](https://github.com/mannkostir/nestjs-kafka/blob/main/docs/delivery-semantics.md)

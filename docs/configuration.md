@@ -2,17 +2,18 @@
 
 ## Module options
 
-`KafkaModule.register(options)` accepts:
+`KafkaModule.register(options: KafkaModuleOptions): DynamicModule` creates a Nest dynamic module.
+The exported `KafkaModuleOptions` type has the following fields:
 
 | Option | Type | Required | Description |
 | --- | --- | --- | --- |
 | `clientOptions` | `KafkaJS.CommonConstructorConfig` (`@confluentinc/kafka-javascript`) | yes | Passed to `new KafkaJS.Kafka(...)`, with a Nest-backed `kafkaJS.logger` added when none is set (see below). KafkaJS-compatible options — `brokers`, `clientId`, `ssl`, `sasl`, and the rest — go under `kafkaJS`: `{ kafkaJS: { brokers, clientId, ssl, sasl } }`. librdkafka properties (e.g. `'socket.keepalive.enable'`) sit alongside `kafkaJS`, outside that block. |
 | `namespace` | `string` | no | Prefixes produced and consumed topics and consumer group ids. See [Topics and namespacing](topics-and-namespacing.md). |
 | `connectorName` | `string` | no | Scopes handler discovery when `KafkaModule` is registered more than once in the same app. See [Registering more than once](#registering-more-than-once). |
-| `schemaRegistry` | `{ url: string }` | no | Enables Avro. Constructs a `SchemaRegistry` against `url`. |
+| `schemaRegistry` | `SchemaRegistryOptions` | no | Enables Avro with a registry URL, optional HTTP basic auth and latest-schema cache TTL. See [Registry options](message-formats.md#registry-options). |
 | `consumerDefaults` | `ConsumerOptions` | no | Consumer settings applied to every handler unless overridden per handler. |
 | `producer` | `ProducerOptions` | no | Settings for the module's producer. See [`ProducerOptions`](#produceroptions). |
-| `messageFormat` | `MessageFormat`: `'json' \| 'enveloped-json' \| 'avro'` | no | Default format for every consumer and for the producer. Defaults to `MessageFormat.JSON`. A handler's `@Message({ messageFormat })` and a send's `{ messageFormat }` override it. See [Message formats](message-formats.md). |
+| `messageFormat` | `MessageFormat`: `'json' \| 'enveloped-json' \| 'avro'` | no | Default format for every consumer and for the producer. Defaults to `MessageFormat.JSON`. A handler's `MessageOptions.messageFormat` and a send's `{ messageFormat }` override it. See [Message formats](message-formats.md). |
 | `shutdownTimeout` | `number` (ms) | no | How long shutdown waits for consumers to disconnect before it continues without them. Defaults to `10000`. See [Shutdown](delivery-semantics.md#shutdown). |
 
 The options are validated once, at module construction, for `register` and for every
@@ -37,8 +38,10 @@ the compatibility defaults instead of librdkafka's: `socket.timeout.ms` 30000 (l
 `retry.backoff.max.ms` 30000 (1000). The producer and the consumers already run in this mode. Set
 any of these as a librdkafka property in `clientOptions` to override it for every client.
 
-`ProducerProxy` is the module's only exported provider. Consumers are internal: handlers subscribe
-only through `@Message` and `@MessageBatch`.
+The module exports `ProducerProxy` and `ConnectorHealth`, plus named aliases when a static
+`connectorName` is supplied. See [Producing](producing.md#selecting-a-connector) and
+[Connector health](health.md). Consumers are internal: handlers subscribe only through `@Message`
+and `@MessageBatch`.
 
 There is no `moduleName` option. Handlers are discovered application-wide regardless of which
 module declares `KafkaModule` or which module declares the handler provider.
@@ -83,8 +86,28 @@ handler.
 
 ## Asynchronous registration
 
-`registerAsync` supports `useFactory`, `useClass`, and `useExisting`, and accepts `imports` and
-`inject`.
+`KafkaModule.registerAsync(options: KafkaModuleAsyncOptions): DynamicModule` resolves the same
+`KafkaModuleOptions` before opening connections. `KafkaModuleAsyncOptions` extends Nest's module
+`imports` metadata and accepts:
+
+| Field | Type | Behavior when supplied |
+| --- | --- | --- |
+| `imports` | Nest `ModuleMetadata['imports']` | Makes exported dependencies available to the options provider; defaults to no additional imports. |
+| `inject` | `Array<InjectionToken \| OptionalFactoryDependency>` | Dependencies passed to `useFactory` in order; defaults to `[]`. Only used with `useFactory`. |
+| `useFactory` | `(...args) => KafkaModuleOptions \| Promise<KafkaModuleOptions>` | Builds options synchronously or asynchronously. |
+| `useClass` | `Type<KafkaModuleOptionsFactory>` | Nest creates this class inside the connector module and calls `createKafkaOptions()`. |
+| `useExisting` | `Type<KafkaModuleOptionsFactory>` | Reuses a provider exported by an imported module and calls `createKafkaOptions()`. |
+| `connectorName` | `string` | Optional static name used to declare named producer and health injection tokens before the options resolve. |
+
+Choose one of `useFactory`, `useClass` or `useExisting`. Supplying none throws at module
+construction. If more than one is supplied, the implementation selects `useFactory` first, then
+`useClass`, then `useExisting`.
+
+For named injection, set `connectorName` alongside the factory selector. It is applied to the
+resolved options when their `connectorName` is omitted; an explicit returned name must match or
+registration rejects before connecting. This also selects handlers with that name. A name returned
+only by the factory still scopes handlers, but declares no named producer or health alias. Omit
+both names for an unnamed connector. See [named producer injection](producing.md#selecting-a-connector).
 
 ```ts
 KafkaModule.registerAsync({
@@ -95,14 +118,17 @@ KafkaModule.registerAsync({
     clientOptions: {
       kafkaJS: {
         clientId: config.get('KAFKA_CLIENT_ID'),
-        brokers: config.get<string>('KAFKA_BROKERS').split(','),
+        brokers: config.getOrThrow<string>('KAFKA_BROKERS').split(','),
       },
     },
   }),
 });
 ```
 
-`useClass` and `useExisting` take a class implementing `KafkaModuleOptionsFactory`:
+`useClass` and `useExisting` take a class implementing the exported `KafkaModuleOptionsFactory`
+interface. Its only method is
+`createKafkaOptions(): KafkaModuleOptions | Promise<KafkaModuleOptions>`, so either form can
+resolve asynchronous configuration:
 
 ```ts
 import { Injectable } from '@nestjs/common';
@@ -121,13 +147,16 @@ export class KafkaConfigFactory implements KafkaModuleOptionsFactory {
 }
 ```
 
-Passing none of the three throws at module construction.
+For the class above, use `KafkaModule.registerAsync({ useClass: KafkaConfigFactory })`. To reuse
+an existing instance, export `KafkaConfigFactory` from a host module and pass that module in
+`imports` with `useExisting: KafkaConfigFactory`.
 
 ## `@Message` options
 
-```ts
-@Message(topicPatterns: (string | RegExp)[], options: MessageOptions)
-```
+The exported `MessageOptions` type configures both
+`Message(topicPatterns: (string | RegExp)[], options: MessageOptions)` and
+`MessageBatch(topicPatterns: (string | RegExp)[], options: MessageOptions)`. Each returns a typed
+method decorator; the callback contracts are described in [Handlers](handlers.md).
 
 | Option | Type | Required | Default |
 | --- | --- | --- | --- |
@@ -155,6 +184,7 @@ The same shape is used for module-wide `consumerDefaults` and per-handler `consu
 | `sessionTimeout` | `number` (ms) | unset — the client applies its own (currently `30000`) |
 | `rebalanceTimeout` | `number` (ms) | unset — the client applies its own (currently `300000`) |
 | `partitionsConsumedConcurrently` | `number` | `1` |
+| `maxBatchSize` | `number` | unset — the client defaults to `32` messages |
 | `retry` | `ConsumerRetryOptions` | see below |
 
 `heartbeatInterval`, `sessionTimeout`, and `rebalanceTimeout` are left unset unless you set them,
@@ -168,6 +198,9 @@ so the client's own defaults apply. Keep `heartbeatInterval` well below the effe
 processes at the same time. It must be a positive integer; anything else fails bootstrap with an
 error saying so. The effective concurrency is capped by the number of partitions assigned to that
 consumer. See [Ordering and concurrency](delivery-semantics.md#ordering-and-concurrency).
+
+`maxBatchSize` must be a positive integer and caps each client batch for both single-message and
+batch handlers. See [Batch size](handlers.md#batch-size) for fetching and concurrency semantics.
 
 `retry` is `ConsumerRetryOptions`, the client's backoff for retrying failed broker requests:
 `maxRetryTime` (ms, default `30000`) and `initialRetryTime` (ms, default `300`). These are the only
