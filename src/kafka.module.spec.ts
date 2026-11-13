@@ -288,6 +288,55 @@ describe('KafkaModule producer', () => {
 });
 
 describe('KafkaModule schema registry', () => {
+  const auth = { username: 'registry-user', password: 'registry-password' };
+  const authenticatedOptions = {
+    clientOptions,
+    schemaRegistry: { url: 'https://registry:8081', auth },
+  } satisfies KafkaModuleOptions;
+
+  class AuthenticatedOptionsFactory implements KafkaModuleOptionsFactory {
+    createKafkaOptions(): KafkaModuleOptions {
+      return authenticatedOptions;
+    }
+  }
+
+  @Module({
+    providers: [AuthenticatedOptionsFactory],
+    exports: [AuthenticatedOptionsFactory],
+  })
+  class AuthenticatedOptionsModule {}
+
+  it.each([
+    ['register', () => KafkaModule.register(authenticatedOptions)],
+    ['useFactory', () => KafkaModule.registerAsync({ useFactory: async () => authenticatedOptions })],
+    ['useClass', () => KafkaModule.registerAsync({ useClass: AuthenticatedOptionsFactory })],
+    ['useExisting', () => KafkaModule.registerAsync({
+      imports: [AuthenticatedOptionsModule],
+      useExisting: AuthenticatedOptionsFactory,
+    })],
+  ] as const)('forwards basic auth through %s', async (_name, registration) => {
+    const moduleRef = await compileImporting(registration());
+    await moduleRef.close();
+
+    expect(SchemaRegistry).toHaveBeenCalledWith({
+      host: authenticatedOptions.schemaRegistry.url,
+      auth,
+    });
+  });
+
+  it('rejects invalid auth before constructing the registry', async () => {
+    const options = {
+      clientOptions,
+      schemaRegistry: { url: 'https://registry:8081', auth: { username: 'registry-user' } },
+    };
+
+    await expect(
+      compileWith(options as unknown as KafkaModuleOptions),
+    ).rejects.toThrow('"schemaRegistry.auth" must be an object');
+
+    expect(SchemaRegistry).not.toHaveBeenCalled();
+  });
+
   beforeEach(() => {
     jest.mocked(SchemaRegistry).mockClear();
   });

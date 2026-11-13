@@ -85,6 +85,25 @@ KafkaModule.register({
 });
 ```
 
+For registries requiring HTTP basic authentication, such as Confluent Cloud, set the optional
+`schemaRegistry.auth` credentials:
+
+```ts
+KafkaModule.register({
+  clientOptions: { kafkaJS: { brokers: ['localhost:9092'] } },
+  schemaRegistry: {
+    url: 'https://registry.example.com',
+    auth: { username: registryApiKey, password: registryApiSecret },
+  },
+});
+```
+
+`schemaRegistry` uses the exported `SchemaRegistryOptions` type. Both auth fields must be non-empty
+strings; credentials are forwarded to the registry client. Leave `auth` undefined for an
+unauthenticated registry. The same options work with `registerAsync` through `useFactory`,
+`useClass`, or `useExisting`. For JSON formats, `schemaRegistry` can remain undefined and the
+optional registry package is not loaded.
+
 ```ts
 @Message(['orders.created'], {
   groupId: 'orders-service',

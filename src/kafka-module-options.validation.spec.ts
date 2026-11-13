@@ -112,6 +112,50 @@ describe('validateKafkaModuleOptions', () => {
     );
   });
 
+  it('accepts schema registry basic auth unchanged', () => {
+    const options = {
+      clientOptions,
+      schemaRegistry: {
+        url: 'https://registry:8081',
+        auth: { username: 'registry-user', password: 'registry-password' },
+      },
+    };
+
+    expect(validateKafkaModuleOptions(options)).toBe(options);
+  });
+
+  it('accepts explicitly omitted schema registry auth', () => {
+    const options = {
+      clientOptions,
+      schemaRegistry: { url: 'http://registry:8081', auth: undefined },
+    };
+
+    expect(validateKafkaModuleOptions(options)).toBe(options);
+  });
+
+  it.each([
+    null,
+    'registry-secret',
+    [],
+    {},
+    { username: 'registry-user' },
+    { password: 'registry-secret' },
+    { username: '', password: 'registry-secret' },
+    { username: 'registry-user', password: '' },
+    { username: 42, password: 'registry-secret' },
+    { username: 'registry-user', password: false },
+  ])('rejects malformed registry auth case %# without exposing credentials', (auth) => {
+    const options = {
+      clientOptions,
+      schemaRegistry: { url: 'https://registry:8081', auth },
+    };
+
+    expect(validating(options)).toThrow(new Error(
+      'Invalid KafkaModule options:\n' +
+        '- "schemaRegistry.auth" must be an object with non-empty "username" and "password" strings. Supply both credentials, or leave auth undefined for an unauthenticated registry.',
+    ));
+  });
+
   it('rejects consumer defaults that are not an object', () => {
     expect(validating({ clientOptions, consumerDefaults: 'earliest' })).toThrow(
       '- "consumerDefaults" must be an object. Set consumerDefaults to a ConsumerOptions object, or leave it undefined.',

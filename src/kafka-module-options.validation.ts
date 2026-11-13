@@ -54,6 +54,21 @@ const schemaRegistryCheck: OptionsCheck = (options) =>
     ? undefined
     : `"schemaRegistry" must be an object with a non-empty "url". Set schemaRegistry to { url: 'http://localhost:8081' }, or leave it undefined if you do not use Avro.`;
 
+const schemaRegistryAuthCheck: OptionsCheck = (options) => {
+  if (!isObject(options.schemaRegistry) || options.schemaRegistry.auth === undefined) {
+    return undefined;
+  }
+  const auth = options.schemaRegistry.auth;
+  if (
+    isObject(auth) &&
+    typeof auth.username === 'string' && auth.username.length > 0 &&
+    typeof auth.password === 'string' && auth.password.length > 0
+  ) {
+    return undefined;
+  }
+  return '"schemaRegistry.auth" must be an object with non-empty "username" and "password" strings. Supply both credentials, or leave auth undefined for an unauthenticated registry.';
+};
+
 const messageFormatCheck: OptionsCheck = (options) =>
   options.messageFormat === undefined ||
   messageFormats.includes(options.messageFormat)
@@ -84,6 +99,7 @@ const optionsChecks: readonly OptionsCheck[] = [
     'Set a non-empty connectorName matching @Message({ connectorName }), or leave it undefined for the unnamed connector.',
   ),
   schemaRegistryCheck,
+  schemaRegistryAuthCheck,
   optionalObject(
     'consumerDefaults',
     'Set consumerDefaults to a ConsumerOptions object, or leave it undefined.',

@@ -69,7 +69,10 @@ const schemaRegistryProvider: Provider<SchemaRegistry | undefined> = {
 
     const { SchemaRegistry } = await import('@kafkajs/confluent-schema-registry');
 
-    return new SchemaRegistry({ host: options.url });
+    return new SchemaRegistry({
+      host: options.url,
+      ...(options.auth === undefined ? {} : { auth: options.auth }),
+    });
   },
   inject: [SCHEMA_REGISTRY_OPTIONS],
 };
