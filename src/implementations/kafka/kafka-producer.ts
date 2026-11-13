@@ -14,6 +14,7 @@ import { TopicNamespacer } from './topic-namespacer.js';
 export interface KafkaProducerOptions {
   messageFormat?: MessageFormat;
   schemaRegistry?: SchemaRegistry;
+  latestSchemaTtl?: number;
 }
 
 export class KafkaProducer extends ProducerProxy implements BeforeApplicationShutdown {
@@ -29,7 +30,9 @@ export class KafkaProducer extends ProducerProxy implements BeforeApplicationShu
   ) {
     super();
     this.messageFormat = options?.messageFormat ?? MessageFormat.JSON;
-    this.serializeStrategies = new KafkaMessageSerializeStrategyFactory(options?.schemaRegistry);
+    this.serializeStrategies = new KafkaMessageSerializeStrategyFactory(options?.schemaRegistry, {
+      latestSchemaTtl: options?.latestSchemaTtl,
+    });
   }
 
   public async connect(): Promise<void> {

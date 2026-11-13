@@ -78,6 +78,15 @@ const messageFormatCheck: OptionsCheck = (options) =>
 const isNonNegativeFiniteNumber = (value: unknown): boolean =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0;
 
+const latestSchemaTtlCheck: OptionsCheck = (options) => {
+  if (!isObject(options.schemaRegistry) || options.schemaRegistry.latestSchemaTtl === undefined) {
+    return undefined;
+  }
+  return isNonNegativeFiniteNumber(options.schemaRegistry.latestSchemaTtl)
+    ? undefined
+    : '"schemaRegistry.latestSchemaTtl" must be a non-negative finite number of milliseconds. Set it to 0 to disable caching, or leave it undefined for 60000.';
+};
+
 const shutdownTimeoutCheck: OptionsCheck = (options) =>
   options.shutdownTimeout === undefined ||
   isNonNegativeFiniteNumber(options.shutdownTimeout)
@@ -100,6 +109,7 @@ const optionsChecks: readonly OptionsCheck[] = [
   ),
   schemaRegistryCheck,
   schemaRegistryAuthCheck,
+  latestSchemaTtlCheck,
   optionalObject(
     'consumerDefaults',
     'Set consumerDefaults to a ConsumerOptions object, or leave it undefined.',

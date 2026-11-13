@@ -11,6 +11,7 @@ import { MessageFormat } from './message-format.type.js';
 
 export type SchemaRegistryOptions = {
   url: string;
+  latestSchemaTtl?: number;
   auth?: {
     username: string;
     password: string;

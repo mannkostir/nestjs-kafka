@@ -221,3 +221,22 @@ describe('validateKafkaModuleOptions', () => {
     );
   });
 });
+
+
+describe('schemaRegistry.latestSchemaTtl validation', () => {
+  const clientOptions = { kafkaJS: { brokers: ['localhost:9092'] } };
+
+  it.each([-1, NaN, Infinity, -Infinity, '60000', null])('rejects %p', (latestSchemaTtl) => {
+    expect(() => validateKafkaModuleOptions({
+      clientOptions,
+      schemaRegistry: { url: 'http://registry:8081', latestSchemaTtl },
+    })).toThrow('"schemaRegistry.latestSchemaTtl" must be a non-negative finite number of milliseconds');
+  });
+
+  it.each([undefined, 0, 0.5, 60000])('accepts %p', (latestSchemaTtl) => {
+    expect(() => validateKafkaModuleOptions({
+      clientOptions,
+      schemaRegistry: { url: 'http://registry:8081', latestSchemaTtl },
+    })).not.toThrow();
+  });
+});

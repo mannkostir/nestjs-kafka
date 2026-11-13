@@ -4,10 +4,20 @@ import { KafkaMessageSerializeStrategy } from './kafka-message-serialize.strateg
 import { KafkaMessageJsonSerializeStrategy } from './kafka-message-json-serialize.strategy.js';
 import { KafkaMessageEnvelopedJsonSerializeStrategy } from './kafka-message-enveloped-json-serialize.strategy.js';
 import { KafkaMessageAvroSerializeStrategy } from './kafka-message-avro-serialize.strategy.js';
+import { LatestSchemaIdCache } from './latest-schema-id-cache.js';
 import { SerializeTarget } from './serialize-target.js';
 
 export class KafkaMessageSerializeStrategyFactory {
-  constructor(private readonly schemaRegistry?: SchemaRegistry) {}
+  private readonly schemaIds?: LatestSchemaIdCache;
+
+  constructor(
+    private readonly schemaRegistry?: SchemaRegistry,
+    options?: { latestSchemaTtl?: number },
+  ) {
+    if (schemaRegistry) {
+      this.schemaIds = new LatestSchemaIdCache(schemaRegistry, options?.latestSchemaTtl);
+    }
+  }
 
   public create(format: MessageFormat, target: SerializeTarget): KafkaMessageSerializeStrategy {
     switch (format) {
@@ -31,6 +41,6 @@ export class KafkaMessageSerializeStrategyFactory {
       );
     }
 
-    return new KafkaMessageAvroSerializeStrategy(this.schemaRegistry, target);
+    return new KafkaMessageAvroSerializeStrategy(this.schemaRegistry, target, this.schemaIds);
   }
 }

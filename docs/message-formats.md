@@ -144,9 +144,18 @@ The schema is chosen per send:
 - `{ subject: 'orders-value' }` uses the latest version of that subject instead.
 - `{ schemaId: 42 }` encodes with exactly that registry id.
 
-The latest version is looked up in the registry on every send that does not pass `schemaId`;
-`schemaId` skips that request. The schema must already be registered as an Avro schema: the producer
-never registers schemas.
+Latest schema ids are cached per subject within each connector's producer, across sends.
+`schemaRegistry.latestSchemaTtl` sets the cache TTL in milliseconds and defaults to `60000` (60 seconds).
+It must be a finite nonnegative number; `0` disables caching and looks up the latest id on every send.
+For example, `schemaRegistry: { url: 'http://localhost:8081', latestSchemaTtl: 5000 }` caches ids
+for 5 seconds. These options also work with `registerAsync`.
+
+A newly registered schema version becomes eligible for discovery after at most one TTL; the next
+send after expiry looks up the latest id. No background polling runs. A cached id can still be used
+during a registry lookup outage until it expires; failed lookups are not cached, so the next send
+retries. Concurrent lookups for the same subject may share a request. `{ schemaId: 42 }` bypasses
+the latest-id lookup and cache entirely. The schema must already be registered as an Avro schema:
+the producer never registers schemas.
 
 A send rejects without producing anything when the value does not match the schema, when the
 subject has no registered version, when both `schemaId` and `subject` are passed, when `schemaId`

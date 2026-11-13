@@ -6,6 +6,7 @@ export class KafkaMessageAvroSerializeStrategy extends KafkaMessageSerializeStra
   constructor(
     private readonly registry: SchemaRegistry,
     private readonly target: SerializeTarget,
+    private readonly schemaIds: Pick<SchemaRegistry, 'getLatestSchemaId'> = registry,
   ) {
     super();
     assertValidTarget(target);
@@ -22,7 +23,7 @@ export class KafkaMessageAvroSerializeStrategy extends KafkaMessageSerializeStra
   private async resolveSchemaId(): Promise<number> {
     const { topic, schemaId, subject } = this.target;
 
-    return schemaId ?? this.registry.getLatestSchemaId(subject ?? `${topic}-value`);
+    return schemaId ?? this.schemaIds.getLatestSchemaId(subject ?? `${topic}-value`);
   }
 }
 

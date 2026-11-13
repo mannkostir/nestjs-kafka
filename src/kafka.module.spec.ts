@@ -424,6 +424,46 @@ describe('KafkaModule avro', () => {
     return producer.send.mock.calls[0][0].messages[0].value;
   };
 
+  it.each([
+    ['register', undefined, 60000],
+    ['registerAsync', undefined, 60000],
+    ['register', 25, 25],
+    ['registerAsync', 25, 25],
+    ['register', 0, 0],
+    ['registerAsync', 0, 0],
+  ] as const)('wires %s with latestSchemaTtl %p', async (registration, latestSchemaTtl, ttl) => {
+    const registry = registryStub();
+    useRegistry(registry);
+    const options: KafkaModuleOptions = {
+      ...avroOptions,
+      schemaRegistry: { url: 'http://registry:8081', latestSchemaTtl },
+    };
+    jest.useFakeTimers();
+    const moduleRef = await Test.createTestingModule({
+      imports: [registration === 'register'
+        ? KafkaModule.register(options)
+        : KafkaModule.registerAsync({ useFactory: () => options })],
+    }).overrideProvider(KAFKA_PRODUCER).useValue(producerStub()).compile();
+
+    try {
+      const proxy = moduleRef.get(ProducerProxy);
+      const message = { key: null, value: { orderId: 'o-1' } };
+      await proxy.send('orders.created', message);
+      await proxy.send('orders.created', message);
+      if (ttl > 0) {
+        jest.advanceTimersByTime(ttl - 1);
+        await proxy.send('orders.created', message);
+        jest.advanceTimersByTime(1);
+      }
+      await proxy.send('orders.created', message);
+
+      expect(registry.getLatestSchemaId).toHaveBeenCalledTimes(ttl === 0 ? 3 : 2);
+    } finally {
+      jest.useRealTimers();
+      await moduleRef.close();
+    }
+  });
+
   it('produces Avro through the configured schema registry', async () => {
     useRegistry(registryStub());
 

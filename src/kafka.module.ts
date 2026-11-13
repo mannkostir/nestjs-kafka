@@ -126,14 +126,19 @@ const producerProxyProvider: Provider<ProducerProxy> = {
     namespacer: TopicNamespacer,
     messageFormat: MessageFormat | undefined,
     schemaRegistry: SchemaRegistry | undefined,
+    registryOptions: SchemaRegistryOptions | undefined,
   ) => {
-    const proxy = new KafkaProducer(producer, namespacer, { messageFormat, schemaRegistry });
+    const proxy = new KafkaProducer(producer, namespacer, {
+      messageFormat,
+      schemaRegistry,
+      latestSchemaTtl: registryOptions?.latestSchemaTtl,
+    });
 
     await proxy.connect();
 
     return proxy;
   },
-  inject: [KAFKA_PRODUCER, TopicNamespacer, MESSAGE_FORMAT, SCHEMA_REGISTRY],
+  inject: [KAFKA_PRODUCER, TopicNamespacer, MESSAGE_FORMAT, SCHEMA_REGISTRY, SCHEMA_REGISTRY_OPTIONS],
 };
 
 const kafkaConnectionsProvider: Provider<IReleaseConnections> = {
