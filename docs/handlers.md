@@ -158,6 +158,9 @@ Each handler keeps its own `errorHandling`, `messageFormat`, and `namespaced`. T
   else is rejected when the class is decorated.
 - Topics may be names or `RegExp` patterns. A topic listed by name belongs to that handler, even
   when another handler's pattern matches it.
+- Each `RegExp` source, after namespacing, belongs to at most one handler in the group, or bootstrap
+  fails with an error naming both handlers and the pattern. Repeating a pattern on the same handler
+  is harmless. Different pattern sources may overlap; those conflicts are handled at runtime.
 - A topic matched by the patterns of two or more handlers, and listed by name by none, cannot be
   routed. Its partitions are paused and an error names the topic and the handlers; nothing from it
   is consumed or committed until you rename the topic or narrow the patterns and restart. Other

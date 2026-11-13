@@ -27,14 +27,17 @@ export class KafkaHandlerRoutes<TRoute extends NamedRoute> {
     claims: readonly RouteClaim<TRoute>[],
   ): KafkaHandlerRoutes<TRoute> {
     const owners = new Map<string, TRoute>();
+    const patternOwners = new Map<string, TRoute>();
     const patterns: PatternClaim<TRoute>[] = [];
 
     for (const { topics, route } of claims) {
       for (const topic of topics) {
         if (topic instanceof RegExp) {
+          KafkaHandlerRoutes.assertUnclaimed(groupId, patternOwners.get(topic.source), route, `pattern ${topic}`);
+          patternOwners.set(topic.source, route);
           patterns.push({ matcher: LibrdkafkaTopicPattern.matcher(topic), route });
         } else {
-          KafkaHandlerRoutes.assertUnclaimed(groupId, owners.get(topic), route, topic);
+          KafkaHandlerRoutes.assertUnclaimed(groupId, owners.get(topic), route, `topic "${topic}"`);
           owners.set(topic, route);
         }
       }
@@ -90,11 +93,11 @@ export class KafkaHandlerRoutes<TRoute extends NamedRoute> {
     groupId: string,
     owner: NamedRoute | undefined,
     challenger: NamedRoute,
-    topic: string,
+    claim: string,
   ): void {
     if (owner && owner !== challenger) {
       throw new Error(
-        `Message handlers ${owner.handlerName} and ${challenger.handlerName} share group "${groupId}" and both consume topic "${topic}". Each topic in a shared group must belong to exactly one handler.`,
+        `Message handlers ${owner.handlerName} and ${challenger.handlerName} share group "${groupId}" and both consume ${claim}. Each topic in a shared group must belong to exactly one handler.`,
       );
     }
   }
