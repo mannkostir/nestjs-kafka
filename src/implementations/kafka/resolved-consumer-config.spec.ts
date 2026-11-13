@@ -51,6 +51,29 @@ describe('ResolvedConsumerConfig', () => {
     expect(config.createMissingTopics).toBe(false);
   });
 
+  it.each([
+    [undefined, undefined],
+    [{ createMissingTopics: false }, undefined],
+    [{ createMissingTopics: true }, undefined],
+    [undefined, { createMissingTopics: true }],
+    [{ createMissingTopics: false }, { createMissingTopics: true }],
+    [{ createMissingTopics: true }, { createMissingTopics: false }],
+  ])('disables client auto-topic creation for handler %p and module %p', (handler, defaults) => {
+    const config = ResolvedConsumerConfig.resolve(handler, defaults);
+
+    expect(config.clientConfig('group').kafkaJS.allowAutoTopicCreation).toBe(false);
+  });
+
+  it.each([
+    [undefined, { createMissingTopics: true }, true],
+    [{ createMissingTopics: false }, { createMissingTopics: true }, false],
+    [{ createMissingTopics: true }, { createMissingTopics: false }, true],
+  ])('resolves admin provisioning for handler %p and module %p to %p', (handler, defaults, expected) => {
+    const config = ResolvedConsumerConfig.resolve(handler, defaults);
+
+    expect(config.createMissingTopics).toBe(expected);
+  });
+
   it('omits unset fields from the client config', () => {
     const config = ResolvedConsumerConfig.resolve({ sessionTimeout: 45000 });
 
@@ -104,7 +127,7 @@ describe('ResolvedConsumerConfig', () => {
     expect(config.clientConfig('group').kafkaJS).toEqual({
       groupId: 'group',
       fromBeginning: false,
-      allowAutoTopicCreation: true,
+      allowAutoTopicCreation: false,
       heartbeatInterval: 1000,
       sessionTimeout: 10000,
       rebalanceTimeout: 20000,

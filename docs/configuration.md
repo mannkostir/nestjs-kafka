@@ -178,7 +178,9 @@ Retrying a failed handler is a separate concern, configured through
 `createMissingTopics` controls [topic provisioning](topics-and-namespacing.md#topic-provisioning):
 with `false`, bootstrap fails when a handler's topics, or its DLQ topic, do not exist; with `true`,
 the library creates them through the admin API, whatever the broker's `auto.create.topics.enable`
-says. It is unrelated to the producer's [`allowAutoTopicCreation`](#produceroptions).
+says. The consumer client's `allowAutoTopicCreation` is always `false`, independently of
+`createMissingTopics`. This option controls only admin provisioning and is unrelated to the
+producer's [`allowAutoTopicCreation`](#produceroptions).
 
 ## Precedence
 

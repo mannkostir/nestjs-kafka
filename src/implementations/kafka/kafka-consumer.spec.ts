@@ -817,6 +817,22 @@ describe('KafkaConsumer release of in-flight subscriptions', () => {
 });
 
 describe('KafkaConsumer topic provisioning', () => {
+  it('disables client auto-topic creation when admin provisioning is enabled', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+    const topicProvisioner = provisionerStub();
+
+    await new KafkaConsumer(kafka, {
+      topicProvisioner: topicProvisioner as unknown as KafkaTopicProvisioner,
+    }).subscribe(
+      { ...subscription(), consumer: { createMissingTopics: true } },
+      jest.fn(),
+      'orders-service',
+    );
+
+    expect(consumerConfig(kafka).allowAutoTopicCreation).toBe(false);
+  });
+
   it('creates the namespaced string topics before creating the consumer', async () => {
     const consumer = consumerStub();
     const kafka = kafkaStub(consumer);
@@ -964,7 +980,7 @@ describe('KafkaConsumer topic provisioning', () => {
     expect(topicProvisioner.assertExisting).toHaveBeenCalledWith(['orders.created']);
   });
 
-  it('only checks existence when auto topic creation is disabled', async () => {
+  it('only checks existence when admin provisioning is disabled', async () => {
     const consumer = consumerStub();
     const kafka = kafkaStub(consumer);
     const topicProvisioner = provisionerStub();

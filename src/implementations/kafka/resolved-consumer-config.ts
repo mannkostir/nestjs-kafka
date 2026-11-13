@@ -63,7 +63,7 @@ export class ResolvedConsumerConfig {
       kafkaJS: ResolvedConsumerConfig.withoutUndefined({
         groupId,
         fromBeginning: this.fromBeginning,
-        allowAutoTopicCreation: this.createMissingTopics,
+        allowAutoTopicCreation: false,
         heartbeatInterval: this.heartbeatInterval,
         sessionTimeout: this.sessionTimeout,
         rebalanceTimeout: this.rebalanceTimeout,
