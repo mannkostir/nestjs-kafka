@@ -44,10 +44,8 @@ jobs:
           core=${version%%+*}
           if [[ "$core" == *-* ]]; then
             expected_prerelease=true
-            dist_tag=next
           else
             expected_prerelease=false
-            dist_tag=latest
           fi
           if [ "$PRERELEASE" != "$expected_prerelease" ]; then
             echo "::error::Version $version needs the Release's pre-release box set to $expected_prerelease, but it is $PRERELEASE. Delete this Release and publish a new one from tag $TAG with the pre-release box set to $expected_prerelease."
@@ -63,6 +61,19 @@ jobs:
             cat "$RUNNER_TEMP/npm-view.err"
             exit 1
           fi
+          latest=
+          if [ "$expected_prerelease" = false ]; then
+            if latest=$(npm view "$name" dist-tags.latest 2>"$RUNNER_TEMP/npm-latest.err"); then
+              :
+            elif ! grep -q E404 "$RUNNER_TEMP/npm-latest.err"; then
+              echo "::error::Could not check the latest version of $name."
+              cat "$RUNNER_TEMP/npm-latest.err"
+              exit 1
+            else
+              latest=
+            fi
+          fi
+          dist_tag=$(node scripts/select-dist-tag.js "$version" "$latest")
           echo "dist-tag=$dist_tag" >> "$GITHUB_OUTPUT"
 
   ci:
@@ -90,8 +101,4 @@ jobs:
       - env:
           DIST_TAG: ${{ needs.guard.outputs.dist-tag }}
         run: |
-          if [ "$DIST_TAG" = next ]; then
-            npm stage publish --ignore-scripts --loglevel verbose --tag next
-          else
-            npm stage publish --ignore-scripts --loglevel verbose
-          fi
+          npm stage publish --ignore-scripts --loglevel verbose --tag "$DIST_TAG"
