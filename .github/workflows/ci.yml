@@ -37,7 +37,8 @@ jobs:
       fail-fast: false
       matrix:
         node: ['20.19.0', '22.12.0']
-    name: load (node ${{ matrix.node }})
+        nest: [11, 12]
+    name: load (node ${{ matrix.node }}, nest ${{ matrix.nest }})
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -45,6 +46,10 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
+      - if: matrix.nest == 11
+        run: npm install --no-save @nestjs/common@^11 @nestjs/core@^11 @nestjs/testing@^11
+      - run: |
+          node -e "process.exit(require('./node_modules/@nestjs/core/package.json').version.startsWith('${{ matrix.nest }}.') ? 0 : 1)"
       - run: npm run build:compile
       - run: node scripts/check-entry-points.js
 
@@ -55,7 +60,8 @@ jobs:
       fail-fast: false
       matrix:
         node: ['20.18.3', '22.11.0']
-    name: esm floor (node ${{ matrix.node }})
+        nest: [11, 12]
+    name: esm floor (node ${{ matrix.node }}, nest ${{ matrix.nest }})
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -63,6 +69,10 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
+      - if: matrix.nest == 11
+        run: npm install --no-save @nestjs/common@^11 @nestjs/core@^11 @nestjs/testing@^11
+      - run: |
+          node -e "process.exit(require('./node_modules/@nestjs/core/package.json').version.startsWith('${{ matrix.nest }}.') ? 0 : 1)"
       - run: npm run build:compile
       - run: |
           node --input-type=module -e "import 'reflect-metadata'; const { KafkaModule } = await import('nestjs-kafka-connector'); if (typeof KafkaModule.register !== 'function') process.exit(1);"
@@ -70,6 +80,11 @@ jobs:
   integration:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        nest: [11, 12]
+    name: integration (nest ${{ matrix.nest }})
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -77,6 +92,10 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - if: matrix.nest == 11
+        run: npm install --no-save @nestjs/common@^11 @nestjs/core@^11 @nestjs/testing@^11
+      - run: |
+          node -e "process.exit(require('./node_modules/@nestjs/core/package.json').version.startsWith('${{ matrix.nest }}.') ? 0 : 1)"
       - run: npm run test:integration
         timeout-minutes: 25
         env:
@@ -85,6 +104,6 @@ jobs:
       - if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: kafka-client-debug
+          name: kafka-client-debug-nest-${{ matrix.nest }}
           path: ${{ runner.temp }}/kafka-client-debug.log
           if-no-files-found: ignore
