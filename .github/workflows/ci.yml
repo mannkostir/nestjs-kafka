@@ -29,6 +29,11 @@ jobs:
       - run: npx tsc --noEmit
       - run: npm test
       - run: npm run build
+      - run: >-
+          npm install --prefix examples/basic --install-links --no-package-lock --no-save
+          @nestjs/common@^${{ matrix.nest }} @nestjs/core@^${{ matrix.nest }}
+      - run: npm run typecheck --prefix examples/basic
+      - run: npm run build --prefix examples/basic
 
   load:
     runs-on: ubuntu-24.04

@@ -59,6 +59,8 @@ covered in
 
 ## Quickstart
 
+For a runnable app and local Kafka broker, see [examples/basic](examples/basic).
+
 Register the module:
 
 ```ts
