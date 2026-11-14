@@ -56,9 +56,10 @@ a handler in group `orders-service` on `orders.created` uses
 group `ledger`, it uses `payments.settled.dev-ledger.retry.1`. Without a namespace, the same handler
 uses `orders.created.orders-service.retry.1`.
 
-Retry topics belong to the handler's effective group, so they are never shared between groups or
-namespaces: other groups subscribed to the same source topic, and the same group under another
-namespace, never see them. The handler's own consumer consumes its retry topics next to its source
+Retry topic names include the handler's effective group, keeping them distinct between groups and
+namespaces. A source pattern can still match another group's retry topics; there is no automatic
+exclusion (see [Pattern subscriptions with `dlq` or `retry`](error-handling.md#pattern-subscriptions-with-dlq-or-retry)).
+The handler's own consumer consumes its retry topics next to its source
 topics, and reads a retry topic partition without a committed offset from its beginning, whatever
 `fromBeginning` says. The dead-letter destination of a `retry` handler, including an explicit
 `dlq.topic`, namespaced like `dlq`'s `topic`, is described under [DLQ topics](#dlq-topics).
@@ -103,6 +104,20 @@ match:
 
 The namespace is regex-escaped before insertion, so a namespace containing `.` cannot widen the
 match.
+
+With `dlq` or `retry`, source patterns must match only the complete source topic names and exclude
+all DLQ and retry topic names. The library does not automatically exclude derived topics from a
+pattern subscription. Use a bounded pattern such as `/^orders\.(created|updated)$/`: it matches
+`orders.created` and `orders.updated`, but not `orders.created.dlq` or
+`orders.created.orders-service.retry.1`.
+
+An unanchored `/orders/` also consumes `orders.created.dlq`; if processing keeps failing, the
+default DLQ destination gains another `.dlq` suffix and still matches, creating a loop. Adding
+anchors to a broad wildcard is insufficient: `/^orders\..*$/` still matches those derived names.
+Check the complete names of default and explicit DLQ destinations, per-source retry topics and
+group retry topics, with namespacing applied. Keep all of them outside the source pattern; `retry`
+subscribes to its retry topics separately. See
+[Pattern subscriptions with `dlq` or `retry`](error-handling.md#pattern-subscriptions-with-dlq-or-retry).
 
 A topic created after a pattern handler has already subscribed is picked up only at the client's
 next metadata refresh (default 5 minutes) — plain-string topics, by contrast, are provisioned up
