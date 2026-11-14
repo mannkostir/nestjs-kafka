@@ -154,8 +154,9 @@ Topic(s) orders.created do not exist and createMissingTopics is false. Create th
 With `createMissingTopics: true`, the library creates the missing topics itself through the
 admin API, using the broker's default partition count and replication factor, with a 30 second
 create timeout. This happens even when the broker has `auto.create.topics.enable=false`, and needs
-Create permission on those topics for the application's Kafka principal. The client's consumer does
-not create a topic on subscribe, and only notices a topic created after that point at its next
+Create permission on those topics for the application's Kafka principal. The consumer client's
+`allowAutoTopicCreation` is always `false`; `createMissingTopics` controls only admin provisioning.
+The consumer only notices a topic created after subscription at its next
 metadata refresh — so a handler subscribing to a brand-new topic would otherwise sit idle
 indefinitely.
 

@@ -14,3 +14,13 @@ export const MESSAGE_FORMAT = 'MESSAGE_FORMAT';
 export const BATCH_CONSUMER = 'BATCH_CONSUMER';
 export const SHARED_GROUP_CONSUMER = 'SHARED_GROUP_CONSUMER';
 export const SHUTDOWN_TIMEOUT = 'SHUTDOWN_TIMEOUT';
+
+export const ASYNC_CONNECTOR_NAME = 'ASYNC_CONNECTOR_NAME';
+
+export function getProducerToken(connectorName: string): string {
+  return `KAFKA_PRODUCER_PROXY:${connectorName}`;
+}
+
+export function getHealthToken(connectorName: string): string {
+  return `KAFKA_CONNECTOR_HEALTH:${connectorName}`;
+}

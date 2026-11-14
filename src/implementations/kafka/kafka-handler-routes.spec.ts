@@ -1,4 +1,5 @@
 import { KafkaHandlerRoutes } from './kafka-handler-routes.js';
+import { TopicNamespacer } from './topic-namespacer.js';
 
 const route = (handlerName: string) => ({ handlerName });
 
@@ -42,6 +43,43 @@ describe('KafkaHandlerRoutes', () => {
     ]);
 
     expect(routes.resolve('audit.eu')).toEqual({ kind: 'owned', route: audit });
+  });
+
+  it.each([undefined, 'billing'])('rejects identical pattern sources after namespacing with %s', (namespace) => {
+    const namespacer = new TopicNamespacer(namespace);
+    const pattern = namespacer.applyPattern(/^orders\..+/);
+
+    expect(() =>
+      KafkaHandlerRoutes.claim('billing', [
+        { topics: [pattern], route: route('A.x') },
+        { topics: [namespacer.applyPattern(new RegExp('^orders\\..+'))], route: route('B.y') },
+      ]),
+    ).toThrow(
+      `Message handlers A.x and B.y share group "billing" and both consume pattern ${pattern}. Each topic in a shared group must belong to exactly one handler.`,
+    );
+  });
+
+  it('lets one handler repeat the same pattern source', () => {
+    const orders = route('A.x');
+
+    const routes = KafkaHandlerRoutes.claim('billing', [
+      { topics: [/^orders\..+/, new RegExp('^orders\\..+')], route: orders },
+      { topics: [/^orders\..+/], route: orders },
+    ]);
+
+    expect(routes.resolve('orders.created')).toEqual({ kind: 'owned', route: orders });
+  });
+
+  it('keeps namespaced and unnamespaced pattern sources distinct', () => {
+    const orders = route('A.x');
+    const namespacer = new TopicNamespacer('billing');
+
+    const routes = KafkaHandlerRoutes.claim('billing', [
+      { topics: [namespacer.applyPattern(/^orders\..+/)], route: orders },
+      { topics: [/^orders\..+/], route: route('B.y') },
+    ]);
+
+    expect(routes.resolve('billing.orders.created')).toEqual({ kind: 'owned', route: orders });
   });
 
   it('lets one handler own a topic that two of its own patterns match', () => {

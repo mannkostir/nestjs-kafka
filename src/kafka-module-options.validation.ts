@@ -54,6 +54,21 @@ const schemaRegistryCheck: OptionsCheck = (options) =>
     ? undefined
     : `"schemaRegistry" must be an object with a non-empty "url". Set schemaRegistry to { url: 'http://localhost:8081' }, or leave it undefined if you do not use Avro.`;
 
+const schemaRegistryAuthCheck: OptionsCheck = (options) => {
+  if (!isObject(options.schemaRegistry) || options.schemaRegistry.auth === undefined) {
+    return undefined;
+  }
+  const auth = options.schemaRegistry.auth;
+  if (
+    isObject(auth) &&
+    typeof auth.username === 'string' && auth.username.length > 0 &&
+    typeof auth.password === 'string' && auth.password.length > 0
+  ) {
+    return undefined;
+  }
+  return '"schemaRegistry.auth" must be an object with non-empty "username" and "password" strings. Supply both credentials, or leave auth undefined for an unauthenticated registry.';
+};
+
 const messageFormatCheck: OptionsCheck = (options) =>
   options.messageFormat === undefined ||
   messageFormats.includes(options.messageFormat)
@@ -62,6 +77,15 @@ const messageFormatCheck: OptionsCheck = (options) =>
 
 const isNonNegativeFiniteNumber = (value: unknown): boolean =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0;
+
+const latestSchemaTtlCheck: OptionsCheck = (options) => {
+  if (!isObject(options.schemaRegistry) || options.schemaRegistry.latestSchemaTtl === undefined) {
+    return undefined;
+  }
+  return isNonNegativeFiniteNumber(options.schemaRegistry.latestSchemaTtl)
+    ? undefined
+    : '"schemaRegistry.latestSchemaTtl" must be a non-negative finite number of milliseconds. Set it to 0 to disable caching, or leave it undefined for 60000.';
+};
 
 const shutdownTimeoutCheck: OptionsCheck = (options) =>
   options.shutdownTimeout === undefined ||
@@ -84,6 +108,8 @@ const optionsChecks: readonly OptionsCheck[] = [
     'Set a non-empty connectorName matching @Message({ connectorName }), or leave it undefined for the unnamed connector.',
   ),
   schemaRegistryCheck,
+  schemaRegistryAuthCheck,
+  latestSchemaTtlCheck,
   optionalObject(
     'consumerDefaults',
     'Set consumerDefaults to a ConsumerOptions object, or leave it undefined.',
@@ -113,4 +139,27 @@ export function validateKafkaModuleOptions(
     );
   }
   return options as KafkaModuleOptions;
+}
+
+export function resolveAsyncKafkaModuleOptions(
+  options: unknown,
+  connectorName: string | undefined,
+): KafkaModuleOptions {
+  const validated = validateKafkaModuleOptions(options);
+  const problem = optionalNonEmptyString(
+    'connectorName',
+    'Set a non-empty top-level connectorName in KafkaModule.registerAsync, or leave it undefined for plain ProducerProxy injection.',
+  )({ connectorName });
+  if (problem) {
+    throw new Error(`Invalid KafkaModule.registerAsync options: ${problem}`);
+  }
+  if (connectorName === undefined) {
+    return validated;
+  }
+  if (validated.connectorName !== undefined && validated.connectorName !== connectorName) {
+    throw new Error(
+      `KafkaModule.registerAsync connectorName "${connectorName}" does not match returned connectorName "${validated.connectorName}". Use the same name, or omit connectorName from the returned options.`,
+    );
+  }
+  return { ...validated, connectorName };
 }

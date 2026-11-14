@@ -34,6 +34,14 @@ class OrdersHandler {
 }
 
 @Injectable()
+class DuplicateOrdersHandler {
+  @Message([new RegExp('^orders\\..+')], sharedOptions)
+  async handle(message: KafkaMessage, context: MessageContext): Promise<void> {
+    seen.push({ handler: 'duplicate-orders', topic: context.topic, key: String(message.key) });
+  }
+}
+
+@Injectable()
 class EuHandler {
   @Message([/^.*(\.eu)$/], sharedOptions)
   async handle(message: KafkaMessage, context: MessageContext): Promise<void> {
@@ -110,5 +118,24 @@ describe('shared consumer groups with pattern subscriptions', () => {
     await admin.disconnect();
 
     expect(offsets[0].partitions[0].offset).toBe('0');
+  });
+
+  it('rejects identical namespaced pattern sources at bootstrap, naming both handlers', async () => {
+    const duplicateModule = await Test.createTestingModule({
+      imports: [
+        KafkaModule.register({
+          namespace: 'duplicate',
+          clientOptions: {
+            kafkaJS: { clientId: 'duplicate-patterns', brokers: broker.brokers },
+          },
+        }),
+      ],
+      providers: [OrdersHandler, DuplicateOrdersHandler],
+    }).compile();
+
+    await expect(duplicateModule.init()).rejects.toThrow(
+      'Message handlers OrdersHandler.handle and DuplicateOrdersHandler.handle share group "shared-patterns" ' +
+        'and both consume pattern /^duplicate\\.(orders\\..+)/.',
+    );
   });
 });

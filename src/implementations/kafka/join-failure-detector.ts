@@ -9,7 +9,10 @@ export class JoinFailureDetector implements KafkaJS.Logger {
     this.recordFailure = resolve;
   });
 
-  constructor(private readonly inner: KafkaJS.Logger) {}
+  constructor(
+    private readonly inner: KafkaJS.Logger,
+    private readonly onError?: (message: string) => void,
+  ) {}
 
   info(message: string, extra?: object): void {
     this.inner.info(message, extra);
@@ -17,6 +20,7 @@ export class JoinFailureDetector implements KafkaJS.Logger {
 
   error(message: string, extra?: object): void {
     this.detect(message);
+    this.onError?.(message);
     this.inner.error(message, extra);
   }
 

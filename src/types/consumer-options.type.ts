@@ -8,4 +8,5 @@ export type ConsumerOptions = {
   sessionTimeout?: number;
   rebalanceTimeout?: number;
   partitionsConsumedConcurrently?: number;
+  maxBatchSize?: number;
 };

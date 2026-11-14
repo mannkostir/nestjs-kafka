@@ -11,15 +11,18 @@ import { MessageFormat } from './message-format.type.js';
 
 export type SchemaRegistryOptions = {
   url: string;
+  latestSchemaTtl?: number;
+  auth?: {
+    username: string;
+    password: string;
+  };
 };
 
 export type KafkaModuleOptions = {
   clientOptions: KafkaJS.CommonConstructorConfig;
   namespace?: string;
   connectorName?: string;
-  schemaRegistry?: {
-    url: string;
-  };
+  schemaRegistry?: SchemaRegistryOptions;
   consumerDefaults?: ConsumerOptions;
   producer?: ProducerOptions;
   messageFormat?: MessageFormat;
@@ -34,6 +37,7 @@ export interface KafkaModuleOptionsFactory {
 
 export interface KafkaModuleAsyncOptions
   extends Pick<ModuleMetadata, 'imports'> {
+  connectorName?: string;
   inject?: Array<InjectionToken | OptionalFactoryDependency>;
   useFactory?: (
     ...args: any[]

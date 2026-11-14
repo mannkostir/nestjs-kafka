@@ -1,8 +1,8 @@
 # Message formats
 
 The format is chosen per module with `messageFormat`, and overridden per handler with
-`@Message({ messageFormat })` and per send with `{ messageFormat }`. It defaults to
-`MessageFormat.JSON`.
+`@Message(topics, { groupId, errorHandling, messageFormat })` and per send with `{ messageFormat }`.
+It defaults to `MessageFormat.JSON`.
 
 `MessageFormat` is a constant object and a type of the same name. The constants
 `MessageFormat.JSON`, `MessageFormat.ENVELOPED_JSON` and `MessageFormat.AVRO` hold the string
@@ -85,6 +85,39 @@ KafkaModule.register({
 });
 ```
 
+For registries requiring HTTP basic authentication, such as Confluent Cloud, set the optional
+`schemaRegistry.auth` credentials:
+
+```ts
+KafkaModule.register({
+  clientOptions: { kafkaJS: { brokers: ['localhost:9092'] } },
+  schemaRegistry: {
+    url: 'https://registry.example.com',
+    auth: { username: registryApiKey, password: registryApiSecret },
+  },
+});
+```
+
+### Registry options
+
+`schemaRegistry` uses the exported `SchemaRegistryOptions` type:
+
+```ts
+type SchemaRegistryOptions = {
+  url: string;
+  latestSchemaTtl?: number;
+  auth?: { username: string; password: string };
+};
+```
+
+`url` is required and must be non-empty. `latestSchemaTtl` defaults to `60000` milliseconds and
+controls the producer's latest-schema id cache; `0` disables caching. It must be finite and
+nonnegative. See [Producing Avro](#producing-avro) for cache behavior. Both auth fields must be non-empty
+strings; credentials are forwarded to the registry client. Leave `auth` undefined for an
+unauthenticated registry. The same options work with `registerAsync` through `useFactory`,
+`useClass`, or `useExisting`. For JSON formats, `schemaRegistry` can remain undefined and the
+optional registry package is not loaded.
+
 ```ts
 @Message(['orders.created'], {
   groupId: 'orders-service',
@@ -125,9 +158,18 @@ The schema is chosen per send:
 - `{ subject: 'orders-value' }` uses the latest version of that subject instead.
 - `{ schemaId: 42 }` encodes with exactly that registry id.
 
-The latest version is looked up in the registry on every send that does not pass `schemaId`;
-`schemaId` skips that request. The schema must already be registered as an Avro schema: the producer
-never registers schemas.
+Latest schema ids are cached per subject within each connector's producer, across sends.
+`schemaRegistry.latestSchemaTtl` sets the cache TTL in milliseconds and defaults to `60000` (60 seconds).
+It must be a finite nonnegative number; `0` disables caching and looks up the latest id on every send.
+For example, `schemaRegistry: { url: 'http://localhost:8081', latestSchemaTtl: 5000 }` caches ids
+for 5 seconds. These options also work with `registerAsync`.
+
+A newly registered schema version becomes eligible for discovery after at most one TTL; the next
+send after expiry looks up the latest id. No background polling runs. A cached id can still be used
+during a registry lookup outage until it expires; failed lookups are not cached, so the next send
+retries. Concurrent lookups for the same subject may share a request. `{ schemaId: 42 }` bypasses
+the latest-id lookup and cache entirely. The schema must already be registered as an Avro schema:
+the producer never registers schemas.
 
 A send rejects without producing anything when the value does not match the schema, when the
 subject has no registered version, when both `schemaId` and `subject` are passed, when `schemaId`

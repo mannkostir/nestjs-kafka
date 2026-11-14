@@ -34,7 +34,51 @@ Every handler needs an array of topics holding at least one non-empty topic name
 host or a cast options object therefore fails early, with an error naming the handler as
 `ClassName.methodName` and the option to fix.
 
+## Callback types
+
+The exported callback types default `TValue` to `unknown`:
+
+```ts
+type MessageHandlerCallback<TValue = unknown> = (
+  message: KafkaMessage<TValue>,
+  context: MessageContext,
+) => Promise<void>;
+
+type ReceivedMessage<TValue = unknown> = {
+  message: KafkaMessage<TValue>;
+  context: MessageContext;
+};
+
+type MessageBatchHandlerCallback<TValue = unknown> = (
+  batch: ReceivedMessage<TValue>[],
+) => Promise<void>;
+```
+
+`MessageHandlerCallback` describes one decoded delivery; `MessageBatchHandlerCallback` describes
+an ordered batch from one topic partition. `ReceivedMessage` pairs each batch entry with its own
+record context. Resolving the promise lets the library resolve the delivered offsets; rejecting
+it invokes the configured [error policy](error-handling.md). Handler return values carry no reply
+message. Annotating `TValue` provides compile-time checking, not runtime payload validation.
+
 ## The message
+
+The exported message types are shared by handlers and producer sends:
+
+```ts
+type MessageKey = string | Record<string, unknown> | null;
+type MessageHeaders = Record<string, string | string[]>;
+
+type KafkaMessage<TValue = unknown> = {
+  key: MessageKey;
+  value: TValue | null;
+  headers?: MessageHeaders;
+};
+```
+
+`key` and `value` are required, but either can be `null`; `headers` is optional. `MessageKey`
+permits a string, an object with arbitrary property values, or no key. `MessageHeaders` permits
+one string per header or repeated values as an array. [Producing](producing.md#key) describes
+serialization; the consumer decoding rules follow.
 
 `message.value` is the decoded record value, as described in [Message formats](message-formats.md).
 `message.key` is an object when the record key is a JSON object, otherwise the raw UTF-8 string, or
@@ -90,8 +134,26 @@ How failures are handled is described in [Error handling](error-handling.md#batc
 
 ### Batch size
 
-A batch holds at most 32 messages, the client's default. The library does not offer a way to
-change that yet.
+Set `consumer.maxBatchSize` on a `@MessageBatch` or `@Message` handler to limit how many messages
+are fetched in each client batch. It must be a positive integer. The handler's value takes
+precedence over module `consumerDefaults.maxBatchSize`; leaving both unset uses the client's
+default of 32 messages.
+
+```ts
+@MessageBatch(['orders.created'], {
+  groupId: 'orders-indexer',
+  consumer: { maxBatchSize: 128 },
+  errorHandling: { type: 'dlq' },
+})
+async index(batch: ReceivedMessage<OrderCreated>[]): Promise<void> {
+  await this.search.bulkIndex(batch.map(({ message }) => message.value));
+}
+```
+
+Handlers sharing a group must resolve the same `maxBatchSize`, just like the other consumer
+options. Set it under `consumer` or `consumerDefaults`; putting the native
+`js.consumer.max.batch.size` setting in `clientOptions` also sends it to producer and admin
+clients, which reject it.
 
 The size is an upper bound, not a target. The client's cache starts at one message after an
 assignment and grows with throughput, so right after startup or under light traffic a batch can
@@ -158,6 +220,9 @@ Each handler keeps its own `errorHandling`, `messageFormat`, and `namespaced`. T
   else is rejected when the class is decorated.
 - Topics may be names or `RegExp` patterns. A topic listed by name belongs to that handler, even
   when another handler's pattern matches it.
+- Each `RegExp` source, after namespacing, belongs to at most one handler in the group, or bootstrap
+  fails with an error naming both handlers and the pattern. Repeating a pattern on the same handler
+  is harmless. Different pattern sources may overlap; those conflicts are handled at runtime.
 - A topic matched by the patterns of two or more handlers, and listed by name by none, cannot be
   routed. Its partitions are paused and an error names the topic and the handlers; nothing from it
   is consumed or committed until you rename the topic or narrow the patterns and restart. Other

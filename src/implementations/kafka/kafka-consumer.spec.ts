@@ -95,6 +95,70 @@ describe('KafkaConsumer group id', () => {
 });
 
 describe('KafkaConsumer configuration precedence', () => {
+  it.each(['message', 'batch'] as const)('sets the native batch limit for a %s handler', async (kind) => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+    const consumerDefaults = { fromBeginning: false, maxBatchSize: 128 };
+    const handlerOptions = { fromBeginning: false, maxBatchSize: 64 };
+    const subject = new KafkaConsumer(kafka, { consumerDefaults });
+    const options = { ...subscription(), consumer: handlerOptions };
+
+    if (kind === 'batch') {
+      await subject.subscribeBatch(options, jest.fn(), 'orders-service');
+    } else {
+      await subject.subscribe(options, jest.fn(), 'orders-service');
+    }
+
+    expect((kafka.consumer as jest.Mock).mock.calls[0][0]).toEqual({
+      'js.consumer.max.batch.size': 64,
+      rebalance_cb: expect.any(Function),
+      kafkaJS: {
+        groupId: 'orders-service',
+        allowAutoTopicCreation: false,
+        fromBeginning: false,
+        retry: {},
+        logger: expect.anything(),
+      },
+    });
+  });
+
+  it('keeps the consumer batch limit out of admin config', async () => {
+    const kafka = kafkaStub(consumerStub());
+
+    await new KafkaConsumer(kafka, { consumerDefaults: { maxBatchSize: 128 } }).subscribe(
+      subscription(), jest.fn(), 'orders-service',
+    );
+
+    expect(kafka.admin).toHaveBeenCalledWith();
+  });
+
+  it('uses the module batch limit when the handler leaves it unset', async () => {
+    const kafka = kafkaStub(consumerStub());
+    const consumerDefaults = { fromBeginning: false, maxBatchSize: 128 };
+
+    await new KafkaConsumer(kafka, { consumerDefaults }).subscribe(subscription(), jest.fn(), 'orders-service');
+
+    expect((kafka.consumer as jest.Mock).mock.calls[0][0]['js.consumer.max.batch.size']).toBe(128);
+  });
+
+  it('leaves the native batch limit unset for the client default', async () => {
+    const kafka = kafkaStub(consumerStub());
+
+    await new KafkaConsumer(kafka).subscribe(subscription(), jest.fn(), 'orders-service');
+
+    expect((kafka.consumer as jest.Mock).mock.calls[0][0]).not.toHaveProperty(['js.consumer.max.batch.size']);
+  });
+
+  it.each([0, -1, 1.5, NaN, Infinity])('rejects batch limit %p before creating a consumer', async (maxBatchSize) => {
+    const kafka = kafkaStub(consumerStub());
+    const consumer = { fromBeginning: false, maxBatchSize };
+
+    await expect(
+      new KafkaConsumer(kafka).subscribe({ ...subscription(), consumer }, jest.fn(), 'orders-service'),
+    ).rejects.toThrow(/maxBatchSize must be a positive integer/);
+    expect(kafka.consumer).not.toHaveBeenCalled();
+  });
+
   it('falls back to the built-in defaults', async () => {
     const consumer = consumerStub();
     const kafka = kafkaStub(consumer);
@@ -753,6 +817,22 @@ describe('KafkaConsumer release of in-flight subscriptions', () => {
 });
 
 describe('KafkaConsumer topic provisioning', () => {
+  it('disables client auto-topic creation when admin provisioning is enabled', async () => {
+    const consumer = consumerStub();
+    const kafka = kafkaStub(consumer);
+    const topicProvisioner = provisionerStub();
+
+    await new KafkaConsumer(kafka, {
+      topicProvisioner: topicProvisioner as unknown as KafkaTopicProvisioner,
+    }).subscribe(
+      { ...subscription(), consumer: { createMissingTopics: true } },
+      jest.fn(),
+      'orders-service',
+    );
+
+    expect(consumerConfig(kafka).allowAutoTopicCreation).toBe(false);
+  });
+
   it('creates the namespaced string topics before creating the consumer', async () => {
     const consumer = consumerStub();
     const kafka = kafkaStub(consumer);
@@ -900,7 +980,7 @@ describe('KafkaConsumer topic provisioning', () => {
     expect(topicProvisioner.assertExisting).toHaveBeenCalledWith(['orders.created']);
   });
 
-  it('only checks existence when auto topic creation is disabled', async () => {
+  it('only checks existence when admin provisioning is disabled', async () => {
     const consumer = consumerStub();
     const kafka = kafkaStub(consumer);
     const topicProvisioner = provisionerStub();
@@ -1865,6 +1945,18 @@ describe('KafkaConsumer shared group', () => {
     delivery: { kind: 'batch' as const, handle: jest.fn().mockResolvedValue(undefined) },
   });
 
+  it('rejects differing batch limits before creating a consumer', async () => {
+    const kafka = kafkaStub(consumerStub());
+
+    await expect(
+      new KafkaConsumer(kafka).subscribeGroup('billing', [
+        route('A.x', 'orders.created', { consumer: { maxBatchSize: 64 } }),
+        route('B.y', 'parking.lot', { consumer: { maxBatchSize: 128 } }),
+      ]),
+    ).rejects.toThrow('resolve consumer option "maxBatchSize" differently (64 vs 128)');
+    expect(kafka.consumer).not.toHaveBeenCalled();
+  });
+
   it('creates one client consumer for every handler of the group', async () => {
     const consumer = consumerStub();
     const kafka = kafkaStub(consumer);
@@ -2232,6 +2324,149 @@ describe('KafkaConsumer shutdown timeout', () => {
   afterEach(() => {
     jest.useRealTimers();
     jest.restoreAllMocks();
+  });
+
+  const runningWithPendingConnect = async () => {
+    const running = consumerStub();
+    const pending = consumerStub();
+    let finishConnect!: () => void;
+    let failConnect!: (error: Error) => void;
+    pending.connect.mockReturnValue(new Promise<void>((resolve, reject) => {
+      finishConnect = resolve;
+      failConnect = reject;
+    }));
+    const kafka = kafkaStub(running);
+    (kafka.consumer as jest.Mock).mockReturnValueOnce(running).mockReturnValueOnce(pending);
+    const kafkaConsumer = new KafkaConsumer(kafka, { namespace: 'dev', shutdownTimeout: 500 });
+    await kafkaConsumer.subscribe(subscription(), jest.fn(), 'running-service');
+    const starting = kafkaConsumer.subscribe(subscription(), jest.fn(), 'pending-service');
+    const failure = starting.catch((error: unknown) => error);
+    await jest.advanceTimersByTimeAsync(0);
+    return { running, pending, kafkaConsumer, failure, finishConnect, failConnect };
+  };
+
+  it('disconnects a running sibling immediately while another consumer is still connecting', async () => {
+    const { running, kafkaConsumer } = await runningWithPendingConnect();
+
+    const disconnecting = kafkaConsumer.disconnectAll();
+    await jest.advanceTimersByTimeAsync(0);
+
+    expect(running.disconnect).toHaveBeenCalledTimes(1);
+    await jest.advanceTimersByTimeAsync(500);
+    await disconnecting;
+  });
+
+  it('reports both a stuck start and a stuck running disconnect at the deadline', async () => {
+    const { running, kafkaConsumer } = await runningWithPendingConnect();
+    running.disconnect.mockReturnValue(never());
+
+    const disconnecting = kafkaConsumer.disconnectAll();
+    await jest.advanceTimersByTimeAsync(500);
+    await disconnecting;
+
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/dev-pending-service.*dev-running-service|dev-running-service.*dev-pending-service/));
+  });
+
+  it('leaves a disconnected running sibling out of the stuck-start warning', async () => {
+    const { kafkaConsumer } = await runningWithPendingConnect();
+
+    const disconnecting = kafkaConsumer.disconnectAll();
+    await jest.advanceTimersByTimeAsync(500);
+    await disconnecting;
+
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('dev-running-service'));
+  });
+
+  it('keeps cleanup ownership with a start that connects after the deadline', async () => {
+    const { pending, kafkaConsumer, failure, finishConnect } = await runningWithPendingConnect();
+    const disconnecting = kafkaConsumer.disconnectAll();
+    await jest.advanceTimersByTimeAsync(500);
+    await disconnecting;
+
+    finishConnect();
+    await failure;
+    await kafkaConsumer.onModuleDestroy();
+
+    expect(pending.disconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('disconnects a pending start once when its connection completes before the deadline', async () => {
+    const { pending, kafkaConsumer, failure, finishConnect } = await runningWithPendingConnect();
+
+    const disconnecting = kafkaConsumer.disconnectAll();
+    finishConnect();
+    await failure;
+    await disconnecting;
+
+    expect(pending.disconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves the original connection failure after the shutdown deadline', async () => {
+    const { kafkaConsumer, failure, failConnect } = await runningWithPendingConnect();
+    const error = new Error('connect failed');
+    const disconnecting = kafkaConsumer.disconnectAll();
+    await jest.advanceTimersByTimeAsync(500);
+    await disconnecting;
+
+    failConnect(error);
+
+    await expect(failure).resolves.toBe(error);
+  });
+
+  it('cleans up a failed connection exactly once after the shutdown deadline', async () => {
+    const { pending, kafkaConsumer, failure, failConnect } = await runningWithPendingConnect();
+    const disconnecting = kafkaConsumer.disconnectAll();
+    await jest.advanceTimersByTimeAsync(500);
+    await disconnecting;
+
+    failConnect(new Error('connect failed'));
+    await failure;
+    await kafkaConsumer.onModuleDestroy();
+
+    expect(pending.disconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not start delivery when a pending connection completes after shutdown', async () => {
+    const { pending, kafkaConsumer, failure, finishConnect } = await runningWithPendingConnect();
+    const disconnecting = kafkaConsumer.disconnectAll();
+    await jest.advanceTimersByTimeAsync(500);
+    await disconnecting;
+
+    finishConnect();
+    await failure;
+
+    expect(pending.run).not.toHaveBeenCalled();
+  });
+
+  it('never logs successful shutdown when a late start finishes after the deadline', async () => {
+    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    const { kafkaConsumer, failure, finishConnect } = await runningWithPendingConnect();
+    const disconnecting = kafkaConsumer.disconnectAll();
+    await jest.advanceTimersByTimeAsync(500);
+    await disconnecting;
+
+    finishConnect();
+    await failure;
+    await jest.advanceTimersByTimeAsync(0);
+
+    expect(log).not.toHaveBeenCalledWith('All consumers disconnected');
+  });
+
+  it('never logs successful shutdown when a disconnect finishes after the deadline', async () => {
+    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    const consumer = consumerStub();
+    let finishDisconnect!: () => void;
+    consumer.disconnect.mockReturnValue(new Promise<void>((resolve) => { finishDisconnect = resolve; }));
+    const kafkaConsumer = new KafkaConsumer(kafkaStub(consumer), { shutdownTimeout: 500 });
+    await kafkaConsumer.subscribe(subscription(), jest.fn(), 'orders-service');
+    const disconnecting = kafkaConsumer.disconnectAll();
+    await jest.advanceTimersByTimeAsync(500);
+    await disconnecting;
+
+    finishDisconnect();
+    await jest.advanceTimersByTimeAsync(0);
+
+    expect(log).not.toHaveBeenCalledWith('All consumers disconnected');
   });
 
   it('stops waiting for a disconnect that never settles once the shutdown timeout passes', async () => {

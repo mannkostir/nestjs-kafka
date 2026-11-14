@@ -10,6 +10,8 @@ import {
 import { ConsumerOptions } from './types/consumer-options.type.js';
 import { ProducerOptions } from './types/producer-options.type.js';
 import { MessageFormat } from './types/message-format.type.js';
+import { ConnectorHealth } from './base/connector-health.js';
+import { ConnectorHealthState } from './health/connector-health-state.js';
 import { ConsumerProxy } from './base/consumer-proxy.js';
 import { KafkaConsumer } from './implementations/kafka/kafka-consumer.js';
 import { KafkaProducer } from './implementations/kafka/kafka-producer.js';
@@ -20,9 +22,12 @@ import { toKafkaClientConfig } from './implementations/kafka/kafka-client-config
 import type { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
 import { MessageHandlersDiscoveryService } from './services/message-handlers.discovery-service.js';
 import { KafkaConnections } from './implementations/kafka/kafka-connections.js';
-import { validateKafkaModuleOptions } from './kafka-module-options.validation.js';
+import { resolveAsyncKafkaModuleOptions, validateKafkaModuleOptions } from './kafka-module-options.validation.js';
 import { IReleaseConnections } from './interfaces/release-connections.interface.js';
 import {
+  ASYNC_CONNECTOR_NAME,
+  getProducerToken,
+  getHealthToken,
   KAFKA_MODULE_OPTIONS,
   RAW_KAFKA_MODULE_OPTIONS,
   TRANSPORT_CONFIG,
@@ -69,7 +74,10 @@ const schemaRegistryProvider: Provider<SchemaRegistry | undefined> = {
 
     const { SchemaRegistry } = await import('@kafkajs/confluent-schema-registry');
 
-    return new SchemaRegistry({ host: options.url });
+    return new SchemaRegistry({
+      host: options.url,
+      ...(options.auth === undefined ? {} : { auth: options.auth }),
+    });
   },
   inject: [SCHEMA_REGISTRY_OPTIONS],
 };
@@ -96,6 +104,7 @@ const consumerProxyProvider: Provider<ConsumerProxy> = {
     clientLogger: KafkaJS.Logger | undefined,
     messageFormat: MessageFormat | undefined,
     shutdownTimeout: number | undefined,
+    health: ConnectorHealthState,
   ) =>
     new KafkaConsumer(kafka, {
       schemaRegistry,
@@ -106,8 +115,9 @@ const consumerProxyProvider: Provider<ConsumerProxy> = {
       clientLogger,
       messageFormat,
       shutdownTimeout,
+      health,
     }),
-  inject: [KafkaJS.Kafka, KAFKA_PRODUCER, SCHEMA_REGISTRY, TRANSPORT_NAMESPACE, CONSUMER_DEFAULTS, TopicNamespacer, CLIENT_LOGGER, MESSAGE_FORMAT, SHUTDOWN_TIMEOUT],
+  inject: [KafkaJS.Kafka, KAFKA_PRODUCER, SCHEMA_REGISTRY, TRANSPORT_NAMESPACE, CONSUMER_DEFAULTS, TopicNamespacer, CLIENT_LOGGER, MESSAGE_FORMAT, SHUTDOWN_TIMEOUT, ConnectorHealthState],
 };
 
 const topicNamespacerProvider: Provider<TopicNamespacer> = {
@@ -123,14 +133,33 @@ const producerProxyProvider: Provider<ProducerProxy> = {
     namespacer: TopicNamespacer,
     messageFormat: MessageFormat | undefined,
     schemaRegistry: SchemaRegistry | undefined,
+    registryOptions: SchemaRegistryOptions | undefined,
+    health: ConnectorHealthState,
   ) => {
-    const proxy = new KafkaProducer(producer, namespacer, { messageFormat, schemaRegistry });
+    const proxy = new KafkaProducer(producer, namespacer, {
+      messageFormat,
+      schemaRegistry,
+      latestSchemaTtl: registryOptions?.latestSchemaTtl,
+      health,
+    });
 
     await proxy.connect();
 
     return proxy;
   },
-  inject: [KAFKA_PRODUCER, TopicNamespacer, MESSAGE_FORMAT, SCHEMA_REGISTRY],
+  inject: [KAFKA_PRODUCER, TopicNamespacer, MESSAGE_FORMAT, SCHEMA_REGISTRY, SCHEMA_REGISTRY_OPTIONS, ConnectorHealthState],
+};
+
+const connectorHealthProvider: Provider<ConnectorHealth> = {
+  provide: ConnectorHealth,
+  useFactory: (state: ConnectorHealthState, consumer: KafkaConsumer<unknown>): ConnectorHealth =>
+    Object.freeze({
+      snapshot: () => {
+        consumer.observeHealthAssignments();
+        return state.snapshot();
+      },
+    }),
+  inject: [ConnectorHealthState, ConsumerProxy],
 };
 
 const kafkaConnectionsProvider: Provider<IReleaseConnections> = {
@@ -198,6 +227,24 @@ const validatedOptionsProvider: Provider<KafkaModuleOptions> = {
   inject: [RAW_KAFKA_MODULE_OPTIONS],
 };
 
+function createNamedProducerProviders(connectorName: string | undefined): Provider[] {
+  return connectorName === undefined
+    ? []
+    : [{ provide: getProducerToken(connectorName), useExisting: ProducerProxy }];
+}
+
+function createNamedHealthProviders(connectorName: string | undefined): Provider[] {
+  return connectorName === undefined
+    ? []
+    : [{ provide: getHealthToken(connectorName), useExisting: ConnectorHealth }];
+}
+
+function connectorExports(connectorName: string | undefined) {
+  return connectorName === undefined
+    ? [ProducerProxy, ConnectorHealth]
+    : [ProducerProxy, getProducerToken(connectorName), ConnectorHealth, getHealthToken(connectorName)];
+}
+
 @Module({})
 export class KafkaModule {
   public static register(
@@ -213,6 +260,8 @@ export class KafkaModule {
         },
         validatedOptionsProvider,
         ...createDerivedProviders(),
+        { provide: ConnectorHealthState, useFactory: () => new ConnectorHealthState() },
+        connectorHealthProvider,
         kafkaProvider,
         kafkaProducerProvider,
         schemaRegistryProvider,
@@ -221,10 +270,12 @@ export class KafkaModule {
         sharedGroupConsumerProvider,
         topicNamespacerProvider,
         producerProxyProvider,
+        ...createNamedProducerProviders(options?.connectorName),
+        ...createNamedHealthProviders(options?.connectorName),
         kafkaConnectionsProvider,
         MessageHandlersDiscoveryService,
       ],
-      exports: [ProducerProxy],
+      exports: connectorExports(options?.connectorName),
     };
   }
 
@@ -236,8 +287,15 @@ export class KafkaModule {
       imports: [...(asyncOptions.imports || []), DiscoveryModule],
       providers: [
         ...this.createAsyncOptionsProviders(asyncOptions),
-        validatedOptionsProvider,
+        { provide: ASYNC_CONNECTOR_NAME, useValue: asyncOptions.connectorName },
+        {
+          provide: KAFKA_MODULE_OPTIONS,
+          useFactory: resolveAsyncKafkaModuleOptions,
+          inject: [RAW_KAFKA_MODULE_OPTIONS, ASYNC_CONNECTOR_NAME],
+        },
         ...createDerivedProviders(),
+        { provide: ConnectorHealthState, useFactory: () => new ConnectorHealthState() },
+        connectorHealthProvider,
         kafkaProvider,
         kafkaProducerProvider,
         schemaRegistryProvider,
@@ -246,10 +304,12 @@ export class KafkaModule {
         sharedGroupConsumerProvider,
         topicNamespacerProvider,
         producerProxyProvider,
+        ...createNamedProducerProviders(asyncOptions.connectorName),
+        ...createNamedHealthProviders(asyncOptions.connectorName),
         kafkaConnectionsProvider,
         MessageHandlersDiscoveryService,
       ],
-      exports: [ProducerProxy],
+      exports: connectorExports(asyncOptions.connectorName),
     };
   }
 

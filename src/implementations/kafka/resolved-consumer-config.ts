@@ -18,6 +18,7 @@ export class ResolvedConsumerConfig {
     private readonly sessionTimeout: number | undefined,
     private readonly rebalanceTimeout: number | undefined,
     private readonly retry: ConsumerRetryOptions,
+    private readonly maxBatchSize: number | undefined,
   ) {}
 
   static resolve(handlerConfig?: ConsumerOptions, moduleDefaults?: ConsumerOptions): ResolvedConsumerConfig {
@@ -32,6 +33,14 @@ export class ResolvedConsumerConfig {
       );
     }
 
+    const maxBatchSize = overrides.maxBatchSize ?? defaults.maxBatchSize;
+
+    if (maxBatchSize !== undefined && (!Number.isInteger(maxBatchSize) || maxBatchSize < 1)) {
+      throw new Error(
+        `maxBatchSize must be a positive integer, got ${maxBatchSize}. Set it to 1 or more, or leave it unset to use the client's default batch size.`,
+      );
+    }
+
     return new ResolvedConsumerConfig(
       overrides.fromBeginning ?? defaults.fromBeginning ?? false,
       overrides.createMissingTopics ?? defaults.createMissingTopics ?? false,
@@ -40,6 +49,7 @@ export class ResolvedConsumerConfig {
       overrides.sessionTimeout ?? defaults.sessionTimeout,
       overrides.rebalanceTimeout ?? defaults.rebalanceTimeout,
       ResolvedConsumerConfig.consumerRetry({ ...defaults.retry, ...overrides.retry }),
+      maxBatchSize,
     );
   }
 
@@ -47,15 +57,18 @@ export class ResolvedConsumerConfig {
     return ResolvedConsumerConfig.withoutUndefined({ maxRetryTime, initialRetryTime });
   }
 
-  clientConfig(groupId: string): KafkaJS.ConsumerConfig {
+  clientConfig(groupId: string): KafkaJS.ConsumerConstructorConfig & { kafkaJS: KafkaJS.ConsumerConfig } {
     return ResolvedConsumerConfig.withoutUndefined({
-      groupId,
-      fromBeginning: this.fromBeginning,
-      allowAutoTopicCreation: this.createMissingTopics,
-      heartbeatInterval: this.heartbeatInterval,
-      sessionTimeout: this.sessionTimeout,
-      rebalanceTimeout: this.rebalanceTimeout,
-      retry: this.retry,
+      'js.consumer.max.batch.size': this.maxBatchSize,
+      kafkaJS: ResolvedConsumerConfig.withoutUndefined({
+        groupId,
+        fromBeginning: this.fromBeginning,
+        allowAutoTopicCreation: false,
+        heartbeatInterval: this.heartbeatInterval,
+        sessionTimeout: this.sessionTimeout,
+        rebalanceTimeout: this.rebalanceTimeout,
+        retry: this.retry,
+      }),
     });
   }
 
@@ -99,6 +112,7 @@ export class ResolvedConsumerConfig {
       fromBeginning: this.fromBeginning,
       createMissingTopics: this.createMissingTopics,
       partitionsConsumedConcurrently: this.partitionsConsumedConcurrently,
+      maxBatchSize: this.maxBatchSize,
       heartbeatInterval: this.heartbeatInterval,
       sessionTimeout: this.sessionTimeout,
       rebalanceTimeout: this.rebalanceTimeout,

@@ -181,6 +181,15 @@ describe('KafkaModule producer', () => {
     ).toEqual({ kafkaJS: { allowAutoTopicCreation: false } });
   });
 
+  it('keeps the consumer batch limit out of the producer config', async () => {
+    expect(
+      await producerConfigOf(KafkaModule.register({
+        clientOptions,
+        consumerDefaults: { maxBatchSize: 128 },
+      })),
+    ).toEqual({ kafkaJS: { allowAutoTopicCreation: false } });
+  });
+
   it('creates the producer with auto topic creation when enabled', async () => {
     expect(
       await producerConfigOf(
@@ -279,6 +288,55 @@ describe('KafkaModule producer', () => {
 });
 
 describe('KafkaModule schema registry', () => {
+  const auth = { username: 'registry-user', password: 'registry-password' };
+  const authenticatedOptions = {
+    clientOptions,
+    schemaRegistry: { url: 'https://registry:8081', auth },
+  } satisfies KafkaModuleOptions;
+
+  class AuthenticatedOptionsFactory implements KafkaModuleOptionsFactory {
+    createKafkaOptions(): KafkaModuleOptions {
+      return authenticatedOptions;
+    }
+  }
+
+  @Module({
+    providers: [AuthenticatedOptionsFactory],
+    exports: [AuthenticatedOptionsFactory],
+  })
+  class AuthenticatedOptionsModule {}
+
+  it.each([
+    ['register', () => KafkaModule.register(authenticatedOptions)],
+    ['useFactory', () => KafkaModule.registerAsync({ useFactory: async () => authenticatedOptions })],
+    ['useClass', () => KafkaModule.registerAsync({ useClass: AuthenticatedOptionsFactory })],
+    ['useExisting', () => KafkaModule.registerAsync({
+      imports: [AuthenticatedOptionsModule],
+      useExisting: AuthenticatedOptionsFactory,
+    })],
+  ] as const)('forwards basic auth through %s', async (_name, registration) => {
+    const moduleRef = await compileImporting(registration());
+    await moduleRef.close();
+
+    expect(SchemaRegistry).toHaveBeenCalledWith({
+      host: authenticatedOptions.schemaRegistry.url,
+      auth,
+    });
+  });
+
+  it('rejects invalid auth before constructing the registry', async () => {
+    const options = {
+      clientOptions,
+      schemaRegistry: { url: 'https://registry:8081', auth: { username: 'registry-user' } },
+    };
+
+    await expect(
+      compileWith(options as unknown as KafkaModuleOptions),
+    ).rejects.toThrow('"schemaRegistry.auth" must be an object');
+
+    expect(SchemaRegistry).not.toHaveBeenCalled();
+  });
+
   beforeEach(() => {
     jest.mocked(SchemaRegistry).mockClear();
   });
@@ -366,6 +424,46 @@ describe('KafkaModule avro', () => {
     return producer.send.mock.calls[0][0].messages[0].value;
   };
 
+  it.each([
+    ['register', undefined, 60000],
+    ['registerAsync', undefined, 60000],
+    ['register', 25, 25],
+    ['registerAsync', 25, 25],
+    ['register', 0, 0],
+    ['registerAsync', 0, 0],
+  ] as const)('wires %s with latestSchemaTtl %p', async (registration, latestSchemaTtl, ttl) => {
+    const registry = registryStub();
+    useRegistry(registry);
+    const options: KafkaModuleOptions = {
+      ...avroOptions,
+      schemaRegistry: { url: 'http://registry:8081', latestSchemaTtl },
+    };
+    jest.useFakeTimers();
+    const moduleRef = await Test.createTestingModule({
+      imports: [registration === 'register'
+        ? KafkaModule.register(options)
+        : KafkaModule.registerAsync({ useFactory: () => options })],
+    }).overrideProvider(KAFKA_PRODUCER).useValue(producerStub()).compile();
+
+    try {
+      const proxy = moduleRef.get(ProducerProxy);
+      const message = { key: null, value: { orderId: 'o-1' } };
+      await proxy.send('orders.created', message);
+      await proxy.send('orders.created', message);
+      if (ttl > 0) {
+        jest.advanceTimersByTime(ttl - 1);
+        await proxy.send('orders.created', message);
+        jest.advanceTimersByTime(1);
+      }
+      await proxy.send('orders.created', message);
+
+      expect(registry.getLatestSchemaId).toHaveBeenCalledTimes(ttl === 0 ? 3 : 2);
+    } finally {
+      jest.useRealTimers();
+      await moduleRef.close();
+    }
+  });
+
   it('produces Avro through the configured schema registry', async () => {
     useRegistry(registryStub());
 
@@ -407,6 +505,22 @@ describe('KafkaModule client logger', () => {
     namespace: jest.fn(),
     setLogLevel: jest.fn(),
   };
+
+  it('keeps the consumer batch limit out of the common client config', async () => {
+    const RealKafka = KafkaJS.Kafka;
+    const constructClient = jest.spyOn(KafkaJS, 'Kafka').mockImplementation((config) => new RealKafka(config));
+
+    try {
+      const moduleRef = await compileWith({ clientOptions, consumerDefaults: { maxBatchSize: 128 } });
+      await moduleRef.close();
+
+      expect(constructClient.mock.calls[0][0]).toEqual({
+        kafkaJS: { ...clientOptions.kafkaJS, logger: expect.any(NestKafkaLogger) },
+      });
+    } finally {
+      constructClient.mockRestore();
+    }
+  });
 
   it('creates the client with a Nest logger when none is configured', async () => {
     expect(
