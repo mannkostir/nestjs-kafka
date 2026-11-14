@@ -8,13 +8,20 @@ the host application provides.
 | Peer | Supported range |
 | --- | --- |
 | `@nestjs/common`, `@nestjs/core` | `^11.0.0 \|\| ^12.0.0` |
-| `@confluentinc/kafka-javascript` | `^1.10.0` |
+| `@confluentinc/kafka-javascript` | `^1.10.1` |
 | `reflect-metadata` | `^0.2.0` |
-| `@kafkajs/confluent-schema-registry` (optional, for Avro) | `>=3.0.0` |
+| `@kafkajs/confluent-schema-registry` (optional, for Avro) | `^3.0.0` |
 
-CI runs the type check, unit tests, and build against both NestJS 11 and NestJS 12, the
-integration tests against NestJS 12, checks that both entry points of the built package load on
-Node.js 20.19 and 22.12, and checks that the ES module entry loads on Node.js 20.18 and 22.11.
+CI runs the type check, unit tests, build, and integration tests against both NestJS 11 and
+NestJS 12 on Node.js 24. For each NestJS version, CI checks that both entry points of the built
+package load on Node.js 20.19.0 and 22.12.0, and that the ES module entry loads on Node.js
+20.18.3 and 22.11.0.
+
+A separate peer-floor job installs exactly `@confluentinc/kafka-javascript@1.10.1` and
+`@kafkajs/confluent-schema-registry@3.0.0` for both NestJS versions on Node.js 24. It asserts
+the installed versions, then runs the type check, unit tests, build, and full integration suite,
+including Avro round trips against real Kafka and Schema Registry containers. The registry peer
+is only required when using Avro; JSON-only applications can omit it.
 
 The module's `clientOptions` is `KafkaJS.CommonConstructorConfig` from
 `@confluentinc/kafka-javascript`, passed to the client unchanged. Its shape follows the installed
@@ -33,7 +40,8 @@ Both hand out the same classes, so a host that reaches the package through both 
 `engines` declares Node.js `^20.19.0` or `>=22.12.0`. That is exact for a CommonJS host, whose
 `require` of this package loads ES modules through Node's `require(esm)` support, unflagged from
 those versions. An ES module host needs nothing extra from this package and also runs on earlier
-Node.js 20 and 22 releases, verified on 20.18 and 22.11, where npm only warns about `engines`.
+Node.js 20 and 22 releases, checked in CI on 20.18.3 and 22.11.0 with both NestJS 11 and NestJS 12,
+where npm only warns about `engines`.
 
 `@confluentinc/kafka-javascript` (`1.10.1`) ships prebuilt native binaries only for Node.js 18, 20,
 21, 22, 23, and 24, on darwin (arm64/x64), linux glibc and musl (arm64/x64), and win32 (x64). On

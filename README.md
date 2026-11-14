@@ -46,18 +46,20 @@ topic), want one codebase to switch between transports, or prefer first-party su
 ## Installation
 
 ```sh
-npm install nestjs-kafka-connector @confluentinc/kafka-javascript
+npm install nestjs-kafka-connector @confluentinc/kafka-javascript@^1.10.1
 ```
 
-Peers: `@nestjs/common` and `@nestjs/core` `^11 || ^12`, `@confluentinc/kafka-javascript ^1.10`,
+Peers: `@nestjs/common` and `@nestjs/core` `^11 || ^12`, `@confluentinc/kafka-javascript ^1.10.1`,
 `reflect-metadata ^0.2`. For Avro, also install the optional peer
-`@kafkajs/confluent-schema-registry`.
+`@kafkajs/confluent-schema-registry@^3.0.0`.
 
 Requires Node.js `^20.19.0` or `>=22.12.0`. Module formats, TypeScript settings, and Jest setup are
 covered in
 [Compatibility](https://github.com/mannkostir/nestjs-kafka/blob/main/docs/compatibility.md).
 
 ## Quickstart
+
+For a runnable app and local Kafka broker, see [examples/basic](examples/basic).
 
 Register the module:
 
