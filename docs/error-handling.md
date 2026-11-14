@@ -68,6 +68,9 @@ Without `topic`, the destination is the source topic plus a `.dlq` suffix — `o
 `orders.created.dlq`. How DLQ topics are namespaced and created is described in
 [Topics and namespacing](topics-and-namespacing.md#dlq-topics).
 
+For a `RegExp` source, follow [Pattern subscriptions with `dlq` or `retry`](#pattern-subscriptions-with-dlq-or-retry)
+to keep the handler from consuming its own dead letters.
+
 If the DLQ publish fails, the offset is not resolved: the partition is paused and the record is
 redelivered after a backoff with the [`fail`](#-type-fail-) defaults (`300` ms, doubling, up to
 `30000` ms). The publish error is logged as a warning once per backoff step. A publish to a missing
@@ -119,7 +122,9 @@ errorHandling: { type: 'retry', attempts: 3, backoff: { initialMs: 1000, multipl
 | `backoff` | `BackoffOptions` | see below | same fields and constraints as `fail` |
 | `dlq.topic` | `string` | `<source topic>.dlq` | same as `dlq`'s `topic` |
 
-For a pattern source, `<source topic>` is the topic the pattern matched.
+For a pattern source, `<source topic>` is the topic the pattern matched. Follow
+[Pattern subscriptions with `dlq` or `retry`](#pattern-subscriptions-with-dlq-or-retry) to keep
+derived topics out of the source pattern.
 
 Retry `n` waits `min(initialMs * multiplier ^ (n - 1), maxMs)`. The `backoff` fields and their
 defaults (`300`, `30000`, `2`) are those of the [`fail`](#-type-fail-) table; `backoff: false` is not
@@ -178,6 +183,25 @@ async handleOrder(message: KafkaMessage<OrderCreated>): Promise<void> {
   await this.orders.process(message.value, Number(attempt));
 }
 ```
+
+## Pattern subscriptions with `dlq` or `retry`
+
+Source patterns have no automatic exclusion of DLQ or retry topics. With either policy, anchor
+the pattern to the complete source names and restrict it to those names, for example
+`/^orders\.(created|updated)$/`. This matches `orders.created` and `orders.updated`, but excludes
+their `.dlq` destinations and retry topics.
+
+An unanchored `/orders/` also matches `orders.created.dlq`. If the handler fails on that dead
+letter, the default destination becomes `orders.created.dlq.dlq`, which also matches: persistent
+failures can loop through further dead-letter topics. With `retry`, matching the dead-letter
+destination can start another retry cycle after the retry budget has run out.
+
+Anchors alone do not make a broad wildcard safe: `/^orders\..*$/` still matches
+`orders.created.dlq` and `orders.created.orders-service.retry.1`. Check that the source pattern
+excludes the complete names of every default or explicit DLQ destination and every retry topic,
+including group retry topics and namespaced names (see
+[Topics and namespacing](topics-and-namespacing.md#retry-topics)). The retry policy subscribes to
+its retry topics separately for scheduled delivery; they must not also be matched as source topics.
 
 ## Batch handlers
 
